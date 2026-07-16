@@ -1767,6 +1767,8 @@ impl SessionActor {
         let mut loop_index: u32 = 0;
         let mut todo_gate_fires: u32 = 0;
         let mut auth_retry_schedule = AuthRetrySchedule::new();
+        // Multi-provider (Codex) OAuth: at most one 401 recover+resubmit per turn.
+        let mut multi_provider_auth_resubmit_used = false;
         let mut turn_span_totals = TurnSpanTotals::default();
         let mut model_fingerprint: Option<String> = None;
         let mut structured_output_retries: u32 = 0;
@@ -1916,6 +1918,37 @@ impl SessionActor {
                 SamplerTurnOutcome::Response(r, latency) => (r, latency),
                 SamplerTurnOutcome::CompactAndResubmit => {
                     auth_retry_schedule.reset();
+                    continue;
+                }
+                SamplerTurnOutcome::RefreshMultiProviderAuthOnce => {
+                    // GATE1 / ACTION-003: exactly one multi-provider resubmit.
+                    if multi_provider_auth_resubmit_used {
+                        let msg = "Multi-provider auth recovery already used once this turn; \
+                                   second 401 will not re-refresh (no retry loop)"
+                            .to_string();
+                        tracing::error!(%msg);
+                        return Err(acp::Error::internal_error().data(
+                            crate::sampling::error::error_data_with_status(msg, Some(401)),
+                        ));
+                    }
+                    multi_provider_auth_resubmit_used = true;
+                    tracing::warn!(
+                        "multi-provider 401: single resubmit after TokenManager recover"
+                    );
+                    xai_grok_telemetry::unified_log::warn(
+                        "shell.turn.multi_provider_auth_retry_once",
+                        Some(self.session_info.id.0.as_ref()),
+                        Some(serde_json::json!({ "loop_index" : loop_index, "max_retries" : 1 })),
+                    );
+                    self.send_xai_notification(XaiSessionUpdate::RetryState(
+                        crate::extensions::notification::RetryState::Retrying {
+                            attempt: 1,
+                            max_retries: 1,
+                            reason: "Multi-provider token refreshed; retrying request once"
+                                .to_string(),
+                        },
+                    ))
+                    .await;
                     continue;
                 }
                 SamplerTurnOutcome::RefreshAuthAndResubmit => {

@@ -1092,6 +1092,26 @@ impl MvpAgent {
         let requested_str = requested.0.as_ref();
         let models = self.models_manager.models();
         let Some(catalog_key) = resolve_catalog_key(&models, requested) else {
+            #[cfg(feature = "native-multi-provider-auth")]
+            {
+                // Short slug matched multiple Codex credentials — tell the user.
+                let mp_hits: Vec<String> = models
+                    .iter()
+                    .filter(|(k, e)| {
+                        e.info.model == requested_str
+                            && xai_grok_multi_auth::provider_model_key::parse_provider_model_key(k)
+                                .is_some()
+                    })
+                    .map(|(k, _)| k.clone())
+                    .collect();
+                if mp_hits.len() > 1 {
+                    return Err(acp::Error::invalid_params().data(format!(
+                        "ambiguous model '{requested_str}': multiple Codex accounts expose it. \
+                         Use a full catalog id, e.g. one of: {}",
+                        mp_hits.join(", ")
+                    )));
+                }
+            }
             tracing::debug!(
                 requested = % requested_str, model_count = models.len(),
                 "resolve_model_id: unknown model id (not in models() by key or .model field)"

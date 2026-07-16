@@ -437,6 +437,11 @@ impl SamplingClient {
         // injection point for proxy-auth headers and any other URL- or
         // environment-specific headers the session decides to set.
         for (key, value) in &config.extra_headers {
+            // Internal Goblin binding metadata must never hit the wire
+            // (Codex/ChatGPT would see an undocumented header).
+            if key.eq_ignore_ascii_case("x-goblin-credential-id") {
+                continue;
+            }
             let header_name = HeaderName::try_from(key.as_str())
                 .map_err(|_| SamplingError::InvalidConfiguration("Invalid extra header name"))?;
             let header_value = HeaderValue::from_str(value)
@@ -1096,6 +1101,12 @@ impl SamplingClient {
         let includes = request.inner.include.get_or_insert_with(Vec::new);
         if !includes.contains(&rs::IncludeEnum::ReasoningEncryptedContent) {
             includes.push(rs::IncludeEnum::ReasoningEncryptedContent);
+        }
+
+        // ChatGPT Codex Responses rejects system/developer roles in `input`
+        // (`400 System messages are not allowed`). Hoist them to `instructions`.
+        if xai_grok_sampling_types::is_codex_responses_backend(&self.base_url) {
+            xai_grok_sampling_types::hoist_system_messages_to_instructions(&mut request.inner);
         }
 
         Ok(())

@@ -244,7 +244,7 @@ impl ModelsManager {
         }
 
         let (current_model_key, current_model, model_source) =
-            resolve_default_model(cfg, &catalog, is_session_auth);
+            resolve_default_model_for_startup(cfg, &catalog, is_session_auth)?;
 
         tracing::info!(
             model_id = %current_model.model,
@@ -1612,7 +1612,13 @@ fn spawn_prefetch_thread(env: PrefetchEnv) -> EarlyPrefetchHandle {
 ///
 /// Sessions persist the routing slug (`[model.X].model`, e.g. `grok-4.5`);
 /// the catalog and `/model` picker use config keys (e.g. `enterprise-grok-build`).
-/// Last slug match wins so user overrides beat defaults (matches `MvpAgent::resolve_model_id`).
+///
+/// For multi-provider entries (`codex/{credential_id}/{slug}`):
+/// - exact catalog key always wins;
+/// - short slug with **one** match resolves to that key;
+/// - short slug with **two+ multi-provider** matches (different credentials) →
+///   `None` (ambiguous — caller must use the full key; no silent first-wins).
+/// Non-multi-provider last slug match still wins so user overrides beat defaults.
 pub(crate) fn resolve_catalog_key(
     models: &IndexMap<String, ModelEntry>,
     id: &acp::ModelId,
@@ -1621,11 +1627,44 @@ pub(crate) fn resolve_catalog_key(
     if models.contains_key(id_str) {
         return Some(id.clone());
     }
-    models
-        .iter()
-        .rev()
-        .find(|(_, entry)| entry.info.model == id_str)
-        .map(|(key, _)| acp::ModelId::new(key.clone()))
+    resolve_catalog_key_for_slug(models, id_str).map(|k| acp::ModelId::new(k))
+}
+
+/// Resolve a wire slug (or bare model name) to a catalog map key.
+/// Returns `None` when multi-provider accounts make the slug ambiguous.
+pub(crate) fn resolve_catalog_key_for_slug(
+    models: &IndexMap<String, ModelEntry>,
+    slug: &str,
+) -> Option<String> {
+    #[cfg(feature = "native-multi-provider-auth")]
+    {
+        let pairs: Vec<(String, String)> = models
+            .iter()
+            .map(|(k, e)| (k.clone(), e.info.model.clone()))
+            .collect();
+        let resolved =
+            xai_grok_multi_auth::provider_model_key::resolve_wire_slug_to_catalog_key(&pairs, slug);
+        if resolved.is_none()
+            && xai_grok_multi_auth::provider_model_key::ambiguous_multi_provider_slug_message(
+                &pairs, slug,
+            )
+            .is_some()
+        {
+            tracing::warn!(
+                slug,
+                "ambiguous multi-provider model slug; use codex/{{credential_id}}/{{slug}}"
+            );
+        }
+        return resolved;
+    }
+    #[cfg(not(feature = "native-multi-provider-auth"))]
+    {
+        models
+            .iter()
+            .rev()
+            .find(|(_, entry)| entry.info.model == slug)
+            .map(|(key, _)| key.clone())
+    }
 }
 
 /// Catalog key for a persisted session model id, restricted to **selectable**
@@ -1719,9 +1758,12 @@ pub(crate) fn resolve_default_model(
             (key, first, config::ConfigSource::Default)
         }
         Some(pref) => {
-            let found = visible
-                .get_key_value(&pref.value)
-                .or_else(|| visible.iter().find(|(_, m)| m.model == pref.value));
+            // Exact catalog key, then slug via resolve_catalog_key_for_slug
+            // (no silent first-wins for multi-provider short slugs — P0.2).
+            let found = visible.get_key_value(&pref.value).or_else(|| {
+                resolve_catalog_key_for_slug(&visible, &pref.value)
+                    .and_then(|k| visible.get_key_value(&k))
+            });
 
             if let Some((key, entry)) = found {
                 (key.clone(), entry.clone(), pref.source)
@@ -1733,10 +1775,16 @@ pub(crate) fn resolve_default_model(
                         | config::ConfigSource::Config
                 );
                 if is_explicit {
-                    tracing::warn!(
-                        model_id = %pref.value, source = %pref.source,
-                        "preferred model not in available models, falling back"
-                    );
+                    if let Some(msg) =
+                        multi_provider_ambiguous_slug_error(&visible, &pref.value)
+                    {
+                        tracing::error!(model_id = %pref.value, source = %pref.source, "{msg}");
+                    } else {
+                        tracing::warn!(
+                            model_id = %pref.value, source = %pref.source,
+                            "preferred model not in available models, falling back"
+                        );
+                    }
                 } else {
                     tracing::debug!(
                         model_id = %pref.value, source = %pref.source,
@@ -1756,21 +1804,87 @@ pub(crate) fn resolve_default_model(
                         .pre_campaign_default
                         .as_deref()
                         .filter(|s| !s.is_empty())
-                    && let Some((key, entry)) = visible
-                        .get_key_value(prev)
-                        .or_else(|| visible.iter().find(|(_, m)| m.model == prev))
                 {
-                    tracing::info!(
-                        unavailable = %pref.value, fallback = %prev,
-                        "campaign-driven default unavailable in catalog; recovering the pre-campaign default"
-                    );
-                    return (key.clone(), entry.clone(), config::ConfigSource::Config);
+                    let prev_found = visible.get_key_value(prev).or_else(|| {
+                        resolve_catalog_key_for_slug(&visible, prev)
+                            .and_then(|k| visible.get_key_value(&k))
+                    });
+                    if let Some((key, entry)) = prev_found {
+                        tracing::info!(
+                            unavailable = %pref.value, fallback = %prev,
+                            "campaign-driven default unavailable in catalog; recovering the pre-campaign default"
+                        );
+                        return (key.clone(), entry.clone(), config::ConfigSource::Config);
+                    }
                 }
+                // CLI/env multi-provider ambiguity must not first_or_fallback
+                // (that would silently bind the first account). Startup path
+                // uses `resolve_default_model_for_startup` which errors first.
+                // Non-strict callers still fall back for catalog reloads.
                 let (key, first) = first_or_fallback();
                 (key, first, config::ConfigSource::Default)
             }
         }
     }
+}
+
+/// Error message when a short wire slug matches multiple multi-provider catalog keys.
+pub(crate) fn multi_provider_ambiguous_slug_error(
+    models: &IndexMap<String, ModelEntry>,
+    slug: &str,
+) -> Option<String> {
+    #[cfg(feature = "native-multi-provider-auth")]
+    {
+        let pairs: Vec<(String, String)> = models
+            .iter()
+            .map(|(k, e)| (k.clone(), e.info.model.clone()))
+            .collect();
+        return xai_grok_multi_auth::provider_model_key::ambiguous_multi_provider_slug_message(
+            &pairs, slug,
+        );
+    }
+    #[cfg(not(feature = "native-multi-provider-auth"))]
+    {
+        let _ = (models, slug);
+        None
+    }
+}
+
+/// Like [`resolve_default_model`], but CLI/env multi-provider short-slug
+/// ambiguity is a hard error (P0.2 fail closed — no first-wins / first_or_fallback).
+pub(crate) fn resolve_default_model_for_startup(
+    cfg: &config::Config,
+    catalog: &IndexMap<String, ModelEntry>,
+    is_session_auth: bool,
+) -> Result<(String, ModelEntry, config::ConfigSource), String> {
+    let visible: IndexMap<String, ModelEntry> = catalog
+        .iter()
+        .filter(|(_, e)| e.info.visible_for_auth(is_session_auth) && e.info.user_selectable)
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect();
+
+    if let Some(cli) = cfg.default_model_override.as_deref() {
+        if visible.contains_key(cli) {
+            // ok — exact key
+        } else if resolve_catalog_key_for_slug(&visible, cli).is_some() {
+            // ok — unique slug
+        } else if let Some(msg) = multi_provider_ambiguous_slug_error(&visible, cli) {
+            return Err(msg);
+        }
+    }
+    if let Ok(env_model) = std::env::var("GROK_DEFAULT_MODEL") {
+        let env_model = env_model.trim();
+        if !env_model.is_empty()
+            && !visible.contains_key(env_model)
+            && resolve_catalog_key_for_slug(&visible, env_model).is_none()
+        {
+            if let Some(msg) = multi_provider_ambiguous_slug_error(&visible, env_model) {
+                return Err(msg);
+            }
+        }
+    }
+
+    Ok(resolve_default_model(cfg, catalog, is_session_auth))
 }
 
 /// Filter hidden and auth-gated entries out of `catalog` and convert to ACP wire format.
@@ -1872,6 +1986,26 @@ pub fn resolve_model_catalog(
         }
     }
 
+    // Goblin fork: merge Codex/ChatGPT models **before** effort stamps so CLI
+    // `--reasoning-effort` / `--effort` and persisted default effort apply to
+    // multi-provider entries (merge inserts Medium defaults that must not win
+    // over an explicit CLI override).
+    #[cfg(feature = "native-multi-provider-auth")]
+    merge_codex_provider_models(&mut catalog);
+
+    stamp_reasoning_effort_overrides(cfg, &mut catalog);
+
+    catalog
+}
+
+/// Apply persisted default effort + CLI `--reasoning-effort` / `--effort`.
+///
+/// Must run **after** multi-provider catalog merges so Codex entries receive
+/// the same override path as xAI models.
+pub fn stamp_reasoning_effort_overrides(
+    cfg: &config::Config,
+    catalog: &mut IndexMap<String, ModelEntry>,
+) {
     // Persisted default first; CLI override below wins when set.
     // Only apply if the model supports reasoning effort.
     if let Some(effort) = cfg.models.default_reasoning_effort
@@ -1892,9 +2026,195 @@ pub fn resolve_model_catalog(
             }
         }
     }
-
-    catalog
 }
+
+/// Inject Codex models from the multi-provider credential store into the
+/// in-process catalog so `/model` can select them.
+///
+/// Catalog identity is credential-scoped (`codex/{credential_id}/{slug}`).
+/// OAuth access tokens are **not** copied into `api_key` (review B1); request
+/// paths resolve tokens via [`xai_grok_multi_auth::token_resolve`] /
+/// `BearerResolver` immediately before each request.
+#[cfg(feature = "native-multi-provider-auth")]
+fn merge_codex_provider_models(catalog: &mut IndexMap<String, ModelEntry>) {
+    if std::env::var_os("GROK_DISABLE_CODEX_AUTH").is_some_and(|v| v != "0") {
+        return;
+    }
+
+    // Optional one-shot inject (integration tests); production never sets this.
+    if let Some(report) = take_codex_merge_report_override() {
+        merge_codex_report_into_catalog(catalog, &report);
+        return;
+    }
+
+    let home = xai_grok_multi_auth::token_resolve::grok_home();
+
+    let report = match xai_grok_multi_auth::cli::list_codex_models_blocking(&home) {
+        Ok(r) => r,
+        Err(e) => {
+            tracing::debug!(error = %e, "codex models: not merged into catalog");
+            return;
+        }
+    };
+
+    merge_codex_report_into_catalog(catalog, &report);
+}
+
+/// Standard effort menu attached to every Codex catalog entry at merge time.
+/// CLI / config overrides are applied later by [`stamp_reasoning_effort_overrides`].
+#[cfg(feature = "native-multi-provider-auth")]
+fn codex_standard_reasoning_efforts() -> Vec<crate::sampling::ReasoningEffortOption> {
+    vec![
+        crate::sampling::ReasoningEffortOption {
+            id: "low".into(),
+            value: ReasoningEffort::Low,
+            label: "Low".into(),
+            description: Some("Faster, cheaper".into()),
+            default: false,
+        },
+        crate::sampling::ReasoningEffortOption {
+            id: "medium".into(),
+            value: ReasoningEffort::Medium,
+            label: "Medium".into(),
+            description: Some("Balanced (default)".into()),
+            default: true,
+        },
+        crate::sampling::ReasoningEffortOption {
+            id: "high".into(),
+            value: ReasoningEffort::High,
+            label: "High".into(),
+            description: Some("Deeper reasoning".into()),
+            default: false,
+        },
+        crate::sampling::ReasoningEffortOption {
+            id: "xhigh".into(),
+            value: ReasoningEffort::Xhigh,
+            label: "XHigh".into(),
+            description: Some("Maximum effort".into()),
+            default: false,
+        },
+    ]
+}
+
+/// Pure merge of a Codex models report into the catalog (no network I/O).
+///
+/// Each entry defaults to Medium effort; callers must run
+/// [`stamp_reasoning_effort_overrides`] afterward for CLI/config effort.
+#[cfg(feature = "native-multi-provider-auth")]
+pub fn merge_codex_report_into_catalog(
+    catalog: &mut IndexMap<String, ModelEntry>,
+    report: &xai_grok_multi_auth::cli::CodexModelsReport,
+) {
+    use std::num::NonZeroU64;
+
+    use xai_grok_multi_auth::provider_model_key::format_provider_model_key;
+    use xai_grok_sampler::AuthScheme;
+
+    let provider_id = xai_grok_auth::ProviderId::new_unchecked("codex");
+
+    for acct in &report.accounts {
+        if let Some(err) = &acct.error {
+            tracing::warn!(alias = %acct.alias, error = %err, "codex models fetch failed");
+            continue;
+        }
+        let Some(account_id) = acct.account_id.clone() else {
+            tracing::warn!(alias = %acct.alias, "codex account missing chatgpt_account_id");
+            continue;
+        };
+
+        let model_count = acct.models.len();
+        for m in &acct.models {
+            // Runtime identity includes credential so two accounts with the
+            // same upstream slug remain independently selectable (B2).
+            let key =
+                format_provider_model_key(&provider_id, acct.credential_id, &m.id);
+            if catalog.contains_key(&key) {
+                continue;
+            }
+            let mut info = config::ModelInfo::fallback(&m.id);
+            info.id = Some(key.clone());
+            info.model = m.id.clone();
+            info.name = Some(format!("{} (Codex · {})", m.display_name, acct.alias));
+            info.description = m
+                .description
+                .clone()
+                .or_else(|| Some(format!("ChatGPT Codex · {}", acct.alias)));
+            info.base_url = "https://chatgpt.com/backend-api/codex".to_string();
+            info.api_backend = crate::sampling::ApiBackend::Responses;
+            info.auth_scheme = AuthScheme::Bearer;
+            info.user_selectable = true;
+            info.supported_in_api = true;
+            info.hidden = false;
+            if let Some(ctx) = m.context_window.and_then(NonZeroU64::new) {
+                info.context_window = ctx;
+            }
+            info.extra_headers
+                .insert("ChatGPT-Account-ID".to_string(), account_id.clone());
+            // Stable binding for request auth without async account scan.
+            info.extra_headers.insert(
+                "x-goblin-credential-id".to_string(),
+                acct.credential_id.to_string(),
+            );
+            // Codex Responses models accept standard effort levels; expose the
+            // same low/medium/high/xhigh menu the pager uses for gated models.
+            // Default Medium is intentional merge baseline — CLI override is
+            // applied later via stamp_reasoning_effort_overrides.
+            info.supports_reasoning_effort = true;
+            info.reasoning_effort = Some(ReasoningEffort::Medium);
+            info.reasoning_efforts = codex_standard_reasoning_efforts();
+
+            catalog.insert(
+                key,
+                config::ModelEntry {
+                    info,
+                    // Binding only — real bearer comes from TokenManager at
+                    // request time (see multi_provider_bearer_resolver).
+                    api_key: None,
+                    env_key: None,
+                    api_base_url: None,
+                },
+            );
+        }
+        tracing::info!(
+            alias = %acct.alias,
+            credential_id = %acct.credential_id,
+            count = model_count,
+            "merged Codex models into /model catalog (credential-scoped, no static token)"
+        );
+    }
+}
+
+// One-shot Codex merge report override (integration tests of catalog order).
+// Production never installs this; taken once per merge_codex_provider_models.
+#[cfg(feature = "native-multi-provider-auth")]
+thread_local! {
+    static CODEX_MERGE_REPORT_OVERRIDE: std::cell::RefCell<
+        Option<xai_grok_multi_auth::cli::CodexModelsReport>,
+    > = const { std::cell::RefCell::new(None) };
+}
+
+#[cfg(feature = "native-multi-provider-auth")]
+fn take_codex_merge_report_override() -> Option<xai_grok_multi_auth::cli::CodexModelsReport> {
+    CODEX_MERGE_REPORT_OVERRIDE.with(|cell| cell.borrow_mut().take())
+}
+
+/// Install a one-shot Codex merge report for the next `resolve_model_catalog` call.
+///
+/// **Test / diagnostics only** — not used on the production login path.
+#[cfg(feature = "native-multi-provider-auth")]
+pub fn set_codex_merge_report_override_for_test(
+    report: xai_grok_multi_auth::cli::CodexModelsReport,
+) {
+    CODEX_MERGE_REPORT_OVERRIDE.with(|cell| *cell.borrow_mut() = Some(report));
+}
+
+/// Clear any pending one-shot Codex merge override.
+#[cfg(feature = "native-multi-provider-auth")]
+pub fn clear_codex_merge_report_override_for_test() {
+    CODEX_MERGE_REPORT_OVERRIDE.with(|cell| *cell.borrow_mut() = None);
+}
+
+
 
 /// Whether `effort` is a value this model will accept on the wire.
 ///
@@ -2456,6 +2776,156 @@ mod tests {
         assert_eq!(
             catalog["plain-model"].info.reasoning_effort, None,
             "non-reasoning model must NOT be stamped",
+        );
+    }
+
+    /// P0.3 / skeptic: CLI `--effort` must win on Codex entries inserted by
+    /// merge (which default to Medium). Regression: stamping before merge left
+    /// Codex at Medium forever.
+    #[cfg(feature = "native-multi-provider-auth")]
+    #[test]
+    fn cli_effort_override_stamps_codex_entries_after_merge() {
+        use std::collections::BTreeSet;
+
+        use indexmap::IndexMap;
+        use xai_grok_auth::{CredentialId, ProviderModel};
+        use xai_grok_multi_auth::cli::{CodexAccountModels, CodexModelsReport};
+        use xai_grok_multi_auth::provider_model_key::format_provider_model_key;
+
+        let credential_id = CredentialId::from_uuid(
+            uuid::Uuid::parse_str("019f6a33-60f7-78c1-97e7-27fc1ccfc525").unwrap(),
+        );
+        let provider = xai_grok_auth::ProviderId::new_unchecked("codex");
+        let catalog_key =
+            format_provider_model_key(&provider, credential_id, "gpt-5.6-luna");
+
+        // Inject one-shot report so resolve_model_catalog exercises the real
+        // merge → stamp order (not a reimplemented path).
+        set_codex_merge_report_override_for_test(CodexModelsReport {
+            accounts: vec![CodexAccountModels {
+                alias: "default".into(),
+                email: Some("test@example.com".into()),
+                credential_id,
+                account_id: Some("acct-chatgpt-1".into()),
+                models: vec![ProviderModel {
+                    id: "gpt-5.6-luna".into(),
+                    display_name: "GPT-5.6-Luna".into(),
+                    description: Some("Fast coding".into()),
+                    context_window: Some(272_000),
+                    priority: 0,
+                    capabilities: BTreeSet::new(),
+                    raw_metadata: serde_json::Value::Null,
+                }],
+                error: None,
+            }],
+        });
+
+        let cfg = config::Config {
+            reasoning_effort_override: Some(ReasoningEffort::High),
+            ..config::Config::default()
+        };
+
+        // Empty prefetched: Codex entry only exists after merge_codex_*.
+        let catalog = resolve_model_catalog(&cfg, Some(IndexMap::new()));
+        clear_codex_merge_report_override_for_test();
+
+        let entry = catalog
+            .get(&catalog_key)
+            .unwrap_or_else(|| panic!("expected merged Codex key {catalog_key}"));
+        assert!(
+            entry.info.supports_reasoning_effort,
+            "Codex merge must expose effort menu"
+        );
+        assert_eq!(
+            entry.info.reasoning_effort,
+            Some(ReasoningEffort::High),
+            "CLI --effort high must override merge default Medium on Codex entry"
+        );
+        assert!(
+            entry.info.reasoning_efforts.iter().any(|o| o.value == ReasoningEffort::High),
+            "effort menu must include high"
+        );
+        assert!(
+            entry.api_key.is_none(),
+            "merge must not snapshot OAuth into api_key"
+        );
+
+        // sampling_config_for_model reads entry.info.reasoning_effort — the
+        // path goblin uses when starting a turn with --model + --effort.
+        let sc = sampling_config_for_model(
+            entry,
+            config::ResolvedCredentials {
+                api_key: None,
+                base_url: entry.info.base_url.clone(),
+                auth_type: xai_chat_state::AuthType::SessionToken,
+                auth_scheme: entry.info.auth_scheme,
+            },
+            None,
+            None,
+            None,
+            None,
+        );
+        assert_eq!(
+            sc.reasoning_effort,
+            Some(ReasoningEffort::High),
+            "sampling config must carry CLI effort for Codex after merge+stamp"
+        );
+    }
+
+    /// Direct pure-path proof: merge inserts Medium, stamp then applies High.
+    #[cfg(feature = "native-multi-provider-auth")]
+    #[test]
+    fn stamp_after_codex_merge_replaces_medium_default() {
+        use std::collections::BTreeSet;
+
+        use indexmap::IndexMap;
+        use xai_grok_auth::{CredentialId, ProviderModel};
+        use xai_grok_multi_auth::cli::{CodexAccountModels, CodexModelsReport};
+        use xai_grok_multi_auth::provider_model_key::format_provider_model_key;
+
+        let credential_id = CredentialId::from_uuid(
+            uuid::Uuid::parse_str("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee").unwrap(),
+        );
+        let provider = xai_grok_auth::ProviderId::new_unchecked("codex");
+        let key = format_provider_model_key(&provider, credential_id, "gpt-5.6-luna");
+
+        let mut catalog = IndexMap::new();
+        merge_codex_report_into_catalog(
+            &mut catalog,
+            &CodexModelsReport {
+                accounts: vec![CodexAccountModels {
+                    alias: "work".into(),
+                    email: None,
+                    credential_id,
+                    account_id: Some("acct-2".into()),
+                    models: vec![ProviderModel {
+                        id: "gpt-5.6-luna".into(),
+                        display_name: "GPT-5.6-Luna".into(),
+                        description: None,
+                        context_window: Some(100_000),
+                        priority: 0,
+                        capabilities: BTreeSet::new(),
+                        raw_metadata: serde_json::Value::Null,
+                    }],
+                    error: None,
+                }],
+            },
+        );
+        assert_eq!(
+            catalog[&key].info.reasoning_effort,
+            Some(ReasoningEffort::Medium),
+            "merge baseline is Medium"
+        );
+
+        let cfg = config::Config {
+            reasoning_effort_override: Some(ReasoningEffort::Xhigh),
+            ..config::Config::default()
+        };
+        stamp_reasoning_effort_overrides(&cfg, &mut catalog);
+        assert_eq!(
+            catalog[&key].info.reasoning_effort,
+            Some(ReasoningEffort::Xhigh),
+            "stamp after merge must replace Medium with CLI override"
         );
     }
 
@@ -3501,6 +3971,96 @@ mod tests {
         let persisted = acp::ModelId::new("grok-4.5");
         let key = resolve_catalog_key(&models, &persisted).expect("exact key must resolve");
         assert_eq!(key.0.as_ref(), "grok-4.5");
+    }
+
+    #[test]
+    fn resolve_catalog_key_for_slug_single_multi_provider_resolves() {
+        #[cfg(feature = "native-multi-provider-auth")]
+        {
+            let mut models = IndexMap::new();
+            let key = "codex/01234567-89ab-cdef-0123-456789abcdef/gpt-5.6-luna".to_string();
+            models.insert(key.clone(), make_model_entry("gpt-5.6-luna"));
+            models.insert("grok-4.5".to_string(), make_model_entry("grok-4.5"));
+            let resolved = resolve_catalog_key_for_slug(&models, "gpt-5.6-luna")
+                .expect("single multi-provider slug must resolve");
+            assert_eq!(resolved, key);
+            assert!(
+                find_model_by_id(&models, "gpt-5.6-luna").is_some(),
+                "find_model_by_id must use the same resolver"
+            );
+        }
+    }
+
+    #[test]
+    fn resolve_catalog_key_for_slug_two_multi_provider_is_ambiguous() {
+        #[cfg(feature = "native-multi-provider-auth")]
+        {
+            let mut models = IndexMap::new();
+            models.insert(
+                "codex/01234567-89ab-cdef-0123-456789abcdef/gpt-5.6-luna".into(),
+                make_model_entry("gpt-5.6-luna"),
+            );
+            models.insert(
+                "codex/fedcba98-7654-3210-fedc-ba9876543210/gpt-5.6-luna".into(),
+                make_model_entry("gpt-5.6-luna"),
+            );
+            assert!(
+                resolve_catalog_key_for_slug(&models, "gpt-5.6-luna").is_none(),
+                "two multi-provider accounts with same slug must not first-wins"
+            );
+            assert!(
+                multi_provider_ambiguous_slug_error(&models, "gpt-5.6-luna").is_some()
+            );
+            // Full catalog keys still work.
+            assert!(
+                resolve_catalog_key(
+                    &models,
+                    &acp::ModelId::new("codex/01234567-89ab-cdef-0123-456789abcdef/gpt-5.6-luna")
+                )
+                .is_some()
+            );
+        }
+    }
+
+    #[test]
+    fn resolve_default_model_for_startup_errors_on_ambiguous_cli_slug() {
+        #[cfg(feature = "native-multi-provider-auth")]
+        {
+            let mut catalog = IndexMap::new();
+            catalog.insert(
+                "codex/01234567-89ab-cdef-0123-456789abcdef/gpt-5.6-luna".into(),
+                make_model_entry("gpt-5.6-luna"),
+            );
+            catalog.insert(
+                "codex/fedcba98-7654-3210-fedc-ba9876543210/gpt-5.6-luna".into(),
+                make_model_entry("gpt-5.6-luna"),
+            );
+            let mut cfg = config::Config::default();
+            cfg.default_model_override = Some("gpt-5.6-luna".into());
+            let err = resolve_default_model_for_startup(&cfg, &catalog, true)
+                .expect_err("CLI short slug with two Codex accounts must fail closed");
+            assert!(
+                err.contains("ambiguous") && err.contains("codex/"),
+                "error should list catalog keys: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn resolve_default_model_cli_short_slug_single_account() {
+        #[cfg(feature = "native-multi-provider-auth")]
+        {
+            let mut catalog = IndexMap::new();
+            let key = "codex/01234567-89ab-cdef-0123-456789abcdef/gpt-5.6-luna".to_string();
+            catalog.insert(key.clone(), make_model_entry("gpt-5.6-luna"));
+            catalog.insert("grok-4.5".into(), make_model_entry("grok-4.5"));
+            let mut cfg = config::Config::default();
+            cfg.default_model_override = Some("gpt-5.6-luna".into());
+            let (resolved, entry, _) =
+                resolve_default_model_for_startup(&cfg, &catalog, true).expect("unique slug");
+            assert_eq!(resolved, key);
+            assert_eq!(entry.info.model, "gpt-5.6-luna");
+        }
     }
 
     #[test]
