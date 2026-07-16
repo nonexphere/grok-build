@@ -13037,12 +13037,18 @@ name = "xai-grok-auth"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "chrono",
  "http 1.4.0",
  "mockito",
  "reqwest 0.12.24",
  "reqwest-middleware 0.4.2",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
  "tokio",
  "tracing",
+ "url",
+ "uuid",
 ]
 
 [[package]]
@@ -13269,6 +13275,37 @@ dependencies = [
 ]
 
 [[package]]
+name = "xai-grok-multi-auth"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "base64",
+ "blake3",
+ "chrono",
+ "dashmap",
+ "dirs 5.0.1",
+ "fs2",
+ "http 1.4.0",
+ "mockito",
+ "once_cell",
+ "parking_lot",
+ "pretty_assertions",
+ "rand 0.9.2",
+ "reqwest 0.12.24",
+ "serde",
+ "serde_json",
+ "serial_test",
+ "sha2 0.10.9",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
+ "url",
+ "uuid",
+ "webbrowser",
+ "xai-grok-auth",
+]
+
+[[package]]
 name = "xai-grok-pager"
 version = "0.1.220-alpha.4"
 dependencies = [
@@ -13337,6 +13374,7 @@ dependencies = [
  "xai-grok-config",
  "xai-grok-markdown",
  "xai-grok-mermaid",
+ "xai-grok-multi-auth",
  "xai-grok-pager-pty-harness",
  "xai-grok-pager-render",
  "xai-grok-plugin-marketplace",
@@ -13364,6 +13402,7 @@ dependencies = [
  "anyhow",
  "clap",
  "cryptify",
+ "dirs 5.0.1",
  "dunce",
  "libc",
  "obfstr",
@@ -13378,9 +13417,12 @@ dependencies = [
  "tokio-util",
  "tracing",
  "tracing-subscriber",
+ "webbrowser",
  "xai-acp-lib",
  "xai-crash-handler",
+ "xai-grok-auth",
  "xai-grok-config",
+ "xai-grok-multi-auth",
  "xai-grok-pager",
  "xai-grok-pager-minimal",
  "xai-grok-sandbox",
@@ -13727,6 +13769,7 @@ dependencies = [
  "xai-grok-mcp",
  "xai-grok-memory",
  "xai-grok-models",
+ "xai-grok-multi-auth",
  "xai-grok-paths",
  "xai-grok-plugin-marketplace",
  "xai-grok-sampler",

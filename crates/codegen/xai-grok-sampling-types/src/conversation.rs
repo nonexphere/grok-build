@@ -1295,6 +1295,33 @@ pub fn synthesized_reasoning_item(text: impl Into<String>) -> rs::ReasoningItem 
 ///   a `SummaryText` part to it (avoids introducing a phantom sibling).
 /// - Otherwise, insert a new `Reasoning(synthesized_reasoning_item(text))`
 ///   immediately before the trailing `Assistant`.
+/// When the final Responses `output` array is empty (ChatGPT Codex quirk) but
+/// stream deltas delivered assistant text, fill the trailing Assistant item
+/// so empty-response retry does not fire.
+pub fn inject_streaming_text_fallback(items: &mut Vec<ConversationItem>, text: String) {
+    let text = text.trim();
+    if text.is_empty() {
+        return;
+    }
+    if let Some(ConversationItem::Assistant(a)) = items
+        .iter_mut()
+        .rev()
+        .find(|i| matches!(i, ConversationItem::Assistant(_)))
+    {
+        if a.content.is_empty() {
+            a.content = Arc::<str>::from(text);
+        }
+        return;
+    }
+    items.push(ConversationItem::Assistant(AssistantItem {
+        content: Arc::<str>::from(text),
+        tool_calls: Vec::new(),
+        model_id: None,
+        model_fingerprint: None,
+        reasoning_effort: None,
+    }));
+}
+
 pub fn inject_streaming_reasoning_fallback(items: &mut Vec<ConversationItem>, text: String) {
     if text.is_empty() {
         return;
@@ -2181,6 +2208,94 @@ fn build_responses_input(req: &ConversationRequest) -> rs::InputParam {
         .flat_map(conversation_item_to_input_items)
         .collect();
     rs::InputParam::Items(items)
+}
+
+/// Whether `base_url` targets the ChatGPT Codex Responses backend.
+///
+/// That endpoint rejects `role: "system"` in `input` with
+/// `400 {"detail":"System messages are not allowed"}` and expects system
+/// text in the top-level `instructions` field instead.
+pub fn is_codex_responses_backend(base_url: &str) -> bool {
+    let lower = base_url.to_ascii_lowercase();
+    lower.contains("chatgpt.com") || lower.contains("/codex")
+}
+
+/// Move `role: system` (and `developer`) EasyMessages out of `input` into
+/// `instructions` for backends that forbid system roles in the input array.
+///
+/// Preserves existing `instructions` by prepending them before hoisted text.
+/// No-op when there are no system/developer input messages.
+pub fn hoist_system_messages_to_instructions(req: &mut rs::CreateResponse) {
+    let rs::InputParam::Items(items) = &mut req.input else {
+        return;
+    };
+
+    let mut system_parts: Vec<String> = Vec::new();
+    items.retain(|item| match item {
+        rs::InputItem::EasyMessage(m)
+            if matches!(m.role, rs::Role::System | rs::Role::Developer) =>
+        {
+            if let Some(text) = easy_input_content_text(&m.content) {
+                let t = text.trim();
+                if !t.is_empty() {
+                    system_parts.push(t.to_owned());
+                }
+            }
+            false
+        }
+        rs::InputItem::Item(rs::Item::Message(rs::MessageItem::Input(msg)))
+            if matches!(msg.role, rs::InputRole::System | rs::InputRole::Developer) =>
+        {
+            let text = msg
+                .content
+                .iter()
+                .filter_map(|c| match c {
+                    rs::InputContent::InputText(t) => Some(t.text.as_str()),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+            let t = text.trim();
+            if !t.is_empty() {
+                system_parts.push(t.to_owned());
+            }
+            false
+        }
+        _ => true,
+    });
+
+    if system_parts.is_empty() {
+        return;
+    }
+
+    let hoisted = system_parts.join("\n\n");
+    req.instructions = Some(match req.instructions.take() {
+        Some(existing) if !existing.trim().is_empty() => {
+            format!("{}\n\n{hoisted}", existing.trim())
+        }
+        _ => hoisted,
+    });
+}
+
+fn easy_input_content_text(content: &rs::EasyInputContent) -> Option<String> {
+    match content {
+        rs::EasyInputContent::Text(t) => Some(t.clone()),
+        rs::EasyInputContent::ContentList(parts) => {
+            let text = parts
+                .iter()
+                .filter_map(|c| match c {
+                    rs::InputContent::InputText(t) => Some(t.text.as_str()),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+            if text.is_empty() {
+                None
+            } else {
+                Some(text)
+            }
+        }
+    }
 }
 
 /// Walk a serialized Responses API request body and inject the
@@ -3571,6 +3686,96 @@ mod tests {
             panic!("Expected Items input");
         };
         assert_eq!(items.len(), 2);
+    }
+
+    #[test]
+    fn inject_streaming_text_fallback_fills_empty_assistant() {
+        let mut items = vec![ConversationItem::Assistant(AssistantItem {
+            content: Arc::<str>::from(""),
+            tool_calls: Vec::new(),
+            model_id: Some("gpt-5.6-luna".into()),
+            model_fingerprint: None,
+            reasoning_effort: None,
+        })];
+        inject_streaming_text_fallback(&mut items, "pong".into());
+        match &items[0] {
+            ConversationItem::Assistant(a) => {
+                assert_eq!(a.content.as_ref(), "pong");
+            }
+            other => panic!("expected Assistant, got {other:?}"),
+        }
+        // Non-empty content is not overwritten.
+        inject_streaming_text_fallback(&mut items, "nope".into());
+        match &items[0] {
+            ConversationItem::Assistant(a) => assert_eq!(a.content.as_ref(), "pong"),
+            _ => unreachable!(),
+        }
+    }
+
+    #[test]
+    fn inject_streaming_text_fallback_creates_assistant_when_missing() {
+        let mut items = Vec::new();
+        inject_streaming_text_fallback(&mut items, "hello".into());
+        assert_eq!(items.len(), 1);
+        match &items[0] {
+            ConversationItem::Assistant(a) => assert_eq!(a.content.as_ref(), "hello"),
+            other => panic!("expected Assistant, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn hoist_system_messages_to_instructions_for_codex() {
+        let req = ConversationRequest::from_items(vec![
+            ConversationItem::system("You are a coding agent."),
+            ConversationItem::user("ping"),
+        ])
+        .with_model("gpt-5.6-luna");
+
+        let mut responses_req: rs::CreateResponse = (&req).into();
+        // Pre-hoist: system is in input (default Responses conversion).
+        {
+            let rs::InputParam::Items(items) = &responses_req.input else {
+                panic!("Expected Items input");
+            };
+            assert_eq!(items.len(), 2);
+            assert!(responses_req.instructions.is_none());
+        }
+
+        assert!(is_codex_responses_backend(
+            "https://chatgpt.com/backend-api/codex"
+        ));
+        assert!(!is_codex_responses_backend("https://api.x.ai/v1"));
+
+        hoist_system_messages_to_instructions(&mut responses_req);
+
+        assert_eq!(
+            responses_req.instructions.as_deref(),
+            Some("You are a coding agent.")
+        );
+        let rs::InputParam::Items(items) = &responses_req.input else {
+            panic!("Expected Items input");
+        };
+        assert_eq!(items.len(), 1, "only user message should remain in input");
+        match &items[0] {
+            rs::InputItem::EasyMessage(m) => {
+                assert_eq!(m.role, rs::Role::User);
+            }
+            other => panic!("expected user EasyMessage, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn hoist_preserves_existing_instructions_and_skips_when_no_system() {
+        let req =
+            ConversationRequest::from_items(vec![ConversationItem::user("hi")]).with_model("m");
+        let mut responses_req: rs::CreateResponse = (&req).into();
+        responses_req.instructions = Some("base instructions".into());
+        hoist_system_messages_to_instructions(&mut responses_req);
+        assert_eq!(
+            responses_req.instructions.as_deref(),
+            Some("base instructions"),
+            "no system items → instructions unchanged"
+        );
     }
 
     #[test]

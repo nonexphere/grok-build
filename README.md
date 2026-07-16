@@ -126,3 +126,22 @@ Third-party and vendored code remains under its original licenses. See:
   — crate-local notice for the codex and opencode ports (license texts +
   Apache §4(b) change notice)
 - [`third_party/NOTICE`](third_party/NOTICE) — vendored Mermaid-stack index
+
+---
+
+## Fork (Goblin)
+
+This repository is a fork of `xai-org/grok-build` that adds native
+multi-provider authentication, with Codex / ChatGPT OAuth as the first
+external provider.
+
+- **Fork contract:** [`GOBLIN.md`](GOBLIN.md) — branch policy, sync
+  workflow, module layout, feature flags, and release tags.
+- **Product spec:** [`task.md`](task.md) — full architecture specification
+  (D1–D10), protocol baseline, CLI/TUI flows, and implementation plan.
+- **Protocol baseline:**
+  [`docs/architecture/multi-provider-auth/protocol-baseline.md`](docs/architecture/multi-provider-auth/protocol-baseline.md)
+- **Phase ledger:**
+  [`docs/architecture/multi-provider-auth/PROGRESS.md`](docs/architecture/multi-provider-auth/PROGRESS.md)
+
+The `main` branch tracks upstream; fork development happens on `goblin`.

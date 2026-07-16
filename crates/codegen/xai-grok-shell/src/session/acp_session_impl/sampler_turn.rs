@@ -307,6 +307,37 @@ impl SessionActor {
                 extra_headers.insert("x-compaction-at".to_string(), value.to_string());
             }
         }
+        // Resolve bearer before moving cfg / extra_headers into the struct.
+        // Multi-provider (Codex): request-time TokenManager (B1/B3). chat_state
+        // keeps the wire model slug; recover credential via ChatGPT-Account-ID.
+        #[cfg(feature = "native-multi-provider-auth")]
+        let bearer_resolver: Option<xai_grok_sampler::SharedBearerResolver> =
+            if let Some(mp) =
+                crate::auth::multi_provider_resolve::bearer_resolver_for_sampling_hints(
+                    cfg.model.as_str(),
+                    &cfg.base_url,
+                    &extra_headers,
+                )
+            {
+                Some(mp)
+            } else if use_bearer_resolver {
+                self.auth_manager.as_ref().map(|am| {
+                    std::sync::Arc::new(AuthManagerBearerResolver(am.clone()))
+                        as xai_grok_sampler::SharedBearerResolver
+                })
+            } else {
+                None
+            };
+        #[cfg(not(feature = "native-multi-provider-auth"))]
+        let bearer_resolver: Option<xai_grok_sampler::SharedBearerResolver> =
+            if use_bearer_resolver {
+                self.auth_manager.as_ref().map(|am| {
+                    std::sync::Arc::new(AuthManagerBearerResolver(am.clone()))
+                        as xai_grok_sampler::SharedBearerResolver
+                })
+            } else {
+                None
+            };
         SamplingConfig {
             api_key: creds.api_key,
             base_url: cfg.base_url,
@@ -336,15 +367,7 @@ impl SessionActor {
                 .map(|a| a.user_id),
             origin_client: self.origin_client.clone(),
             attribution_callback: self.attribution_callback.clone(),
-            bearer_resolver: if use_bearer_resolver {
-                self.auth_manager
-                    .as_ref()
-                    .map(|am| -> xai_grok_sampler::SharedBearerResolver {
-                        std::sync::Arc::new(AuthManagerBearerResolver(am.clone()))
-                    })
-            } else {
-                None
-            },
+            bearer_resolver,
             supports_backend_search: self.supports_backend_search.get(),
             compactions_remaining: self.compactions_remaining.get(),
             compaction_at_tokens: self.compaction_at_tokens.get(),
@@ -642,16 +665,28 @@ impl SessionActor {
             .data(detailed_message);
             return Err(acp_err);
         }
+        let sampling_cfg_for_auth = self.chat_state_handle.get_sampling_config().await;
+        let (model_id_for_auth, base_url_for_auth, extra_headers_for_auth) = sampling_cfg_for_auth
+            .map(|c| (c.model, c.base_url, c.extra_headers))
+            .unwrap_or_default();
+
+        // Multi-provider (Codex) OAuth: generation-aware TokenManager recovery
+        // even when the model looks like BYOK (static-api-key gate would skip).
+        #[cfg(feature = "native-multi-provider-auth")]
+        let multi_provider_auth_401 = matches!(error.kind, SamplingErrorKind::Auth)
+            && crate::auth::multi_provider_resolve::credential_from_sampling_hints(
+                &model_id_for_auth,
+                &base_url_for_auth,
+                &extra_headers_for_auth,
+            )
+            .is_some();
+        #[cfg(not(feature = "native-multi-provider-auth"))]
+        let multi_provider_auth_401 = false;
+
         let auth_recovery_eligible = matches!(error.kind, SamplingErrorKind::Auth) && {
-            let (model_id, base_url) = self
-                .chat_state_handle
-                .get_sampling_config()
-                .await
-                .map(|c| (c.model, c.base_url))
-                .unwrap_or_default();
-            let gate = self.auth_gate(&model_id, &base_url);
-            let eligible = gate.active();
-            self.log_auth_gate_unknown("handle_sampling_failure", gate, &base_url);
+            let gate = self.auth_gate(&model_id_for_auth, &base_url_for_auth);
+            let eligible = gate.active() || multi_provider_auth_401;
+            self.log_auth_gate_unknown("handle_sampling_failure", gate, &base_url_for_auth);
             if !eligible {
                 tracing::warn!(
                     session_id = % self.session_info.id.0, is_session_based = gate
@@ -708,7 +743,36 @@ impl SessionActor {
                 }
             }
         }
-        if auth_recovery_eligible && let Some(ref am) = self.auth_manager {
+        // Prefer multi-provider TokenManager recovery when the session is bound
+        // to a Codex credential (B1/B3 production composition).
+        #[cfg(feature = "native-multi-provider-auth")]
+        if auth_recovery_eligible && multi_provider_auth_401 {
+            if crate::auth::multi_provider_resolve::try_recover_unauthorized_for_sampling(
+                &model_id_for_auth,
+                &base_url_for_auth,
+                &extra_headers_for_auth,
+            ) {
+                tracing::info!(
+                    session_id = % self.session_info.id.0,
+                    "auth recovery: multi-provider 401, recovered, retrying once"
+                );
+                xai_grok_telemetry::unified_log::info(
+                    "auth recovery: multi-provider 401, recovered, retrying once",
+                    Some(self.session_info.id.0.as_ref()),
+                    None,
+                );
+                self.prepare_sampler_for_turn().await;
+                // Distinct outcome so the turn loop does **not** use the
+                // 3-step xAI AuthRetrySchedule (GATE1 / ACTION-003).
+                return Ok(SamplerFailureRecovery::RefreshMultiProviderAuthOnce);
+            }
+            tracing::warn!(
+                session_id = % self.session_info.id.0,
+                "auth recovery: multi-provider 401, refresh failed"
+            );
+        }
+
+        if auth_recovery_eligible && !multi_provider_auth_401 && let Some(ref am) = self.auth_manager {
             if am
                 .try_recover_unauthorized(crate::auth::recovery::RecoverySource::Turn)
                 .await
@@ -907,6 +971,9 @@ impl SessionActor {
                     }
                     SamplerFailureRecovery::RefreshAuthAndResubmit => {
                         Ok(SamplerTurnOutcome::RefreshAuthAndResubmit)
+                    }
+                    SamplerFailureRecovery::RefreshMultiProviderAuthOnce => {
+                        Ok(SamplerTurnOutcome::RefreshMultiProviderAuthOnce)
                     }
                 }
             }

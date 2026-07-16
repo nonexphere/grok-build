@@ -3289,14 +3289,18 @@ pub fn default_model_entries(endpoints: &EndpointsConfig) -> IndexMap<String, Mo
         .collect()
 }
 /// Resolve a model against the available model map.
-/// Checks the map key (id) first, then falls back to a slug scan.
+/// Checks the map key (id) first, then a slug scan via
+/// [`crate::agent::models::resolve_catalog_key_for_slug`] (multi-provider
+/// short slugs are unambiguous only when a single credential matches).
 pub fn find_model_by_id<'a>(
     models: &'a IndexMap<String, ModelEntry>,
     model_id: &str,
 ) -> Option<&'a ModelEntry> {
-    models
-        .get(model_id)
-        .or_else(|| models.values().find(|m| m.model == model_id))
+    if let Some(entry) = models.get(model_id) {
+        return Some(entry);
+    }
+    let key = crate::agent::models::resolve_catalog_key_for_slug(models, model_id)?;
+    models.get(&key)
 }
 /// Whether the EFFECTIVE Auto-mode classifier model supports reasoning effort:
 /// the model actually routed to (`aux_model` when the aux sampler resolved) else
@@ -3897,14 +3901,27 @@ impl ModelEntry {
     /// The model's own (BYOK) credential: a non-empty `api_key`, else the first
     /// set, non-empty `env_key` value. `None` means the model has no usable own
     /// credential and resolution should fall through to the session / global key.
+    ///
+    /// Multi-provider catalog entries (`codex/{credential_id}/…`) deliberately
+    /// leave `api_key` empty; their tokens are resolved at request time. Call
+    /// [`Self::has_own_credentials`] / multi-provider resolvers for those.
     fn own_credential(&self) -> Option<String> {
         first_own_credential(self.api_key.as_deref(), self.env_key.as_ref())
     }
-    /// `true` when the model has a non-empty `api_key` or an `env_key` that
-    /// resolves to a non-empty value.
+    /// `true` when the model has a non-empty `api_key`, a resolving `env_key`,
+    /// or a multi-provider credential-scoped catalog binding.
     /// Probes `std::env::var` at call time — result is not stable across env changes.
     pub fn has_own_credentials(&self) -> bool {
-        self.own_credential().is_some()
+        if self.own_credential().is_some() {
+            return true;
+        }
+        #[cfg(feature = "native-multi-provider-auth")]
+        {
+            if crate::auth::multi_provider_resolve::binding_from_model_entry(self).is_some() {
+                return true;
+            }
+        }
+        false
     }
 }
 impl std::ops::Deref for ModelEntry {
@@ -4284,6 +4301,16 @@ pub fn resolve_credentials(model: &ModelEntry, session_key: Option<&str>) -> Res
             info.base_url.clone(),
             xai_chat_state::AuthType::ApiKey,
         )
+    } else if multi_provider_binding_present(model) {
+        // Multi-provider OAuth (ACTION-001 / B1): never put an access token in
+        // ResolvedCredentials.api_key — that field is written into chat_state
+        // Credentials and can end up in session restore. Auth is only via
+        // BearerResolver + TokenManager at request time.
+        (
+            None,
+            info.base_url.clone(),
+            xai_chat_state::AuthType::ApiKey,
+        )
     } else if let Some(key) = session_key {
         (
             Some(key.to_owned()),
@@ -4322,6 +4349,16 @@ pub fn resolve_credentials(model: &ModelEntry, session_key: Option<&str>) -> Res
         auth_type,
         auth_scheme,
     }
+}
+
+#[cfg(feature = "native-multi-provider-auth")]
+fn multi_provider_binding_present(model: &ModelEntry) -> bool {
+    crate::auth::multi_provider_resolve::binding_from_model_entry(model).is_some()
+}
+
+#[cfg(not(feature = "native-multi-provider-auth"))]
+fn multi_provider_binding_present(_model: &ModelEntry) -> bool {
+    false
 }
 /// `disable_api_key_auth` at the credential seam: swap a first-party xAI API
 /// key for the IdP session (absent => request fails => forces login). BYOK
@@ -4608,6 +4645,12 @@ pub fn sampling_config_for_model(
         &credentials.base_url,
     );
     let api_backend = info.api_backend.clone();
+    // Multi-provider: request-time token resolution (not a static OAuth snapshot).
+    #[cfg(feature = "native-multi-provider-auth")]
+    let bearer_resolver =
+        crate::auth::multi_provider_resolve::bearer_resolver_for_model_entry(model);
+    #[cfg(not(feature = "native-multi-provider-auth"))]
+    let bearer_resolver = None;
     SamplerConfig {
         api_key: credentials.api_key,
         model: model_name,
@@ -4630,7 +4673,7 @@ pub fn sampling_config_for_model(
         user_id,
         origin_client: None,
         attribution_callback: None,
-        bearer_resolver: None,
+        bearer_resolver,
         supports_backend_search: info.supports_backend_search,
         compactions_remaining: info.compactions_remaining,
         compaction_at_tokens: info.compaction_at_tokens,

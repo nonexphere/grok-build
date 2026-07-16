@@ -7,14 +7,37 @@ description = "Auth dependency-inversion seam: HttpAuth + AuthCredentialProvider
 authors = ["xAI"]
 
 [features]
+# Default features for the goblin fork: the multi-provider control plane is
+# always available in this fork so shell and tests can use it without passing
+# `--features` explicitly. Upstream keeps this off by default.
+default = ["native-multi-provider-auth"]
 middleware = ["dep:reqwest-middleware", "dep:http"]
+# Multi-provider control plane (fork goblin). Adds the `AuthProvider` trait,
+# `ProviderRegistry`, credential store traits, and supporting types defined
+# in task.md Appendix A. Does not alter the existing low-level
+# `AuthCredentialProvider` HTTP seam.
+native-multi-provider-auth = [
+    "dep:serde",
+    "dep:chrono",
+    "dep:uuid",
+    "dep:thiserror",
+    "dep:url",
+    "dep:http",
+    "dep:serde_json",
+]
 
 [dependencies]
 async-trait = { workspace = true }
+chrono = { workspace = true, optional = true, features = ["serde", "clock"] }
 http = { workspace = true, optional = true }
 reqwest = { workspace = true }
 reqwest-middleware = { workspace = true, optional = true }
+serde = { workspace = true, optional = true }
+serde_json = { workspace = true, optional = true }
+thiserror = { workspace = true, optional = true }
 tracing = { workspace = true }
+url = { workspace = true, optional = true }
+uuid = { workspace = true, optional = true }
 
 [dev-dependencies]
 mockito = { workspace = true }

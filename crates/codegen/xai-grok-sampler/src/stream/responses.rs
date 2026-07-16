@@ -121,6 +121,10 @@ pub fn stream_responses<'a>(
         let mut message_chunk_count: u64 = 0;
         let mut first_token_emitted = false;
         let mut reasoning_acc = String::new();
+        // Codex ChatGPT leaves `response.completed.output` empty even after
+        // streaming text; recover from deltas / output_item.done.
+        let mut text_acc = String::new();
+        let mut streamed_output_items: Vec<rs::OutputItem> = Vec::new();
         let mut last_content_chunk_at = Instant::now();
 
         // Maps Responses API `output_index` to our tool-only `tool_index`.
@@ -194,12 +198,20 @@ pub fn stream_responses<'a>(
                         chunk_timestamps.push(Instant::now());
                         chunk_index += 1;
                         message_chunk_count += 1;
+                        text_acc.push_str(&delta);
                         yield SamplingEvent::ChannelToken {
                             request_id: request_id.clone(),
                             channel: SamplingChannel::Text,
                             text: delta,
                             chunk_index,
                         };
+                    }
+                }
+
+                // Full text for a content part (Codex emits this; completed.output may still be []).
+                ResponseStreamEvent::ResponseOutputTextDone(text_done) => {
+                    if text_acc.is_empty() && !text_done.text.is_empty() {
+                        text_acc = text_done.text;
                     }
                 }
 
@@ -346,9 +358,15 @@ pub fn stream_responses<'a>(
                 // OutputItemDone carries the full result for backend tools.
                 // For WebSearchCall this includes the query and source URLs.
                 // For CustomToolCall this includes x_search results.
+                // Codex also completes Message/Reasoning here while leaving
+                // `response.completed.output` empty — keep a copy for recovery.
                 ResponseStreamEvent::ResponseOutputItemDone(done_event) => {
                     match &done_event.item {
+                        rs::OutputItem::Message(_) | rs::OutputItem::Reasoning(_) => {
+                            streamed_output_items.push(done_event.item.clone());
+                        }
                         rs::OutputItem::WebSearchCall(ws) => {
+                            streamed_output_items.push(done_event.item.clone());
                             let result = serde_json::to_value(ws).ok();
                             yield SamplingEvent::BackendToolCallCompleted {
                                 request_id: request_id.clone(),
@@ -363,6 +381,7 @@ pub fn stream_responses<'a>(
                         // the specific sub-type is in the serialized result payload
                         // and extracted by the pager from raw_output.name.
                         rs::OutputItem::CustomToolCall(ct) => {
+                            streamed_output_items.push(done_event.item.clone());
                             let result = serde_json::to_value(ct).ok();
                             yield SamplingEvent::BackendToolCallCompleted {
                                 request_id: request_id.clone(),
@@ -457,12 +476,25 @@ pub fn stream_responses<'a>(
 
         let status = response.status.clone();
 
+        // ChatGPT Codex Responses: `response.completed` often has `output: []`
+        // even after streaming a full Message via `output_item.done`. Rebuild
+        // output from streamed items so we do not empty-retry forever.
+        if response.output.is_empty() && !streamed_output_items.is_empty() {
+            tracing::info!(
+                request_id = %request_id,
+                recovered = streamed_output_items.len(),
+                "responses: completed.output empty; recovering from output_item.done"
+            );
+            response.output = streamed_output_items;
+        }
+
         // Convert to ConversationItem(s); patch in accumulated reasoning
         // text as a fallback when the final response lacks `content` /
         // `summary` (the streaming deltas may have arrived out of band).
         // Splice policy lives in `inject_streaming_reasoning_fallback`.
         let mut items = xai_grok_sampling_types::response_to_conversation_items(response);
         xai_grok_sampling_types::inject_streaming_reasoning_fallback(&mut items, reasoning_acc);
+        xai_grok_sampling_types::inject_streaming_text_fallback(&mut items, text_acc);
 
         let has_tool_calls = items.iter().any(|i| match i {
             ConversationItem::Assistant(a) => !a.tool_calls.is_empty(),
