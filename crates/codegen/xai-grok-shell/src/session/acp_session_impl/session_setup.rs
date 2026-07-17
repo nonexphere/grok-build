@@ -405,7 +405,8 @@ impl SessionActor {
                 None,
                 crate::auth::attribution::ConsumerKind::IdleResumeModelRefresh,
                 "",
-                creds.api_key.as_deref(),
+                creds.api_key.is_some(),
+                None,
             );
         }
         let result = if !response.status().is_success() {

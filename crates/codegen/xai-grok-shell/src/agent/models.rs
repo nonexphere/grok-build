@@ -2151,6 +2151,12 @@ pub fn merge_codex_report_into_catalog(
             info.extra_headers
                 .insert("ChatGPT-Account-ID".to_string(), account_id.clone());
             // Stable binding for request auth without async account scan.
+            // Provider id is internal (never on the wire) and lets ACP/cache
+            // derive catalog keys from sampling config alone.
+            info.extra_headers.insert(
+                "x-goblin-provider-id".to_string(),
+                "codex".to_string(),
+            );
             info.extra_headers.insert(
                 "x-goblin-credential-id".to_string(),
                 acct.credential_id.to_string(),
@@ -3985,7 +3991,7 @@ mod tests {
                 .expect("single multi-provider slug must resolve");
             assert_eq!(resolved, key);
             assert!(
-                find_model_by_id(&models, "gpt-5.6-luna").is_some(),
+                crate::agent::config::find_model_by_id(&models, "gpt-5.6-luna").is_some(),
                 "find_model_by_id must use the same resolver"
             );
         }

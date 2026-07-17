@@ -10,10 +10,10 @@
 //! (no shell types, no logging crate, no auth-manager dependency). The
 //! caller wires an implementation of [`Auth401AttributionCallback`]
 //! into [`crate::SamplerConfig::attribution_callback`]; the sampler
-//! invokes the callback at each UNAUTHORIZED arm with the bearer that
-//! was actually sent on the wire. The implementation is free to join
-//! the bearer with whatever live credential source it owns and emit
-//! the attribution however it wants.
+//! invokes the callback at each UNAUTHORIZED arm with **non-secret**
+//! metadata only (`has_sent_auth`, `attempt_id`). The implementation
+//! joins that with its own opaque credential identity and emits
+//! attribution without token or prefix material.
 //!
 //! When the callback is `None` (the default), the 401 sites are silent
 //! and return the same `SamplingError::Auth` they would otherwise.
@@ -68,25 +68,15 @@ impl SamplingConsumer {
     }
 }
 
-/// Maximum prefix length the sampler shares with attribution
-/// callbacks across the crate boundary. Mirrors
-/// `xai_grok_shell::auth::token_suffix` (which truncates to 12 chars
-/// before any sink) so the two crates stay in lock-step on the
-/// "bearers leaving the sampler are 12-char prefixes only" invariant.
-///
-/// The cross-crate boundary is the only place this constant is
-/// load-bearing -- changing it requires updating `token_suffix` in
-/// `xai-grok-shell/src/auth/manager.rs` to match, otherwise the
-/// shell's local-log payload and the sampler's callback argument
-/// will disagree on prefix length.
+/// Historical prefix length constant. 401 attribution no longer passes
+/// bearer material across the crate boundary; kept only so external
+/// references compile. Prefer never logging token material at all.
 pub const SENT_BEARER_PREFIX_LEN: usize = 12;
 /// Hook invoked by [`crate::SamplingClient`] at every 401 response site.
 ///
-/// Implementations are responsible for joining `sent_bearer_prefix`
-/// with whatever live credential source they own (e.g. an auth
-/// manager holding the most-recently-refreshed token) and emitting
-/// whatever attribution event makes sense for their observability
-/// stack.
+/// Implementations join non-secret request metadata with their own
+/// opaque credential identity (provider id, generation, attempt_id)
+/// and emit attribution without any token or prefix material.
 ///
 /// Implementations must be cheap to invoke and must not block. They
 /// run inside the request's response-handling path and any latency
@@ -100,20 +90,19 @@ pub const SENT_BEARER_PREFIX_LEN: usize = 12;
 pub trait Auth401AttributionCallback: Send + Sync + std::fmt::Debug {
     /// Record a 401 attribution event for one logical 401 response.
     ///
-    /// `sent_bearer_prefix` is the **first
-    /// [`SENT_BEARER_PREFIX_LEN`] characters** of the bearer that
-    /// was actually sent on the wire. The sampler extracts the
-    /// bearer from the `Authorization` header (or `x-api-key` for
-    /// Anthropic Messages API backends) and truncates it to the prefix
-    /// length **before crossing this trait boundary** -- the full
-    /// bearer never leaves [`crate::SamplingClient`]. This is the
-    /// scrub-at-the-boundary invariant: even a misbehaving callback
-    /// implementation that logs `sent_bearer_prefix` directly leaks
-    /// only the prefix, never the full credential.
+    /// **No credential material** (full token or prefix/suffix) is passed.
+    /// Callers may only use non-secret metadata: whether a bearer was present,
+    /// multi-provider `attempt_id`, and later opaque generation/fingerprint
+    /// fields owned by the shell AuthManager.
     ///
-    /// `None` indicates the request had no bearer header at all
-    /// (distinct from "had a bearer that turned out to be stale").
-    fn record_401(&self, consumer: SamplingConsumer, sent_bearer_prefix: Option<&str>);
+    /// `has_sent_auth` is true when the request carried Authorization/x-api-key.
+    /// `attempt_id` is the multi-provider stamp id for the failing request when known.
+    fn record_401(
+        &self,
+        consumer: SamplingConsumer,
+        has_sent_auth: bool,
+        attempt_id: Option<u64>,
+    );
 }
 
 /// Shared, cheap-to-clone alias for the attribution callback.

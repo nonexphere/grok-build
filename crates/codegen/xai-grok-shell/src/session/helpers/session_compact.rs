@@ -779,7 +779,7 @@ mod classify_tests {
     #[test]
     fn sampling_non_api_variants_classify_correctly() {
         assert!(is_det(&classify_sampling_error(SamplingError::auth(
-            "expired".into()
+            "expired"
         ))));
         assert!(is_det(&classify_sampling_error(
             SamplingError::InvalidConfiguration("missing key")

@@ -1,6 +1,6 @@
 # Goblin multi-provider / Codex — open-source release inventory
 
-**Status:** Codex offline production path **PASS** + **live PC8 prompt-cache hit proven** via `goblin` headless multi-turn (2026-07-17). Multi-provider 1.0 R-items still open.
+**Status:** Codex offline production path **PASS**. Live PC8 is **PARTIAL** (hit observed; full gate pack incomplete). Multi-provider 1.0 R-items still open.
 **Last updated:** 2026-07-17
 **Goal docs:** `CODEX_GOAL_PRODUCTION.md`, `CODEX_100_PERCENT_GOAL.md`, `CODEX_AUDIT_REMEDIATION_PLAN.md`
 **Validation:** `.llms/reviews/codex-validation-relaunch-2026-07-17.md` + implementer scratch
@@ -44,11 +44,11 @@
 | **AUD-011** capability/binding Codex gate | **PASS** | `classify_codex_backend_prefers_binding_over_url`; sampler `is_codex_backend()` + `x-goblin-provider-id`; hoist non-text policy `SYSTEM_HOIST_NON_TEXT_POLICY` / `hoist_counts_non_text_system_parts_dropped` |
 | **PC10** compaction prompt_cache_key | **PASS** | `compaction_prompt_cache_key_policy_codex_only_opaque`; `session_compact` Responses path sets `prompt_cache_key_for_compaction` |
 | **P4** title routing | **PASS** | `title_inference_blocks_xai_when_codex_pinned`; `generate_session_summary` skips LLM when Codex pin + xAI base_url |
-| **PC8 live cache** | **PASS (live, 2026-07-17)** | turn1 cached=0, turn2 cached=**17920**; durable redacted note: [`.llms/evidence/pc8-live-2026-07-17.md`](.llms/evidence/pc8-live-2026-07-17.md) |
+| **PC8 live cache** | **PARTIAL — live hit observed** | turn1 cached=0, turn2 cached=**17920** in anecdotal note [`.llms/evidence/pc8-live-2026-07-17.md`](.llms/evidence/pc8-live-2026-07-17.md). **Missing full gate:** negative control, session/request correlation IDs, complete SSE/usage artifact pack, third-turn stability, reproducible command under credentials. Do **not** claim “cache complete / PC8 full PASS”. |
 
-Prompt cache mental model: **backend owns cache**; client passes stable prefix + optional opaque affinity key + observes `cache_read_input_tokens` / `cached_tokens`. Live multi-turn hit for Codex luna was proven once (2026-07-17) and recorded in `.llms/evidence/`.
+Prompt cache mental model: **backend owns cache**; client passes stable prefix + optional opaque affinity key (account-scoped when provider+credential known) + observes `cache_read_input_tokens` / `cached_tokens`. A one-shot live multi-turn hit for Codex luna was observed (2026-07-17) but is **not** the full PC8 evidence pack.
 
-**Production-ready claim scope:** single-machine offline Codex path (dual-manager flock refresh, journal, wire, pin, catalog, capability gate, compaction key, title guard) **plus** the one-shot live PC8 evidence above. **Not** claimed: multi-host refresh, dual OS-process spawn test, multi-provider 1.0 (keyring/xAI/D10), continuous CI live cache without credentials.
+**Production-ready claim scope:** single-machine offline Codex path (dual-manager flock refresh, journal, wire, pin, catalog, capability gate, compaction key, title guard). **Not** claimed: full PC8 cache gate, multi-host refresh, dual OS-process spawn test, multi-provider 1.0 (keyring/xAI/D10), continuous CI live cache without credentials.
 
 ---
 
@@ -56,7 +56,7 @@ Prompt cache mental model: **backend owns cache**; client passes stable prefix +
 
 | ID | Gap | Class |
 |----|-----|--------|
-| **AUD-012 PC8** | Live multi-turn cache hit | **CLOSED (PASS)** — see offline matrix + `pc8-live.md` |
+| **AUD-012 PC8** | Live multi-turn cache hit full gate | **PARTIAL** — hit observed; full pack + negative control still open |
 | **True multi-OS-process spawn test** | Two OS processes (not only dual TokenManager + flock) | **DEFERRED** — multi-manager+flock proven |
 | **R1–R6** | xAI adapter, keyring, composition root, subagent isolation, D10 product | **1.0 multi-provider** (out of offline Codex path) |
 | **P1–P3, P5–P7** | TUI login polish, accounts CLI, /model, user docs, CI live job | **Product UX** (non-blocking offline path) |
@@ -66,7 +66,7 @@ Prompt cache mental model: **backend owns cache**; client passes stable prefix +
 ## Suggested README blurb
 
 > Goblin includes a multi-provider Codex path: credential-scoped models, request-time OAuth bearer with attempt-bound stamps and dual-manager refresh flock, OpenResponses phase/commentary + function-call wire siblings, capability/binding-aware Codex gate, opaque `prompt_cache_key` (incl. compaction), and per-credential model catalog cache.
-> One-shot **live prompt-cache hit** evidence is in `.llms/evidence/pc8-live-2026-07-17.md` (not a standing CI job). Login is fail-closed / opt-in (D10). See `TO_RELEASE.md`.
+> One-shot **live prompt-cache hit (PARTIAL)** is recorded in `.llms/evidence/pc8-live-2026-07-17.md` (anecdotal; not full PC8 gate, not a standing CI job). Login is fail-closed / opt-in (D10). See `TO_RELEASE.md`.
 
 ---
 

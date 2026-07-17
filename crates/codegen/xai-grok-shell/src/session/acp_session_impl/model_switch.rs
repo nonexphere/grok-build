@@ -10,7 +10,10 @@ impl SessionActor {
         skip_prompt_rewrite: bool,
         auto_compact_threshold_percent: u8,
     ) -> Result<acp::ModelId, acp::Error> {
-        let model_id = acp::ModelId::new(sampling_config.model.clone());
+        // ACP / persistence identity is the **catalog key** when multi-provider
+        // binding headers are present. Wire sampling still uses the routing slug
+        // in `sampling_config.model` (see prepare_sampling_config_for_model).
+        let model_id = acp_model_id_for_session(&sampling_config);
         let new_context_window = self.compaction.context_window_override.unwrap_or_else(|| {
             std::num::NonZeroU64::new(sampling_config.context_window).unwrap_or_else(|| {
                 std::num::NonZeroU64::new(DEFAULT_CONTEXT_WINDOW)
@@ -318,5 +321,73 @@ impl SessionActor {
                 "handle_replace_system_prompt: head already matches, no-op"
             );
         }
+    }
+}
+
+/// ACP / summary model id: catalog key when multi-provider binding is present,
+/// otherwise the wire slug. Wire `sampling_config.model` stays the routing slug.
+fn acp_model_id_for_session(sampling_config: &xai_grok_sampler::SamplerConfig) -> acp::ModelId {
+    let wire = sampling_config.model.as_str();
+    #[cfg(feature = "native-multi-provider-auth")]
+    {
+        // Already a multi-provider catalog key — keep it.
+        if xai_grok_multi_auth::provider_model_key::parse_provider_model_key(wire).is_some() {
+            return acp::ModelId::new(wire.to_string());
+        }
+    }
+    let provider = sampling_config
+        .extra_headers
+        .iter()
+        .find(|(k, _)| k.eq_ignore_ascii_case("x-goblin-provider-id"))
+        .map(|(_, v)| v.as_str());
+    let credential = sampling_config
+        .extra_headers
+        .iter()
+        .find(|(k, _)| k.eq_ignore_ascii_case("x-goblin-credential-id"))
+        .map(|(_, v)| v.as_str());
+    match (provider, credential) {
+        (Some(p), Some(c)) if !p.is_empty() && !c.is_empty() => {
+            // Format matches format_provider_model_key; credential is UUID string.
+            acp::ModelId::new(format!("{p}/{c}/{wire}"))
+        }
+        _ => acp::ModelId::new(wire.to_string()),
+    }
+}
+
+#[cfg(test)]
+mod acp_model_id_tests {
+    use super::acp_model_id_for_session;
+    use indexmap::IndexMap;
+    use xai_grok_sampler::SamplerConfig;
+
+    fn cfg(model: &str, headers: &[(&str, &str)]) -> SamplerConfig {
+        let mut extra = IndexMap::new();
+        for (k, v) in headers {
+            extra.insert((*k).to_string(), (*v).to_string());
+        }
+        SamplerConfig {
+            model: model.into(),
+            extra_headers: extra,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn wire_slug_plus_binding_headers_becomes_catalog_key() {
+        let cred = "11111111-1111-1111-1111-111111111111";
+        let id = acp_model_id_for_session(&cfg(
+            "gpt-5.6-luna",
+            &[
+                ("x-goblin-provider-id", "codex"),
+                ("x-goblin-credential-id", cred),
+            ],
+        ));
+        assert_eq!(id.0.as_ref(), format!("codex/{cred}/gpt-5.6-luna"));
+    }
+
+    #[test]
+    fn plain_wire_without_binding_stays_slug() {
+        let id = acp_model_id_for_session(&cfg("grok-4.5", &[]));
+        assert_eq!(id.0.as_ref(), "grok-4.5");
     }
 }

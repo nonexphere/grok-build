@@ -233,12 +233,27 @@ hypothetical style preferences.
   short slug as ACP current makes the pager drop it on catalog refresh. Canonicalize
   catalog keys for ACP/UI; keep wire slugs in sampling config; rematch unique short
   slugs before falling back to a default model.
-- **FIFO request stamp:** 401 recovery must use the attempt id of the failing request
-  (`take_attempt(id)`), not oldest-FIFO or last-wins under concurrent out-of-order 401s.
-  Bearer resolve must return token + attempt id through HTTP send into the error.
-- **Secret-prefix telemetry:** never log Authorization / API-key values or truncated
-  prefixes (4/8/12/20 chars). Log presence, provider id, opaque credential id, attempt
-  id only. Search sinks for full canary and common prefix/suffix lengths.
+- **FIFO / last-wins request stamp:** 401 recovery must use the attempt id of the
+  failing request (`take_attempt(id)`), not oldest-FIFO or a client-shared
+  `AtomicU64` last-wins field under concurrent out-of-order 401s. Attempt id is
+  **request/future-owned** from `resolve_for_request` through `post()` into
+  `SamplingError::Auth { attempt_id }`. Multi-provider 401 without attempt id is
+  an invariant breach — do not silently FIFO. Composition test required: two
+  concurrent HTTP 401s on the same client, inverted response order, each error
+  carries its own id (ledger-only tests are insufficient).
+- **Secret-prefix telemetry:** never log Authorization / API-key values or
+  truncated prefixes (4/8/12/20 chars) on **any** sink: success path, invalid
+  header construction, 401 attribution (unified log + OTel), Debug, tracing.
+  Log presence (`has_sent_auth` / `has_api_key`), provider id, opaque credential
+  id, attempt id, mint/expiry metadata only. Canary search for full token and
+  prefixes/suffixes of length 4/8/12/20 must return zero hits.
+- **Harness system prompt identity:** `system_prompt_label` is the **harness**
+  name (`Grok Build`), never a model marketing name (`Grok 4.5`) or wire slug.
+  Catalog/remote `system_prompt_label` must not feed the template. Env /
+  user TOML may override. UI corner and wire model remain separate.
+- **Account-scoped prompt_cache_key:** hash material includes provider +
+  credential (opaque) + session identity; wire value is `gpc_<hex>` only.
+  Same session + different credential → different key.
 - **Best-effort success lie:** logout `remote_revoked` is true only after confirmed
   remote revoke; local delete is a separate outcome; surface typed warnings on fail.
 - **Fail-loud panic:** production conversion of history/wire must return typed errors
@@ -264,11 +279,17 @@ Complete every applicable item in
   the failing attempt id, not FIFO; `resolve_for_request` / error carry attempt id;
 - **Model identity matrix (P0):** catalog key, wire slug, persisted id, ACP current id,
   and display name stay correlated through select → request → persist → restore →
-  catalog refresh → UI (short slug rematch allowed only when unique);
+  catalog refresh → UI. Shell **publishes catalog key** as ACP current when unique;
+  short-slug rematch in pager is compat-only for old sessions;
 - **UI/wire consistency (P0):** picker, status bar / session info, headless JSON, and
   wire request model agree semantically for the active session;
+- **Harness label (P0):** system prompt identity is `Grok Build` (or user/env override),
+  not catalog model marketing names;
 - **Secret substring redaction (P0):** canary search for full token and prefixes/suffixes
-  of length 4/8/12/20 in log/telemetry sinks returns zero hits;
+  of length 4/8/12/20 in log/telemetry sinks returns zero hits (success, invalid header,
+  401 attribution);
+- **Prompt cache binding (P0):** same session + different credential → different
+  opaque `prompt_cache_key`; logs use redacted label only;
 - two accounts with the same model remain independently selectable;
 - parent/subagent mixed-provider and mixed-account requests are concurrent and isolated;
 - storage survives injected failures without token-generation inconsistency;

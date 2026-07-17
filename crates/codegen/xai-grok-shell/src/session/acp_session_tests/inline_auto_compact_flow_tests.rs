@@ -1259,6 +1259,7 @@ async fn test_e2e_idle_resume_refreshes_model_metadata() {
                 rebuild_spec: crate::session::agent_rebuild::test_rebuild_spec_default(),
                 auth_method_id: test_auth_method_id("cached_token"),
                 model_auth_facts: std::cell::RefCell::new(None),
+                multi_provider_auth: parking_lot::Mutex::new(None),
                 auth_manager: {
                     let dir = tempfile::tempdir().unwrap();
                     let mgr = std::sync::Arc::new(crate::auth::AuthManager::new(

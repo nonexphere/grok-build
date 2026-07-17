@@ -2296,17 +2296,51 @@ pub fn extract_phase_from_output_item_json(
 /// - Never embeds raw session/credential ids (AUD-004).
 /// - Returns `None` when identity is missing — **no** global `anonymous` key.
 /// - Same inputs always yield the same key (stable across turns).
+///
+/// Prefer [`derive_prompt_cache_key_with_binding`] when provider + credential
+/// are known so affinity is account-scoped (PC6 / remediation 1.5).
 pub fn derive_prompt_cache_key(
     session_id: Option<&str>,
     conversation_id: Option<&str>,
     fallback_seed: Option<&str>,
 ) -> Option<String> {
-    derive_prompt_cache_key_with_namespace("goblin", session_id, conversation_id, fallback_seed)
+    derive_prompt_cache_key_with_binding(
+        "goblin",
+        None,
+        None,
+        session_id,
+        conversation_id,
+        fallback_seed,
+    )
 }
 
-/// Like [`derive_prompt_cache_key`] with an explicit namespace (e.g. provider id).
+/// Like [`derive_prompt_cache_key`] with an explicit namespace (e.g. product id).
 pub fn derive_prompt_cache_key_with_namespace(
     namespace: &str,
+    session_id: Option<&str>,
+    conversation_id: Option<&str>,
+    fallback_seed: Option<&str>,
+) -> Option<String> {
+    derive_prompt_cache_key_with_binding(
+        namespace,
+        None,
+        None,
+        session_id,
+        conversation_id,
+        fallback_seed,
+    )
+}
+
+/// Account-scoped opaque key: hashes
+/// `(namespace, provider_id, credential_id, session, conv, seed)`.
+///
+/// Provider/credential are included in the **hash material only** — never
+/// written in cleartext on the wire. Missing provider/credential still
+/// produces a key when session/conv/seed is present (backward compatible).
+pub fn derive_prompt_cache_key_with_binding(
+    namespace: &str,
+    provider_id: Option<&str>,
+    credential_id: Option<&str>,
     session_id: Option<&str>,
     conversation_id: Option<&str>,
     fallback_seed: Option<&str>,
@@ -2314,11 +2348,25 @@ pub fn derive_prompt_cache_key_with_namespace(
     let session = session_id.map(str::trim).filter(|s| !s.is_empty());
     let conv = conversation_id.map(str::trim).filter(|c| !c.is_empty());
     let seed = fallback_seed.map(str::trim).filter(|f| !f.is_empty());
-    // Prefer session, then conv, then seed. Require at least one.
+    let provider = provider_id.map(str::trim).filter(|p| !p.is_empty()).unwrap_or("");
+    let credential = credential_id
+        .map(str::trim)
+        .filter(|c| !c.is_empty())
+        .unwrap_or("");
+    // Prefer session, then conv, then seed. Require at least one identity axis.
     let material = match (session, conv, seed) {
-        (Some(s), c, f) => format!("{namespace}|sess|{s}|conv={}|seed={}", c.unwrap_or(""), f.unwrap_or("")),
-        (None, Some(c), f) => format!("{namespace}|conv|{c}|seed={}", f.unwrap_or("")),
-        (None, None, Some(f)) => format!("{namespace}|seed|{f}"),
+        (Some(s), c, f) => format!(
+            "{namespace}|prov={provider}|cred={credential}|sess|{s}|conv={}|seed={}",
+            c.unwrap_or(""),
+            f.unwrap_or("")
+        ),
+        (None, Some(c), f) => format!(
+            "{namespace}|prov={provider}|cred={credential}|conv|{c}|seed={}",
+            f.unwrap_or("")
+        ),
+        (None, None, Some(f)) => {
+            format!("{namespace}|prov={provider}|cred={credential}|seed|{f}")
+        }
         (None, None, None) => return None,
     };
     use sha2::{Digest, Sha256};
@@ -2357,6 +2405,33 @@ pub fn ensure_prompt_cache_key(req: &mut ConversationRequest) {
 /// Codex-only: set opaque key when identity is present; leave unset otherwise.
 pub fn ensure_prompt_cache_key_for_codex(req: &mut ConversationRequest) {
     ensure_prompt_cache_key(req);
+}
+
+/// Codex-only with account binding (provider + opaque credential id).
+///
+/// Use at the shell/sampler boundary that owns [`ModelBinding`] so affinity
+/// differs across credentials even for the same session id.
+pub fn ensure_prompt_cache_key_for_codex_with_binding(
+    req: &mut ConversationRequest,
+    provider_id: Option<&str>,
+    credential_id: Option<&str>,
+) {
+    if req
+        .prompt_cache_key
+        .as_ref()
+        .map(|s| !s.is_empty())
+        .unwrap_or(false)
+    {
+        return;
+    }
+    req.prompt_cache_key = derive_prompt_cache_key_with_binding(
+        "goblin",
+        provider_id,
+        credential_id,
+        req.x_grok_session_id.as_deref(),
+        req.x_grok_conv_id.as_deref(),
+        req.x_grok_agent_id.as_deref(),
+    );
 }
 
 /// Patch serialized CreateResponse JSON: inject assistant `phase` fields
@@ -4658,6 +4733,67 @@ mod tests {
         let mut req3 = ConversationRequest::from_items(vec![ConversationItem::user("x")]).with_model("m");
         ensure_prompt_cache_key(&mut req3);
         assert!(req3.prompt_cache_key.is_none());
+    }
+
+    #[test]
+    fn prompt_cache_key_differs_by_provider_and_credential() {
+        let base = derive_prompt_cache_key_with_binding(
+            "goblin",
+            Some("codex"),
+            Some("acct-a"),
+            Some("sess-1"),
+            None,
+            None,
+        )
+        .expect("key");
+        let same = derive_prompt_cache_key_with_binding(
+            "goblin",
+            Some("codex"),
+            Some("acct-a"),
+            Some("sess-1"),
+            None,
+            None,
+        )
+        .expect("key");
+        let other_cred = derive_prompt_cache_key_with_binding(
+            "goblin",
+            Some("codex"),
+            Some("acct-b"),
+            Some("sess-1"),
+            None,
+            None,
+        )
+        .expect("key");
+        let other_prov = derive_prompt_cache_key_with_binding(
+            "goblin",
+            Some("xai"),
+            Some("acct-a"),
+            Some("sess-1"),
+            None,
+            None,
+        )
+        .expect("key");
+        let subagent = derive_prompt_cache_key_with_binding(
+            "goblin",
+            Some("codex"),
+            Some("acct-a"),
+            Some("sess-1"),
+            None,
+            Some("agent-child"),
+        )
+        .expect("key");
+        assert_eq!(base, same);
+        assert_ne!(base, other_cred);
+        assert_ne!(base, other_prov);
+        assert_ne!(base, subagent);
+        assert!(!base.contains("acct-a"));
+        assert!(!base.contains("codex"));
+
+        let mut req = ConversationRequest::from_items(vec![ConversationItem::user("hi")])
+            .with_model("m")
+            .with_session_id("sess-1");
+        ensure_prompt_cache_key_for_codex_with_binding(&mut req, Some("codex"), Some("acct-a"));
+        assert_eq!(req.prompt_cache_key.as_deref(), Some(base.as_str()));
     }
 
     fn fixture_response(output: Vec<rs::OutputItem>) -> rs::Response {

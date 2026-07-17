@@ -1889,10 +1889,19 @@ fn verbatim_fork_falls_back_to_summary_on_incomplete_tail() {
         ConversationItem::system("parent system"),
         ConversationItem::user("q1 UNIQUE_FORK_MARKER_TEST"),
         ConversationItem::assistant("a1"), ConversationItem::user("q2"),
-        ConversationItem::Assistant(AssistantItem { content : String::new().into(),
-        tool_calls : vec![ToolCall { id : "tc1".into(), name : "bash".into(), arguments :
-        "{}".into(), }], model_id : None, model_fingerprint : None, reasoning_effort :
-        None, }),
+        ConversationItem::Assistant(AssistantItem {
+            content: String::new().into(),
+            tool_calls: vec![ToolCall {
+                id: "tc1".into(),
+                name: "bash".into(),
+                arguments: "{}".into(),
+            }],
+            model_id: None,
+            model_fingerprint: None,
+            reasoning_effort: None,
+            phase: None,
+            message_id: None,
+        }),
     ];
     let ctx = verbatim_or_normalize_fork(items, 256_000);
     assert_eq!(ctx.source, InitialContextSource::Forked);

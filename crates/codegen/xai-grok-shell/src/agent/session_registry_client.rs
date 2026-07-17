@@ -225,16 +225,15 @@ impl SessionRegistryClient {
     fn record_401_attribution(&self, op: &str) {
         if let Some(manager) = self.credentials.auth_manager() {
             let resolved = self.credentials.resolve();
-            let sent = resolved
-                .deployment_key
-                .clone()
-                .or(resolved.user_token.clone());
+            let has_sent_auth =
+                resolved.deployment_key.is_some() || resolved.user_token.is_some();
             crate::auth::attribution::record_consumer_401(
                 manager.as_ref(),
                 self.session_id.as_deref(),
                 crate::auth::attribution::ConsumerKind::SessionRegistryClient,
                 op,
-                sent.as_deref(),
+                has_sent_auth,
+                None,
             );
         }
     }
