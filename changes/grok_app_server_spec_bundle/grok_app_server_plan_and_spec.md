@@ -1,9 +1,9 @@
 # Grok App Server
 ## Production-Grade Architecture Plan and Full Technical Specification
 
-**Status:** Proposed  
-**Target:** `xai-org/grok-build`  
-**Reference:** OpenAI Codex app-server  
+**Status:** Proposed
+**Target:** `xai-org/grok-build`
+**Reference:** OpenAI Codex app-server
 **Reviewed snapshots:** `xai-org/grok-build@b189869b7755d2b482969acf6c92da3ecfeffd36` and `openai/codex@800715d201651a2a07c2706dca10400109dae3d3`
 
 ---
