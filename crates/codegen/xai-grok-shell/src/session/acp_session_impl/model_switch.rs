@@ -75,8 +75,13 @@ impl SessionActor {
                 client_version: sampling_config.client_version.clone(),
             });
         self.model_auth_facts.replace(None);
+        // Keep primaryModelId aligned with the session wire model. Spawn seeds
+        // primary from create-time default; deferred CLI `--model` / picker
+        // switches used to only record usage, leaving primary stuck on e.g.
+        // `grok-4.5` while turns ran on `gpt-5.6-luna`. SetPrimaryModel also
+        // records usage (same as OverrideModelName).
         self.signals_handle()
-            .record_model_usage(&sampling_config.model);
+            .set_primary_model(&sampling_config.model);
         if apply_prompt_override && !skip_prompt_rewrite {
             let mut conversation = self.chat_state_handle.get_conversation().await;
             for item in conversation.iter_mut() {

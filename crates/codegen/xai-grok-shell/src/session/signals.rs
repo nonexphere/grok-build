@@ -2016,6 +2016,30 @@ mod tests {
         actor_handle.await.unwrap();
     }
 
+    /// Regression: session model switch must move primary (not only models_used).
+    /// Spawn seeds primary from create-time default; SetSessionModel uses
+    /// `set_primary_model` so deferred CLI `--model` does not leave primary on
+    /// e.g. grok-4.5 while turns run on gpt-5.6-luna.
+    #[tokio::test]
+    async fn test_set_primary_model_overwrites_previous_primary() {
+        let (handle, actor) = SessionSignalsActor::new();
+        let actor_handle = tokio::spawn(actor.run());
+
+        handle.set_primary_model("grok-4.5");
+        handle.set_primary_model("gpt-5.6-luna");
+
+        let snapshot = handle.snapshot().await.unwrap();
+        assert_eq!(
+            snapshot.primary_model_id,
+            Some("gpt-5.6-luna".to_string())
+        );
+        assert!(snapshot.models_used.contains(&"grok-4.5".to_string()));
+        assert!(snapshot.models_used.contains(&"gpt-5.6-luna".to_string()));
+
+        handle.shutdown();
+        actor_handle.await.unwrap();
+    }
+
     #[tokio::test]
     async fn test_assistant_message_count() {
         let (handle, actor) = SessionSignalsActor::new();
