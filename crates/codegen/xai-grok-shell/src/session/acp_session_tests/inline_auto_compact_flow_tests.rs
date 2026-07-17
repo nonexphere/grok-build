@@ -1138,8 +1138,9 @@ fn api_error_with_context_window(context_window: u64) -> xai_grok_sampler::Sampl
         empty_response_context: None,
         doom_loop_triggers: None,
         doom_loop_aborted_at_chunk: None,
+            auth_attempt_id: None,
+        }
     }
-}
 /// Primary scenario: remote settings shrinks the context window mid-session.
 /// The shell's last-known token count (214K) exceeds the new limit (200K) —
 /// should_compact_on_error must return true so the session can recover.
@@ -1510,7 +1511,8 @@ async fn test_compact_on_error_noop_without_model_metadata() {
                 empty_response_context: None,
                 doom_loop_triggers: None,
                 doom_loop_aborted_at_chunk: None,
-            };
+                auth_attempt_id: None,
+};
             assert!(!actor.should_compact_on_error(&err).await);
         })
         .await;

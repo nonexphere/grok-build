@@ -1,8 +1,8 @@
 # Auditoria do Codex provider e do `CODEX_100_PERCENT_GOAL.md`
 
-Data: 2026-07-16  
-Escopo: implementação atual não commitada do provider Codex, prompt caching, replay Responses, autenticação multi-provider, catálogo de modelos e comparação com `~/forge/forge-responses-api`.  
-Modo: auditoria read-only; nenhum código de produto foi alterado.  
+Data: 2026-07-16
+Escopo: implementação atual não commitada do provider Codex, prompt caching, replay Responses, autenticação multi-provider, catálogo de modelos e comparação com `~/forge/forge-responses-api`.
+Modo: auditoria read-only; nenhum código de produto foi alterado.
 Veredito: **não está 100% e ainda não deve ser tratado como pronto para merge/release**.
 
 ## Resumo executivo

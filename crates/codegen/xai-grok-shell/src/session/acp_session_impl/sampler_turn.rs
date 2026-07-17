@@ -783,11 +783,13 @@ impl SessionActor {
         // SentCredentialStamp from the same resolver that sent the failed request.
         #[cfg(feature = "native-multi-provider-auth")]
         if auth_recovery_eligible && multi_provider_auth_401 {
+            let attempt_id = error.auth_attempt_id;
             let recovered = {
                 let guard = self.multi_provider_auth.lock();
                 if let Some(auth) = guard.as_ref() {
-                    crate::auth::multi_provider_resolve::try_recover_unauthorized_with_session_auth(
+                    crate::auth::multi_provider_resolve::try_recover_unauthorized_with_session_auth_attempt(
                         auth,
+                        attempt_id,
                     )
                 } else {
                     // No session pin yet — last resort (new resolver, no stamp).

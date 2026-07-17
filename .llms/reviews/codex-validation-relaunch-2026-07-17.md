@@ -1,8 +1,8 @@
 # Codex Multi-Provider Validation Relaunch — 2026-07-17
 
-**Auditor:** primary session (local static + cargo) — GLM/Kimi subagents hit Cloudflare RPM 429; validation completed without subagent dependency.  
-**Repo:** `/home/guilherme/github/grok-goblin` · branch `goblin-multi-provider-codex`  
-**Evidence log:** `/tmp/grok-goal-7c2bf1e0a316/implementer/verification-plan-full.log`  
+**Auditor:** primary session (local static + cargo) — GLM/Kimi subagents hit Cloudflare RPM 429; validation completed without subagent dependency.
+**Repo:** `/home/guilherme/github/grok-goblin` · branch `goblin-multi-provider-codex`
+**Evidence log:** `/tmp/grok-goal-7c2bf1e0a316/implementer/verification-plan-full.log`
 **Related:** `.llms/reviews/codex-aud003-hotpath-review-2026-07-17.md` (Kimi earlier: AUD-003 PASS)
 
 ---

@@ -67,9 +67,11 @@ struct DeviceFlow {
 
 impl std::fmt::Debug for DeviceFlow {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Never print user_code / device_auth_id — incidental Debug dumps must
+        // not leak the device authorization code shown to the user (audit HIGH).
         f.debug_struct("DeviceFlow")
             .field("device_auth_id", &"<redacted>")
-            .field("user_code", &self.user_code) // user-visible code is OK
+            .field("user_code", &"<redacted>")
             .field("interval", &self.interval)
             .finish()
     }
@@ -485,30 +487,42 @@ impl AuthProvider for CodexAuthProvider {
         &self,
         request: LogoutRequest<'_>,
     ) -> Result<LogoutOutcome, ProviderError> {
+        let mut remote_revoked = false;
+        let mut warning = None;
         if request.revoke {
-            if let Some(ref rt) = request.credential.secret.refresh_token {
-                let _ = token::revoke_token(
+            let revoke_result = if let Some(ref rt) = request.credential.secret.refresh_token {
+                token::revoke_token(
                     &self.http_client,
                     &self.config.revoke_url(),
                     rt.expose(),
                     "refresh_token",
                     &self.config.client_id,
                 )
-                .await;
+                .await
             } else {
-                let _ = token::revoke_token(
+                token::revoke_token(
                     &self.http_client,
                     &self.config.revoke_url(),
                     request.credential.secret.access_token.expose(),
                     "access_token",
                     &self.config.client_id,
                 )
-                .await;
+                .await
+            };
+            match revoke_result {
+                Ok(()) => remote_revoked = true,
+                Err(e) => {
+                    // Local delete still proceeds at the store layer; do not claim
+                    // remote revoke when upstream failed (audit HIGH).
+                    warning = Some(format!(
+                        "remote token revoke failed; local credential will still be removed: {e}"
+                    ));
+                }
             }
         }
         Ok(LogoutOutcome {
-            remote_revoked: request.revoke,
-            warning: None,
+            remote_revoked,
+            warning,
         })
     }
 
@@ -601,5 +615,48 @@ impl AuthProvider for CodexAuthProvider {
 
     fn supports_credential(&self, metadata: &xai_grok_auth::CredentialMetadata) -> bool {
         metadata.key.provider == self.id
+    }
+}
+
+#[cfg(test)]
+mod audit_remediation_tests {
+    use super::*;
+
+    #[test]
+    fn device_flow_debug_redacts_user_code_and_device_auth_id() {
+        let flow = DeviceFlow {
+            device_auth_id: "device-auth-SECRET-123".into(),
+            user_code: "WXYZ-ABCD".into(),
+            interval: std::time::Duration::from_secs(5),
+            config: CodexOAuthConfig::default(),
+        };
+        let dbg = format!("{flow:?}");
+        assert!(
+            !dbg.contains("WXYZ-ABCD"),
+            "user_code must not appear in Debug: {dbg}"
+        );
+        assert!(
+            !dbg.contains("device-auth-SECRET-123"),
+            "device_auth_id must not appear in Debug: {dbg}"
+        );
+        assert!(dbg.contains("<redacted>"), "expected redaction markers: {dbg}");
+    }
+
+    #[test]
+    fn logout_outcome_remote_revoked_only_when_ok() {
+        // Mirrors CodexAuthProvider::logout match: Err must not claim remote_revoked.
+        let revoke_result: Result<(), String> = Err("upstream 500".into());
+        let mut remote_revoked = false;
+        let mut warning = None;
+        match revoke_result {
+            Ok(()) => remote_revoked = true,
+            Err(e) => {
+                warning = Some(format!(
+                    "remote token revoke failed; local credential will still be removed: {e}"
+                ));
+            }
+        }
+        assert!(!remote_revoked);
+        assert!(warning.as_ref().unwrap().contains("failed"));
     }
 }

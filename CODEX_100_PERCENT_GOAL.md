@@ -1,11 +1,11 @@
 # GOAL PROMPT — Codex 100% (wire + UX + prompt cache + control plane)
 
-> **How to use:** paste this entire document as the agent/session goal.  
-> **Repo:** `grok-goblin` · branch `goblin-multi-provider-codex`  
-> **Normative inventory:** `TO_RELEASE.md`  
-> **Protocol baseline:** `docs/architecture/multi-provider-auth/protocol-baseline.md`  
-> **Plan source:** `task.md` · multi-provider auth docs under `docs/architecture/multi-provider-auth/`  
-> **Reference implementation (behavior, not copy):** `~/forge/forge-responses-api`  
+> **How to use:** paste this entire document as the agent/session goal.
+> **Repo:** `grok-goblin` · branch `goblin-multi-provider-codex`
+> **Normative inventory:** `TO_RELEASE.md`
+> **Protocol baseline:** `docs/architecture/multi-provider-auth/protocol-baseline.md`
+> **Plan source:** `task.md` · multi-provider auth docs under `docs/architecture/multi-provider-auth/`
+> **Reference implementation (behavior, not copy):** `~/forge/forge-responses-api`
 > **Evidence dir:** `SCRATCH/` (live probes, SSE dumps, cache proof)
 
 ---
@@ -20,7 +20,7 @@ Deliver a **complete, production-honest Codex integration** in Goblin so that:
 4. **User-facing surfaces** (TUI + headless plain/JSON) show commentary/thoughts and final answers correctly.
 5. **Docs and readiness claims** match code evidence (no false BLOCKERS_PASS).
 
-**Definition of “100% Codex” for this goal** = all **P0 wire (C\*)** + **P0 prompt-cache (PC\*)** + **P0 auth (A1–A4)** + **model catalog cache (M7/D9)** + **honest docs (A5/P6/O2)** + **gated live proof**.  
+**Definition of “100% Codex” for this goal** = all **P0 wire (C\*)** + **P0 prompt-cache (PC\*)** + **P0 auth (A1–A4)** + **model catalog cache (M7/D9)** + **honest docs (A5/P6/O2)** + **gated live proof**.
 R-items (keyring, full xAI adapter, D10 OAuth approval) remain **1.0 multi-provider** unless unblocked; do not claim 100% product multi-provider without them, but **do** claim 100% Codex path when C+PC+A+M7 pass.
 
 ---
@@ -65,7 +65,7 @@ R-items (keyring, full xAI adapter, D10 OAuth approval) remain **1.0 multi-provi
 
 #### C1 — Capture & preserve `phase`
 
-**Problem:** Live Codex emits assistant messages with `phase: "commentary" | "final_answer"`.  
+**Problem:** Live Codex emits assistant messages with `phase: "commentary" | "final_answer"`.
 `async-openai` `OutputMessage` has **no** `phase` field → serde drops it. Canary test documents this.
 
 **Required:**
@@ -324,15 +324,15 @@ Do not claim Beta without A1–A4 proofs.
 
 ## Implementation order (strict)
 
-1. **C1 + C3 + C4** (types + materialize + no collapse) — foundation for UI and cache  
-2. **C5 + PC1 + PC2 + PC3** (resend + key + prefix) — enable cache  
-3. **C2** (thought/commentary UX)  
-4. **PC6–PC9 + PC8 live probe** — prove cache  
-5. **PC10–PC12** compaction + paths + docs  
-6. **A1–A4** auth hardening  
-7. **M7/D9** model cache  
-8. **P4, P7, A5, P6, O2** product honesty  
-9. R\* / O\* as capacity allows  
+1. **C1 + C3 + C4** (types + materialize + no collapse) — foundation for UI and cache
+2. **C5 + PC1 + PC2 + PC3** (resend + key + prefix) — enable cache
+3. **C2** (thought/commentary UX)
+4. **PC6–PC9 + PC8 live probe** — prove cache
+5. **PC10–PC12** compaction + paths + docs
+6. **A1–A4** auth hardening
+7. **M7/D9** model cache
+8. **P4, P7, A5, P6, O2** product honesty
+9. R\* / O\* as capacity allows
 
 ---
 
@@ -373,31 +373,31 @@ Do not claim Beta without A1–A4 proofs.
 
 ### Wire
 
-- [ ] C1 phase capture + resend  
-- [ ] C2 thought/commentary UX (TUI + headless)  
-- [ ] C3 multi-assistant no collapse  
-- [ ] C4 full stream materialize  
-- [ ] C5 history fidelity  
+- [ ] C1 phase capture + resend
+- [ ] C2 thought/commentary UX (TUI + headless)
+- [ ] C3 multi-assistant no collapse
+- [ ] C4 full stream materialize
+- [ ] C5 history fidelity
 
 ### Prompt cache
 
-- [ ] PC1–PC3 key + prefix  
-- [ ] PC4 policy for previous_response_id  
-- [ ] PC5 retention policy  
-- [ ] PC6 account affinity  
-- [ ] PC7 observability  
-- [ ] PC8 live proof SCRATCH  
-- [ ] PC9–PC12 stream/compaction/paths/docs  
+- [ ] PC1–PC3 key + prefix
+- [ ] PC4 policy for previous_response_id
+- [ ] PC5 retention policy
+- [ ] PC6 account affinity
+- [ ] PC7 observability
+- [ ] PC8 live proof SCRATCH
+- [ ] PC9–PC12 stream/compaction/paths/docs
 
 ### Control plane
 
-- [ ] A1–A4 + A5 honesty  
-- [ ] M7/D9 model cache  
+- [ ] A1–A4 + A5 honesty
+- [ ] M7/D9 model cache
 
 ### Beta polish
 
-- [ ] P4 title noise  
-- [ ] P6/P7/O2 docs + CI  
+- [ ] P4 title noise
+- [ ] P6/P7/O2 docs + CI
 
 ### Explicitly still not “1.0 multi-provider”
 
@@ -407,11 +407,11 @@ Do not claim Beta without A1–A4 proofs.
 
 ## Agent execution rules
 
-1. Work in inspect → change → test → evidence loops; update `TO_RELEASE.md` checkboxes as items close.  
-2. Prefer smallest complete fixes; no drive-by refactors.  
-3. When blocked on live API behavior, dump SSE to SCRATCH and adjust from evidence.  
-4. Never commit secrets or raw OAuth tokens.  
-5. If the same failure survives two fix attempts, stop, re-hypothesize from logs, then continue.  
+1. Work in inspect → change → test → evidence loops; update `TO_RELEASE.md` checkboxes as items close.
+2. Prefer smallest complete fixes; no drive-by refactors.
+3. When blocked on live API behavior, dump SSE to SCRATCH and adjust from evidence.
+4. Never commit secrets or raw OAuth tokens.
+5. If the same failure survives two fix attempts, stop, re-hypothesize from logs, then continue.
 6. Final report: files changed, tests run, SCRATCH paths, remaining R\*/deferred items.
 
 ---

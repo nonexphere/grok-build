@@ -2684,7 +2684,7 @@ actual user question";
                 model_id: Some("grok-3".to_string()),
                 model_fingerprint: None,
                 reasoning_effort: None,
-            
+
                 phase: None,
                 message_id: None,
 }),
@@ -2720,7 +2720,7 @@ actual user question";
                 model_id: Some("grok-3".to_string()),
                 model_fingerprint: None,
                 reasoning_effort: None,
-            
+
                 phase: None,
                 message_id: None,
 }),
@@ -2982,7 +2982,7 @@ The user asked to read main.rs and lib.rs. main.rs prints hello world, lib.rs ha
                 model_id: None,
                 model_fingerprint: None,
                 reasoning_effort: None,
-            
+
                 phase: None,
                 message_id: None,
 }),
@@ -3009,7 +3009,7 @@ The user asked to read main.rs and lib.rs. main.rs prints hello world, lib.rs ha
                 model_id: None,
                 model_fingerprint: None,
                 reasoning_effort: None,
-            
+
                 phase: None,
                 message_id: None,
 }),
@@ -3062,7 +3062,7 @@ The user asked to read main.rs and lib.rs. main.rs prints hello world, lib.rs ha
                 model_id: None,
                 model_fingerprint: None,
                 reasoning_effort: None,
-            
+
                 phase: None,
                 message_id: None,
 }),
@@ -3108,7 +3108,7 @@ The user asked to read main.rs and lib.rs. main.rs prints hello world, lib.rs ha
                 model_id: None,
                 model_fingerprint: None,
                 reasoning_effort: None,
-            
+
                 phase: None,
                 message_id: None,
 }),
@@ -3147,7 +3147,7 @@ The user asked to read main.rs and lib.rs. main.rs prints hello world, lib.rs ha
                 model_id: None,
                 model_fingerprint: None,
                 reasoning_effort: None,
-            
+
                 phase: None,
                 message_id: None,
 }),
@@ -3160,7 +3160,7 @@ The user asked to read main.rs and lib.rs. main.rs prints hello world, lib.rs ha
                 model_id: None,
                 model_fingerprint: None,
                 reasoning_effort: None,
-            
+
                 phase: None,
                 message_id: None,
 }),
@@ -3172,7 +3172,7 @@ The user asked to read main.rs and lib.rs. main.rs prints hello world, lib.rs ha
                 model_id: None,
                 model_fingerprint: None,
                 reasoning_effort: None,
-            
+
                 phase: None,
                 message_id: None,
 }),
@@ -3244,7 +3244,7 @@ The user asked to read main.rs and lib.rs. main.rs prints hello world, lib.rs ha
                 model_id: None,
                 model_fingerprint: None,
                 reasoning_effort: None,
-            
+
                 phase: None,
                 message_id: None,
 }),

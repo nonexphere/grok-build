@@ -1,8 +1,8 @@
 # Multi-Provider Auth — Phase Ledger
 
-**Source of truth for phase scope:** `task.md` §12.3  
-**Fork process:** `GOBLIN.md`  
-**Living readiness:** `reports/2026-07-16-readiness-matrix.md`  
+**Source of truth for phase scope:** `task.md` §12.3
+**Fork process:** `GOBLIN.md`
+**Living readiness:** `reports/2026-07-16-readiness-matrix.md`
 **Prior review:** `reports/2026-07-16-implementation-review.md` (NOT READY)
 
 Status values: `pending` | `in_progress` | `partial` | `done` | `deferred` | `blocked`.
@@ -59,8 +59,8 @@ Restart any long-lived TUI to pick up a new binary.
 
 ### Verdict
 
-**BLOCKERS B1–B6 closed** (with B4 = legacy boundary).  
-**Not** full multi-provider product READY: MAJORs M1/M2/M4–M13 and skill breadth remain DEFERRED.  
+**BLOCKERS B1–B6 closed** (with B4 = legacy boundary).
+**Not** full multi-provider product READY: MAJORs M1/M2/M4–M13 and skill breadth remain DEFERRED.
 Usable path: approved-env Codex login → credential-scoped `/model` catalog → request-time token + one 401 recover.
 
 ---

@@ -182,4 +182,3 @@ The provider cannot be stable until all applicable scenarios pass:
 10. No seeded secret appears in any output/diagnostic surface.
 11. Kill switches disable new use without corrupting stored credentials.
 12. Authorization/client registration and supported endpoint use are documented as approved.
-

@@ -3173,6 +3173,7 @@ mod inline_auto_compact_flow_tests {
             empty_response_context: None,
             doom_loop_triggers: None,
             doom_loop_aborted_at_chunk: None,
+            auth_attempt_id: None,
         }
     }
     /// Primary scenario: remote settings shrinks the context window mid-session.
@@ -3229,7 +3230,8 @@ mod inline_auto_compact_flow_tests {
                     empty_response_context: None,
                     doom_loop_triggers: None,
                     doom_loop_aborted_at_chunk: None,
-                };
+                    auth_attempt_id: None,
+};
                 assert!(!actor.should_compact_on_error(&err).await);
             })
             .await;

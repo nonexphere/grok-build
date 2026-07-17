@@ -1,10 +1,10 @@
 # GOAL — Codex multi-provider: Experimental → production-ready
 
-> **Como usar:** cole este documento inteiro como goal da sessão (`/goal` ou mission prompt).  
-> **Repo:** `grok-goblin` · branch `goblin-multi-provider-codex`  
-> **Baseline honesta (2026-07-16):** Experimental offline **PASS**; production-ready **NÃO**.  
-> **Normas:** `TO_RELEASE.md` · `CODEX_AUDIT_REMEDIATION_PLAN.md` · `CODEX_100_PERCENT_GOAL.md`  
-> **Auditoria:** `.llms/reviews/codex-validation-audit-2026-07-16.md`  
+> **Como usar:** cole este documento inteiro como goal da sessão (`/goal` ou mission prompt).
+> **Repo:** `grok-goblin` · branch `goblin-multi-provider-codex`
+> **Baseline honesta (2026-07-16):** Experimental offline **PASS**; production-ready **NÃO**.
+> **Normas:** `TO_RELEASE.md` · `CODEX_AUDIT_REMEDIATION_PLAN.md` · `CODEX_100_PERCENT_GOAL.md`
+> **Auditoria:** `.llms/reviews/codex-validation-audit-2026-07-16.md`
 > **Evidence:** `SCRATCH/` (live probes redigidos) + testes offline nos crates tocados
 
 ---
@@ -26,7 +26,7 @@ Fechar o caminho Codex multi-provider do Goblin até o gate **production-ready (
 | **Hygiene** | Testes dos crates tocados verdes; `cargo check -p xai-grok-shell`; `TO_RELEASE.md` alinhado à evidência |
 | **Docs honestas** | Nunca “100%” / production-ready / cache-hit sem gate correspondente PASS |
 
-**“100% Codex path” neste goal** = todos os gates acima PASS (ou PC live explicitamente cortado do milestone com doc).  
+**“100% Codex path” neste goal** = todos os gates acima PASS (ou PC live explicitamente cortado do milestone com doc).
 Não inclui keyring full, adapter xAI completo, nem D10 OAuth approval product — esses ficam 1.0 multi-provider.
 
 ---
@@ -267,11 +267,11 @@ Acrescentar filtros novos da wave (refresh lock, journal, FC sibling, model_cach
 
 ## Ordem se tempo for limitado
 
-1. **Wave A** (007/008) — inegociável para prod  
-2. **Wave B** (003 + A4 residual) — wire honesty + cache prefix  
-3. **Wave C** se credencial existir; senão documentar cut  
-4. **Wave D** catalog  
-5. **Wave E** polish  
+1. **Wave A** (007/008) — inegociável para prod
+2. **Wave B** (003 + A4 residual) — wire honesty + cache prefix
+3. **Wave C** se credencial existir; senão documentar cut
+4. **Wave D** catalog
+5. **Wave E** polish
 
 Se bloquear em credencial live, **não parar o goal**: feche A+B+D offline e deixe C como EXTERNAL_SETUP / NOT claimed.
 

@@ -229,7 +229,7 @@ mod tests {
             model_id: None,
             model_fingerprint: None,
             reasoning_effort: None,
-        
+
             phase: None,
             message_id: None,
 })

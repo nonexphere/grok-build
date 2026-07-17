@@ -176,6 +176,28 @@ mod tests {
         assert_eq!(ledger.take_for_recovery().unwrap().generation, 20);
     }
 
+    /// Concurrent out-of-order 401s: request A then B, B fails first.
+    /// Recovery for B must use B's attempt stamp (gen=2), not FIFO head A (gen=1).
+    #[test]
+    fn concurrent_out_of_order_401_uses_explicit_attempt_not_fifo() {
+        let ledger = AttemptStampLedger::new();
+        let id_a = ledger.record(stamp("11111111-1111-1111-1111-111111111111", 1));
+        let id_b = ledger.record(stamp("11111111-1111-1111-1111-111111111111", 2));
+        assert_eq!(id_a, 1);
+        assert_eq!(id_b, 2);
+
+        // B's 401 arrives first — must take_attempt(id_b), not take_for_recovery.
+        let recovered_b = ledger.take_attempt(id_b).expect("B attempt");
+        assert_eq!(
+            recovered_b.generation, 2,
+            "out-of-order 401 for B must bind stamp gen=2, not FIFO gen=1"
+        );
+        // A still recoverable by id or remaining FIFO
+        let recovered_a = ledger.take_attempt(id_a).expect("A attempt");
+        assert_eq!(recovered_a.generation, 1);
+        assert_eq!(ledger.pending_recovery_len(), 0);
+    }
+
     #[test]
     fn take_clears_only_one_holder() {
         let a = RequestScopedStamp::new();

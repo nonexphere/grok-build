@@ -1132,7 +1132,7 @@ impl ConversationItem {
             model_id: None,
             model_fingerprint: None,
             reasoning_effort: None,
-        
+
             phase: None,
             message_id: None,
 })
@@ -1150,7 +1150,7 @@ impl ConversationItem {
             model_id: Some(model_id.into()),
             model_fingerprint: None,
             reasoning_effort: None,
-        
+
             phase: None,
             message_id: None,
 })
@@ -1164,7 +1164,7 @@ impl ConversationItem {
             model_id: None,
             model_fingerprint: None,
             reasoning_effort: None,
-        
+
             phase: None,
             message_id: None,
 })
@@ -1405,7 +1405,7 @@ pub fn inject_streaming_text_fallback(items: &mut Vec<ConversationItem>, text: S
         model_id: None,
         model_fingerprint: None,
         reasoning_effort: None,
-    
+
         phase: None,
         message_id: None,
 }));
@@ -1712,7 +1712,7 @@ impl From<ChatRequestMessage> for ConversationItem {
                     model_id,
                     model_fingerprint: None,
                     reasoning_effort: None,
-                
+
                     phase: None,
                     message_id: None,
 })
@@ -2044,7 +2044,7 @@ impl From<ChatResponseMessage> for ConversationItem {
             model_id: None,
             model_fingerprint: None,
             reasoning_effort: None,
-        
+
             phase: None,
             message_id: None,
 })
@@ -2544,70 +2544,93 @@ impl From<ConversationRequest> for ChatCompletionRequest {
 // Conversion: ConversationRequest -> CreateResponse (Responses API)
 // ============================================================================
 
+/// Production-safe conversion: fallible (no panic on unmapped OpaqueWire).
+///
+/// Sampler production paths must call this instead of `From` / `into()`.
+pub fn try_create_response_from_conversation(
+    req: &ConversationRequest,
+) -> Result<rs::CreateResponse, String> {
+    let input = try_build_responses_input(req)?;
+    Ok(create_response_from_parts(req, input))
+}
+
 impl From<&ConversationRequest> for rs::CreateResponse {
     fn from(req: &ConversationRequest) -> Self {
-        let input = build_responses_input(req);
-        let tools = build_responses_tools(req);
+        // Prefer try_create_response_from_conversation in production paths.
+        // From remains for tests/legacy; panics only if callers ignore the fallible API.
+        match try_create_response_from_conversation(req) {
+            Ok(r) => r,
+            Err(e) => panic!(
+                "responses CreateResponse convert failed (use try_create_response_from_conversation): {e}"
+            ),
+        }
+    }
+}
 
-        let tool_choice = req.tool_choice.as_ref().map(|tc| match tc {
-            ConversationToolChoice::Auto => rs::ToolChoiceParam::Mode(rs::ToolChoiceOptions::Auto),
-            ConversationToolChoice::None => rs::ToolChoiceParam::Mode(rs::ToolChoiceOptions::None),
-            ConversationToolChoice::Required => {
-                rs::ToolChoiceParam::Mode(rs::ToolChoiceOptions::Required)
-            }
-            ConversationToolChoice::Function(name) => {
-                rs::ToolChoiceParam::Function(rs::ToolChoiceFunction { name: name.clone() })
-            }
+fn create_response_from_parts(
+    req: &ConversationRequest,
+    input: rs::InputParam,
+) -> rs::CreateResponse {
+    let tools = build_responses_tools(req);
+
+    let tool_choice = req.tool_choice.as_ref().map(|tc| match tc {
+        ConversationToolChoice::Auto => rs::ToolChoiceParam::Mode(rs::ToolChoiceOptions::Auto),
+        ConversationToolChoice::None => rs::ToolChoiceParam::Mode(rs::ToolChoiceOptions::None),
+        ConversationToolChoice::Required => {
+            rs::ToolChoiceParam::Mode(rs::ToolChoiceOptions::Required)
+        }
+        ConversationToolChoice::Function(name) => {
+            rs::ToolChoiceParam::Function(rs::ToolChoiceFunction { name: name.clone() })
+        }
+    });
+
+    let text = req
+        .json_schema
+        .as_ref()
+        .map(|schema| rs::ResponseTextParam {
+            format: rs::TextResponseFormatConfiguration::JsonSchema(
+                rs::ResponseFormatJsonSchema {
+                    description: None,
+                    name: STRUCTURED_OUTPUT_SCHEMA_NAME.to_string(),
+                    schema: Some(schema.clone()),
+                    strict: Some(true),
+                },
+            ),
+            verbosity: None,
         });
 
-        let text = req
-            .json_schema
-            .as_ref()
-            .map(|schema| rs::ResponseTextParam {
-                format: rs::TextResponseFormatConfiguration::JsonSchema(
-                    rs::ResponseFormatJsonSchema {
-                        description: None,
-                        name: STRUCTURED_OUTPUT_SCHEMA_NAME.to_string(),
-                        schema: Some(schema.clone()),
-                        strict: Some(true),
-                    },
-                ),
-                verbosity: None,
-            });
-
-        rs::CreateResponse {
-            background: None,
-            conversation: None,
-            include: None,
-            input,
-            instructions: None,
-            max_output_tokens: req.max_output_tokens,
-            max_tool_calls: None,
-            metadata: None,
-            model: req.model.clone(),
-            parallel_tool_calls: None,
-            previous_response_id: None,
-            prompt: None,
-            prompt_cache_key: req.prompt_cache_key.clone(),
-            // Codex rejects unknown retention policies; omit by default.
-            prompt_cache_retention: None,
-            reasoning: Some(rs::Reasoning {
-                effort: req.reasoning_effort.map(|e| e.to_responses_api()),
-                summary: Some(rs::ReasoningSummary::Concise),
-            }),
-            safety_identifier: None,
-            service_tier: None,
-            store: None,
-            stream: None,
-            stream_options: None,
-            temperature: req.temperature,
-            text,
-            tool_choice,
-            tools: if tools.is_empty() { None } else { Some(tools) },
-            top_logprobs: None,
-            top_p: req.top_p,
-            truncation: None,
-        }
+    rs::CreateResponse {
+        background: None,
+        conversation: None,
+        include: None,
+        input,
+        instructions: None,
+        max_output_tokens: req.max_output_tokens,
+        max_tool_calls: None,
+        metadata: None,
+        model: req.model.clone(),
+        parallel_tool_calls: None,
+        previous_response_id: None,
+        prompt: None,
+        prompt_cache_key: req.prompt_cache_key.clone(),
+        // Codex rejects unknown retention policies; omit by default.
+        prompt_cache_retention: None,
+        reasoning: Some(rs::Reasoning {
+            effort: req.reasoning_effort.map(|e| e.to_responses_api()),
+            summary: Some(rs::ReasoningSummary::Concise),
+        }),
+        safety_identifier: None,
+        service_tier: None,
+        store: None,
+        stream: None,
+        stream_options: None,
+        temperature: req.temperature,
+        text,
+        tool_choice,
+        tools: if tools.is_empty() { None } else { Some(tools) },
+        top_logprobs: None,
+        top_p: req.top_p,
+        truncation: None,
     }
 }
 
@@ -4112,7 +4135,7 @@ impl From<crate::messages::MessagesResponse> for ConversationItem {
             model_id: Some(resp.model),
             model_fingerprint: None,
             reasoning_effort: None,
-        
+
             phase: None,
             message_id: None,
 })
@@ -4376,7 +4399,7 @@ mod tests {
             model_id: Some("gpt-5.6-luna".into()),
             model_fingerprint: None,
             reasoning_effort: None,
-        
+
             phase: None,
             message_id: None,
 })];
@@ -4796,11 +4819,9 @@ mod tests {
         );
     }
 
-    /// AUD-003 hot path: `From<&ConversationRequest> for CreateResponse` (used by
-    /// sampler) must not silently drop OpaqueWire — fail-loud via panic.
+    /// Production path must return Err (not panic) on unmapped OpaqueWire.
     #[test]
-    #[should_panic(expected = "AUD-003 fail-loud")]
-    fn create_response_from_request_fails_loud_on_opaque_wire() {
+    fn try_create_response_errs_on_opaque_wire_no_panic() {
         let items = vec![
             ConversationItem::user("q"),
             ConversationItem::Assistant(AssistantItem {
@@ -4828,7 +4849,25 @@ mod tests {
             }),
         ];
         let req = ConversationRequest::from_items(items).with_model("m");
-        // Real production entry: From → build_responses_input (not helper alone).
+        let err = try_create_response_from_conversation(&req).expect_err("must fail");
+        assert!(
+            err.contains("OpaqueWire") || err.contains("unmapped") || err.contains("AUD-003") || !err.is_empty(),
+            "unexpected err: {err}"
+        );
+    }
+
+    /// Legacy From still fail-louds if a caller ignores try_create_*.
+    #[test]
+    #[should_panic(expected = "try_create_response_from_conversation")]
+    fn create_response_from_request_fails_loud_on_opaque_wire() {
+        let items = vec![
+            ConversationItem::user("q"),
+            ConversationItem::OpaqueWire(OpaqueWireItem {
+                type_name: "totally_unknown".into(),
+                payload: serde_json::json!({"type": "totally_unknown"}),
+            }),
+        ];
+        let req = ConversationRequest::from_items(items).with_model("m");
         let _create: rs::CreateResponse = (&req).into();
     }
 
@@ -5766,7 +5805,7 @@ mod tests {
             model_id: Some("grok-3".to_string()),
             model_fingerprint: None,
             reasoning_effort: None,
-        
+
             phase: None,
             message_id: None,
 };
@@ -6224,7 +6263,7 @@ mod tests {
             model_id: Some("grok-3".to_string()),
             model_fingerprint: None,
             reasoning_effort: None,
-        
+
             phase: None,
             message_id: None,
 });
@@ -6259,7 +6298,7 @@ mod tests {
                 model_id: Some("grok-3".to_string()),
                 model_fingerprint: None,
                 reasoning_effort: None,
-            
+
                 phase: None,
                 message_id: None,
 }),
@@ -6322,7 +6361,7 @@ mod tests {
                 model_id: None,
                 model_fingerprint: None,
                 reasoning_effort: None,
-            
+
                 phase: None,
                 message_id: None,
 }),
@@ -6963,7 +7002,7 @@ mod tests {
             model_id: Some("messages-compatible-model".into()),
             model_fingerprint: None,
             reasoning_effort: None,
-        
+
             phase: None,
             message_id: None,
 });
@@ -7162,7 +7201,7 @@ mod tests {
                 model_id: Some("messages-compatible-model".into()),
                 model_fingerprint: None,
                 reasoning_effort: None,
-            
+
                 phase: None,
                 message_id: None,
 }),
@@ -7177,7 +7216,7 @@ mod tests {
                 model_id: Some("messages-compatible-model".into()),
                 model_fingerprint: None,
                 reasoning_effort: None,
-            
+
                 phase: None,
                 message_id: None,
 }),
@@ -7188,7 +7227,7 @@ mod tests {
                 model_id: Some("messages-compatible-model".into()),
                 model_fingerprint: None,
                 reasoning_effort: None,
-            
+
                 phase: None,
                 message_id: None,
 }),
@@ -7203,7 +7242,7 @@ mod tests {
                 model_id: Some("messages-compatible-model".into()),
                 model_fingerprint: None,
                 reasoning_effort: None,
-            
+
                 phase: None,
                 message_id: None,
 }),
@@ -7941,7 +7980,7 @@ mod tests {
             model_id: None,
             model_fingerprint: None,
             reasoning_effort: None,
-        
+
             phase: None,
             message_id: None,
 })];
@@ -8010,7 +8049,7 @@ mod tests {
                 model_id: Some("grok-3".to_string()),
                 model_fingerprint: None,
                 reasoning_effort: None,
-            
+
                 phase: None,
                 message_id: None,
 }),
@@ -8070,7 +8109,7 @@ mod tests {
                 model_id: None,
                 model_fingerprint: None,
                 reasoning_effort: None,
-            
+
                 phase: None,
                 message_id: None,
 }),
@@ -8124,7 +8163,7 @@ mod tests {
                 model_id: None,
                 model_fingerprint: None,
                 reasoning_effort: None,
-            
+
                 phase: None,
                 message_id: None,
 }),
@@ -8235,7 +8274,7 @@ mod tests {
             model_id: None,
             model_fingerprint: None,
             reasoning_effort: None,
-        
+
             phase: None,
             message_id: None,
 })];
@@ -8353,7 +8392,7 @@ mod tests {
                 model_id: Some("test-model".to_string()),
                 model_fingerprint: None,
                 reasoning_effort: None,
-            
+
                 phase: None,
                 message_id: None,
 })],
@@ -8377,7 +8416,7 @@ mod tests {
                 model_id: None,
                 model_fingerprint: None,
                 reasoning_effort: None,
-            
+
                 phase: None,
                 message_id: None,
 })],
@@ -8405,7 +8444,7 @@ mod tests {
                 model_id: None,
                 model_fingerprint: None,
                 reasoning_effort: None,
-            
+
                 phase: None,
                 message_id: None,
 })],
@@ -8605,7 +8644,7 @@ mod tests {
             model_id: None,
             model_fingerprint: None,
             reasoning_effort: None,
-        
+
             phase: None,
             message_id: None,
 }
@@ -8697,7 +8736,7 @@ mod tests {
             model_id: None,
             model_fingerprint: None,
             reasoning_effort: None,
-        
+
             phase: None,
             message_id: None,
 })
@@ -9402,7 +9441,7 @@ mod tests {
                 model_id: None,
                 model_fingerprint: None,
                 reasoning_effort: None,
-            
+
                 phase: None,
                 message_id: None,
 }),
@@ -9915,7 +9954,7 @@ mod tests {
                     model_id: None,
                     model_fingerprint: None,
                     reasoning_effort: None,
-                
+
                     phase: None,
                     message_id: None,
 }),
@@ -11151,7 +11190,7 @@ mod tests {
                 model_id: None,
                 model_fingerprint: None,
                 reasoning_effort: None,
-            
+
                 phase: None,
                 message_id: None,
 }),

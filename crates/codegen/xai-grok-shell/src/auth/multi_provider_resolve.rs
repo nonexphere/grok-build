@@ -15,7 +15,7 @@ use xai_grok_multi_auth::provider_model_key::{
     parse_provider_model_key, ProviderModelKey,
 };
 use xai_grok_multi_auth::token_resolve;
-use xai_grok_sampler::{BearerResolver, SharedBearerResolver};
+use xai_grok_sampler::{BearerResolver, ResolvedBearer, SharedBearerResolver};
 
 use crate::agent::config::ModelEntry;
 
@@ -67,14 +67,33 @@ impl MultiProviderSessionAuth {
         &self.resolver
     }
 
-    /// Generation-aware 401 recovery using the stamp from the resolve attempt
-    /// that failed (A1 / AUD-006: FIFO of attempt stamps, not last-wins).
+    /// Generation-aware 401 recovery using the stamp from the **exact** resolve
+    /// attempt that failed (A1 / AUD-006). Prefer `attempt_id` from the
+    /// `SamplingError`; FIFO is only a last-resort when the error carries no id.
     pub fn try_recover_unauthorized(&self) -> bool {
+        self.try_recover_unauthorized_for_attempt(None)
+    }
+
+    /// Recover using an explicit multi-provider attempt id when known.
+    pub fn try_recover_unauthorized_for_attempt(&self, attempt_id: Option<u64>) -> bool {
         let Some(credential_id) = self.binding.credential else {
             return false;
         };
-        // Prefer oldest unrecovered attempt stamp (matches sequential request order).
-        let stamp = self.resolver.take_stamp_for_recovery();
+        let stamp = match attempt_id {
+            Some(id) => self.resolver.take_attempt(id).or_else(|| {
+                tracing::warn!(
+                    attempt_id = id,
+                    "multi-provider 401: attempt stamp missing; falling back to FIFO"
+                );
+                self.resolver.take_stamp_for_recovery()
+            }),
+            None => {
+                tracing::warn!(
+                    "multi-provider 401: no attempt_id on error; FIFO recovery (legacy)"
+                );
+                self.resolver.take_stamp_for_recovery()
+            }
+        };
         let home = token_resolve::grok_home();
         match token_resolve::recover_unauthorized_with_stamp_blocking(
             &home,
@@ -301,6 +320,14 @@ pub fn try_recover_unauthorized_with_session_auth(auth: &MultiProviderSessionAut
     auth.try_recover_unauthorized()
 }
 
+/// Recover using session auth + the attempt id from the failing request (preferred).
+pub fn try_recover_unauthorized_with_session_auth_attempt(
+    auth: &MultiProviderSessionAuth,
+    attempt_id: Option<u64>,
+) -> bool {
+    auth.try_recover_unauthorized_for_attempt(attempt_id)
+}
+
 fn find_codex_credential_for_account(
     home: &std::path::Path,
     provider: &ProviderId,
@@ -385,9 +412,14 @@ impl MultiProviderBearerResolver {
         self.stamps.last()
     }
 
-    /// Consume the oldest unrecovered attempt stamp for 401 recovery.
+    /// Consume the oldest unrecovered attempt stamp for 401 recovery (legacy FIFO).
     pub fn take_stamp_for_recovery(&self) -> Option<SentCredentialStamp> {
         self.stamps.take_for_recovery()
+    }
+
+    /// Consume the stamp for a specific attempt id (preferred for concurrent 401s).
+    pub fn take_attempt(&self, attempt_id: u64) -> Option<SentCredentialStamp> {
+        self.stamps.ledger().take_attempt(attempt_id)
     }
 
     pub fn take_last_stamp(&self) -> Option<SentCredentialStamp> {
@@ -469,7 +501,16 @@ impl std::fmt::Debug for MultiProviderBearerResolver {
 impl BearerResolver for MultiProviderBearerResolver {
     /// HTTP send path: record recovery stamp for this attempt only.
     fn current_bearer(&self) -> Option<String> {
-        self.resolve_attempt().map(|(t, _, _)| t)
+        self.resolve_for_request().map(|r| r.token)
+    }
+
+    /// HTTP send: token + attempt id so 401 recovery is attempt-bound, not FIFO.
+    fn resolve_for_request(&self) -> Option<ResolvedBearer> {
+        self.resolve_attempt()
+            .map(|(token, _stamp, attempt_id)| ResolvedBearer {
+                token,
+                attempt_id: Some(attempt_id),
+            })
     }
 
     /// Logging / attribution: never enqueue a recovery stamp (AUD-006).

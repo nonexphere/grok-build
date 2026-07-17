@@ -212,10 +212,10 @@ providers use the structured layout below.
 ## Sync Playbook and Conflict Resolution
 
 1. **Fetch:** `git fetch origin && git fetch fork`
-2. **Update main mirror (safe without dirty-checkout):**  
-   `git branch -f main origin/main && git push fork main --force-with-lease`  
+2. **Update main mirror (safe without dirty-checkout):**
+   `git branch -f main origin/main && git push fork main --force-with-lease`
    (`fork/main` is allowed to force-update **only** as an upstream mirror.)
-3. **Advance goblin:** on a clean tree or isolated worktree:  
+3. **Advance goblin:** on a clean tree or isolated worktree:
    `git checkout goblin && git rebase main` (or `git merge main`).
 4. **Conflict resolution rules:**
    - Files that exist only in the fork (`GOBLIN.md`,

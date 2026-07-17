@@ -1,7 +1,7 @@
 # Plano de remediação — auditoria Codex provider (2026-07-16)
 
-**Fonte:** `.llms/reviews/code-audit-grok-goblin-codex-provider-2026-07-16.md`  
-**Validação:** código atual na branch `goblin-multi-provider-codex` (2026-07-16, pós-implementação parcial)  
+**Fonte:** `.llms/reviews/code-audit-grok-goblin-codex-provider-2026-07-16.md`
+**Validação:** código atual na branch `goblin-multi-provider-codex` (2026-07-16, pós-implementação parcial)
 **Meta:** “Codex production-ready” (não “100%” informal) com gates mensuráveis.
 
 ---
@@ -55,7 +55,7 @@ O audit está **essencialmente correto**. O progresso real (phase side-channel, 
 
 ## 2. Definição de “100%” (mensurável)
 
-**Nome:** Codex production-ready (single-machine multi-process)  
+**Nome:** Codex production-ready (single-machine multi-process)
 
 **Não é 100%** se qualquer P0 abaixo falhar.
 
@@ -163,12 +163,12 @@ O audit está **essencialmente correto**. O progresso real (phase side-channel, 
 
 ### Wave 6 — Release gates
 
-1. `git diff --check`  
-2. `cargo test -p xai-grok-sampling-types -p xai-grok-sampler -p xai-grok-multi-auth --lib`  
-3. `cargo check -p xai-grok-shell`  
-4. Dual run dos testes críticos  
-5. SCRATCH pack: unit logs + live (se houver) + diff-stat  
-6. Atualizar `TO_RELEASE.md` só com PASS comprovados  
+1. `git diff --check`
+2. `cargo test -p xai-grok-sampling-types -p xai-grok-sampler -p xai-grok-multi-auth --lib`
+3. `cargo check -p xai-grok-shell`
+4. Dual run dos testes críticos
+5. SCRATCH pack: unit logs + live (se houver) + diff-stat
+6. Atualizar `TO_RELEASE.md` só com PASS comprovados
 
 ---
 
@@ -213,7 +213,7 @@ O audit está **essencialmente correto**. O progresso real (phase side-channel, 
 | 5 | 1–2 d |
 | 6 | 0.5–1 d |
 
-**Experimental shipável:** Waves 0+1+3 (+ 1.5/1.6) sem live e sem cross-process.  
+**Experimental shipável:** Waves 0+1+3 (+ 1.5/1.6) sem live e sem cross-process.
 **Production-ready:** todas as waves P0 + 4.6 + 2.x.
 
 ---

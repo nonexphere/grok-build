@@ -31,7 +31,7 @@ fn assistant_text(text: &str) -> ConversationItem {
         model_id: None,
         model_fingerprint: None,
         reasoning_effort: None,
-    
+
         phase: None,
         message_id: None,
 })
@@ -48,7 +48,7 @@ fn assistant_with_tool_call(text: &str, name: &str, args: &str) -> ConversationI
         model_id: None,
         model_fingerprint: None,
         reasoning_effort: None,
-    
+
         phase: None,
         message_id: None,
 })
@@ -86,7 +86,7 @@ fn assistant_with_reasoning_items(
         model_id: None,
         model_fingerprint: None,
         reasoning_effort: None,
-    
+
         phase: None,
         message_id: None,
 }));
@@ -208,7 +208,7 @@ fn flatten_skips_reasoning_when_encrypted_only() {
             model_id: None,
             model_fingerprint: None,
             reasoning_effort: None,
-        
+
             phase: None,
             message_id: None,
 }),
@@ -243,7 +243,7 @@ fn flatten_skips_reasoning_when_text_is_empty() {
             model_id: None,
             model_fingerprint: None,
             reasoning_effort: None,
-        
+
             phase: None,
             message_id: None,
 }),
@@ -551,7 +551,7 @@ fn window_assistant_text_pin_skips_empty_assistant_turns() {
         model_id: None,
         model_fingerprint: None,
         reasoning_effort: None,
-    
+
         phase: None,
         message_id: None,
 });

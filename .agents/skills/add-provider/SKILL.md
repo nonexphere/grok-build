@@ -209,7 +209,9 @@ in-scope checklist items and report the remaining blocker precisely.
 
 These mistakes are confirmed by the Goblin implementation review at
 `docs/architecture/multi-provider-auth/reports/2026-07-16-implementation-review.md`
-(findings B1–B6 and M1–M14); they are not hypothetical style preferences.
+(findings B1–B6 and M1–M14) and the Codex provider audit
+`.llms/reviews/code-audit-grok-goblin-codex-provider-2026-07-17.md`; they are not
+hypothetical style preferences.
 
 - **Static-token bridge:** copying an OAuth token into `ModelEntry.api_key` makes login
   appear integrated while bypassing refresh and request binding.
@@ -226,6 +228,28 @@ These mistakes are confirmed by the Goblin implementation review at
   every future provider cross-cut the CLI/runtime.
 - **Checkbox completion:** calling a wave done because modules/tests exist while its
   acceptance scenarios and production composition are absent.
+- **Wire/UI identity split:** `SamplingConfig.model` is a wire slug while ACP/UI
+  `current_model_id` is a catalog key (`provider/<credential>/<slug>`). Publishing the
+  short slug as ACP current makes the pager drop it on catalog refresh. Canonicalize
+  catalog keys for ACP/UI; keep wire slugs in sampling config; rematch unique short
+  slugs before falling back to a default model.
+- **FIFO request stamp:** 401 recovery must use the attempt id of the failing request
+  (`take_attempt(id)`), not oldest-FIFO or last-wins under concurrent out-of-order 401s.
+  Bearer resolve must return token + attempt id through HTTP send into the error.
+- **Secret-prefix telemetry:** never log Authorization / API-key values or truncated
+  prefixes (4/8/12/20 chars). Log presence, provider id, opaque credential id, attempt
+  id only. Search sinks for full canary and common prefix/suffix lengths.
+- **Best-effort success lie:** logout `remote_revoked` is true only after confirmed
+  remote revoke; local delete is a separate outcome; surface typed warnings on fail.
+- **Fail-loud panic:** production conversion of history/wire must return typed errors
+  (e.g. `try_create_response_from_conversation`), not `panic!` on unmapped items.
+- **Ephemeral proof:** live evidence must not live only under `/tmp`; persist redacted
+  artifacts under `.llms/evidence/` (or CI artifacts) and reference them from
+  `TO_RELEASE.md`.
+- **PASS/not-claimed contradiction:** a requirement cannot be simultaneously PASS,
+  deferred, and not claimed. One canonical status in inventory + goal + README blurb.
+- **Manager concurrency theater:** dual in-process managers + file flock is not “two OS
+  processes”; label proofs accurately (task / dual-manager / OS-process / multi-host).
 
 ## Verification
 
@@ -236,14 +260,43 @@ Complete every applicable item in
 - provider contract/unit/wire tests pass with exact request assertions;
 - the production client uses request-time resolution (repository search + integration test);
 - expired-token and 401 flows refresh, persist rotation, and retry at most once;
+- **Attempt-bound auth (P0):** concurrent resolves with inverted 401 order recover using
+  the failing attempt id, not FIFO; `resolve_for_request` / error carry attempt id;
+- **Model identity matrix (P0):** catalog key, wire slug, persisted id, ACP current id,
+  and display name stay correlated through select → request → persist → restore →
+  catalog refresh → UI (short slug rematch allowed only when unique);
+- **UI/wire consistency (P0):** picker, status bar / session info, headless JSON, and
+  wire request model agree semantically for the active session;
+- **Secret substring redaction (P0):** canary search for full token and prefixes/suffixes
+  of length 4/8/12/20 in log/telemetry sinks returns zero hits;
 - two accounts with the same model remain independently selectable;
 - parent/subagent mixed-provider and mixed-account requests are concurrent and isolated;
 - storage survives injected failures without token-generation inconsistency;
 - status/errors/logs/telemetry contain none of the seeded test secrets;
+- **Honest logout (P1):** revoke failure → `remote_revoked=false` + warning; local delete
+  is distinct;
+- **Transient login secrets (P1):** Debug/Display of device/browser flows redact user
+  code, device auth id, verification URIs with codes, and flow correlation ids;
+- **Fallible production conversion (P1):** unmappable Responses/history items return
+  errors, not process panics;
+- **Durable live evidence (P1):** any live PASS cites a durable redacted path, not only
+  `/tmp`;
+- **Documentation consistency (P1):** one status per requirement across TO_RELEASE,
+  goals, README blurbs, and validation reports;
 - legacy xAI/custom model/auth files remain compatible;
 - kill switches and non-TTY CLI behavior are tested;
 - OAuth authorization and real smoke evidence are explicitly proven or marked blocked;
 - documentation, phase status, test evidence, and commits agree.
+
+### Concurrency taxonomy (P2)
+
+Name the proof level exactly: task-local, dual in-process manager, dual OS process,
+multi-host. Do not upgrade labels without matching tests.
+
+### Validation preflight (P2)
+
+Before final cargo/live batteries: free space on home/tmp/target, toolchain, and link
+capacity; otherwise capture environmental failure under scratch without inventing green.
 
 The provider is complete only when the production composition root—not just isolated
 provider modules—passes the end-to-end gate.

@@ -321,6 +321,9 @@ pub struct SamplingClient {
     bearer_resolver: Option<crate::config::SharedBearerResolver>,
     /// Per-request header injection (OTel traceparent).
     header_injector: Option<crate::config::SharedHeaderInjector>,
+    /// Attempt id from the last `resolve_for_request` on this client (0 = none).
+    /// Bound into 401 `SamplingError::Auth` for exact stamp recovery.
+    last_request_attempt_id: std::sync::Arc<std::sync::atomic::AtomicU64>,
 }
 
 impl std::fmt::Debug for SamplingClient {
@@ -440,7 +443,7 @@ impl SamplingClient {
                             api_key = %api_key,
                             "Invalid api_key: cannot be converted to a valid HTTP header"
                         );
-                        SamplingError::Auth(
+                        SamplingError::auth(
                             "Invalid api_key: cannot be converted to a valid HTTP header"
                                 .to_string(),
                         )
@@ -454,7 +457,7 @@ impl SamplingClient {
                             api_key = %api_key,
                             "Invalid api_key: cannot be converted to a valid HTTP Authorization header"
                         );
-                        SamplingError::Auth(
+                        SamplingError::auth(
                             "Invalid api_key: cannot be converted to a valid HTTP Authorization header"
                                 .to_string(),
                         )
@@ -584,6 +587,7 @@ impl SamplingClient {
             attribution_callback: config.attribution_callback,
             bearer_resolver: config.bearer_resolver,
             header_injector: config.header_injector,
+            last_request_attempt_id: std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)),
         })
     }
 
@@ -618,12 +622,32 @@ impl SamplingClient {
         )
     }
 
+    /// Attempt id from the last HTTP send resolve (for 401 recovery binding).
+    pub fn last_request_attempt_id(&self) -> Option<u64> {
+        let id = self
+            .last_request_attempt_id
+            .load(std::sync::atomic::Ordering::SeqCst);
+        if id == 0 { None } else { Some(id) }
+    }
+
+    fn auth_error(&self, message: impl AsRef<str>) -> SamplingError {
+        SamplingError::auth_with_attempt(message.as_ref(), self.last_request_attempt_id())
+    }
+
     /// POST with default headers. Overrides auth from resolver if wired.
     fn post(&self, url: impl reqwest::IntoUrl) -> reqwest::RequestBuilder {
         let mut headers = self.default_headers.clone();
+        // Reset attempt binding for this send; multi-provider fills it below.
+        self.last_request_attempt_id
+            .store(0, std::sync::atomic::Ordering::SeqCst);
         if let Some(resolver) = &self.bearer_resolver
-            && let Some(fresh) = resolver.current_bearer()
+            && let Some(resolved) = resolver.resolve_for_request()
         {
+            if let Some(id) = resolved.attempt_id {
+                self.last_request_attempt_id
+                    .store(id, std::sync::atomic::Ordering::SeqCst);
+            }
+            let fresh = resolved.token;
             match self.defaults.auth_scheme {
                 AuthScheme::XApiKey => {
                     headers.remove(AUTHORIZATION);
@@ -640,14 +664,8 @@ impl SamplingClient {
             }
         }
         {
-            let auth_prefix = headers
-                .get(AUTHORIZATION)
-                .and_then(|v| v.to_str().ok())
-                .map(|s| s.chars().take(20).collect::<String>());
-            let x_api_key_prefix = headers
-                .get(HeaderName::from_static("x-api-key"))
-                .and_then(|v| v.to_str().ok())
-                .map(|s| s.chars().take(12).collect::<String>());
+            // Never log Authorization / x-api-key values or prefixes (audit CRITICAL:
+            // even truncated secrets are credential material). Presence + scheme only.
             tracing::info!(
                 target: crate::sampling_log::TARGET,
                 event = "client_post",
@@ -658,8 +676,6 @@ impl SamplingClient {
                 has_bearer_resolver = self.bearer_resolver.is_some(),
                 has_authorization_header = headers.get(AUTHORIZATION).is_some(),
                 has_x_api_key_header = headers.get(HeaderName::from_static("x-api-key")).is_some(),
-                auth_header_prefix = auth_prefix.as_deref().unwrap_or("none"),
-                x_api_key_prefix = x_api_key_prefix.as_deref().unwrap_or("none"),
             );
         }
         if let Some(injector) = &self.header_injector {
@@ -712,7 +728,7 @@ impl SamplingClient {
     /// Invoke the optional 401 attribution callback for one logical
     /// 401 response. Each of the six UNAUTHORIZED arms in this file
     /// calls this helper immediately before returning
-    /// `SamplingError::Auth(...)`. Emit happens at the lowest layer
+    /// `SamplingError::auth(...)`. Emit happens at the lowest layer
     /// that saw the status, so higher layers that react to a 401 must
     /// not emit a duplicate event.
     ///
@@ -879,7 +895,7 @@ impl SamplingClient {
             if status == reqwest::StatusCode::UNAUTHORIZED {
                 self.record_401_attribution(crate::attribution::SamplingConsumer::ChatCompletions);
                 let server_message = parse_error_bytes(bytes.as_ref());
-                return Err(SamplingError::Auth(format!(
+                return Err(self.auth_error(format!(
                     "Unauthorized (401): {server_message}"
                 )));
             }
@@ -1030,7 +1046,7 @@ impl SamplingClient {
                 );
                 let endpoint = self.endpoint("chat/completions");
                 let server_message = response.text().await.unwrap_or_default();
-                return Err(SamplingError::Auth(format!(
+                return Err(self.auth_error(format!(
                     "Unauthorized (401) from {endpoint}: {server_message}"
                 )));
             }
@@ -1260,7 +1276,7 @@ impl SamplingClient {
                 self.record_401_attribution(crate::attribution::SamplingConsumer::Responses);
                 let endpoint = self.endpoint("responses");
                 let server_message = parse_error_bytes(bytes.as_ref());
-                return Err(SamplingError::Auth(format!(
+                return Err(self.auth_error(format!(
                     "Unauthorized (401) from {endpoint}: {server_message}"
                 )));
             }
@@ -1438,7 +1454,7 @@ impl SamplingClient {
                 self.record_401_attribution(crate::attribution::SamplingConsumer::ResponsesStream);
                 let endpoint = self.endpoint("responses");
                 let server_message = response.text().await.unwrap_or_default();
-                return Err(SamplingError::Auth(format!(
+                return Err(self.auth_error(format!(
                     "Unauthorized (401) from {endpoint}: {server_message}"
                 )));
             }
@@ -1632,7 +1648,7 @@ impl SamplingClient {
                 self.record_401_attribution(crate::attribution::SamplingConsumer::Messages);
                 let endpoint = self.endpoint("messages");
                 let server_message = parse_error_bytes(bytes.as_ref());
-                return Err(SamplingError::Auth(format!(
+                return Err(self.auth_error(format!(
                     "Unauthorized (401) from {endpoint}: {server_message}"
                 )));
             }
@@ -1761,7 +1777,7 @@ impl SamplingClient {
                 self.record_401_attribution(crate::attribution::SamplingConsumer::MessagesStream);
                 let endpoint = self.endpoint("messages");
                 let server_message = response.text().await.unwrap_or_default();
-                return Err(SamplingError::Auth(format!(
+                return Err(self.auth_error(format!(
                     "Unauthorized (401) from {endpoint}: {server_message}"
                 )));
             }
@@ -1971,7 +1987,16 @@ impl SamplingClient {
             request.prompt_cache_key = None;
         }
         let phase_items = request.items.clone();
-        let responses_request: rs::CreateResponse = (&request).into();
+        let responses_request = match xai_grok_sampling_types::try_create_response_from_conversation(
+            &request,
+        ) {
+            Ok(r) => r,
+            Err(e) => {
+                return Err(SamplingError::serialization_message(format!(
+                    "responses input convert failed: {e}"
+                )));
+            }
+        };
 
         let mut wrapper = CreateResponseWrapper::new(responses_request);
         wrapper.x_grok_conv_id = x_grok_conv_id;
@@ -2012,7 +2037,16 @@ impl SamplingClient {
             request.prompt_cache_key = None;
         }
         let phase_items = request.items.clone();
-        let responses_request: rs::CreateResponse = (&request).into();
+        let responses_request = match xai_grok_sampling_types::try_create_response_from_conversation(
+            &request,
+        ) {
+            Ok(r) => r,
+            Err(e) => {
+                return Err(SamplingError::serialization_message(format!(
+                    "responses input convert failed: {e}"
+                )));
+            }
+        };
 
         let mut wrapper = CreateResponseWrapper::new(responses_request);
         wrapper.x_grok_conv_id = x_grok_conv_id;

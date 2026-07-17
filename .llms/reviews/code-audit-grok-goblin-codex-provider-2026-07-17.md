@@ -199,4 +199,3 @@ Pelo contrato de `refine-skill`, estes refinamentos foram apenas propostos; a sk
 5. Reconciliar PC8 docs/evidence.
 6. Aplicar os refinamentos aprovados à `add-provider`.
 7. Reexecutar shell, pager, multi-auth, check, diff-check e um smoke Codex final.
-

@@ -10,9 +10,9 @@ source_path_legacy: "docs/architecture/multi-provider-auth/reports/2026-07-16-th
 
 # Third multi-provider implementation review: late progress and regressions
 
-> Type: `full-plan-review` / third incremental readiness review  
-> Baseline: `2026-07-16-second-implementation-review.md`  
-> Scope: current uncommitted worktree over `b189869`  
+> Type: `full-plan-review` / third incremental readiness review
+> Baseline: `2026-07-16-second-implementation-review.md`
+> Scope: current uncommitted worktree over `b189869`
 > Reviewer: Codex, directly; no subagents
 
 ## 1. Verdict

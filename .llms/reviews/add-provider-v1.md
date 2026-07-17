@@ -64,4 +64,3 @@ replaced or lost.
 - Referenced checklist and template files exist and are linked.
 - Detailed checklist/template content is decomposed without orphan files.
 - The skill is project-scoped because it depends on Goblin-specific contracts and paths.
-

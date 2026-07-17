@@ -58,7 +58,7 @@ pub(crate) use xai_grok_sampling_types::is_context_length_error;
 fn classify_sampling_error(err: SamplingError) -> CompactFailure {
     let acp_err = acp::Error::internal_error().data(format!("compact failed: {err}"));
     let deterministic = match &err {
-        SamplingError::Auth(_)
+        SamplingError::Auth { .. }
         | SamplingError::InvalidConfiguration(_)
         | SamplingError::Serialization(_)
         | SamplingError::IdleTimeout { .. } => true,
@@ -778,7 +778,7 @@ mod classify_tests {
     }
     #[test]
     fn sampling_non_api_variants_classify_correctly() {
-        assert!(is_det(&classify_sampling_error(SamplingError::Auth(
+        assert!(is_det(&classify_sampling_error(SamplingError::auth(
             "expired".into()
         ))));
         assert!(is_det(&classify_sampling_error(
@@ -996,7 +996,7 @@ mod compacted_history_shape_tests {
                 model_id: None,
                 model_fingerprint: None,
                 reasoning_effort: None,
-            
+
                 phase: None,
                 message_id: None,
 }),
@@ -1010,7 +1010,7 @@ mod compacted_history_shape_tests {
                 model_id: None,
                 model_fingerprint: None,
                 reasoning_effort: None,
-            
+
                 phase: None,
                 message_id: None,
 }),
@@ -1178,7 +1178,7 @@ mod compacted_history_shape_tests {
                 model_id: None,
                 model_fingerprint: None,
                 reasoning_effort: None,
-            
+
                 phase: None,
                 message_id: None,
 }),

@@ -1,8 +1,8 @@
 # AUD-003 Wire Fidelity Hot-Path Review — 2026-07-17
 
-**Auditor:** read-only review harness (Grok Build review subagent)  
-**Repo:** `/home/guilherme/github/grok-goblin`  
-**Mode:** read-only; no product code modified.  
+**Auditor:** read-only review harness (Grok Build review subagent)
+**Repo:** `/home/guilherme/github/grok-goblin`
+**Mode:** read-only; no product code modified.
 **Scope:**
 - `crates/codegen/xai-grok-sampling-types/src/conversation.rs`
   - `build_responses_input`
@@ -134,8 +134,8 @@ Therefore a response captured with FC siblings resends as `assistant(content) �
 
 ### 3.2 Residual risk — global `has_fc_siblings` guard can over-suppress legacy `assistant.tool_calls`
 
-**Severity:** Medium  
-**Confidence:** Medium  
+**Severity:** Medium
+**Confidence:** Medium
 **Location:** `conversation.rs:2906–2912`
 
 The guard is computed once over the entire conversation:
@@ -155,8 +155,8 @@ No test currently covers a mixed legacy/modern history.
 
 ### 3.3 Tests not executed
 
-**Severity:** Process  
-**Confidence:** N/A  
+**Severity:** Process
+**Confidence:** N/A
 
 This harness has no shell-execution tool, so the relevant unit tests were not run. The acceptance criteria are proven by reading the test definitions and the production conversion code. A local `cargo test -p xai-grok-sampling-types create_response_from_request try_build_responses_input_errs_on_opaque` should be run before merge to confirm the assertions pass.
 
