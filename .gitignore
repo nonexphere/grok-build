@@ -2,9 +2,11 @@
 **/*.rs.bk
 .DS_Store
 
-# Local npm pack output
+# Local npm pack output / assembled native blobs (keep meta package bin shim)
 npm/dist/
-npm/**/bin/grok-oss
+npm/grok-oss-*/bin/grok-oss
+npm/grok-oss-*/bin/grok-oss.exe
+npm/grok-oss-*/bin/*.br
 npm/**/bin/*.br
 npm/**/bin/*.exe
 
