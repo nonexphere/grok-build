@@ -621,6 +621,12 @@ impl AuthProvider for CodexAuthProvider {
 #[cfg(test)]
 mod audit_remediation_tests {
     use super::*;
+    use chrono::Utc;
+    use std::collections::BTreeMap;
+    use xai_grok_auth::{
+        CredentialId, CredentialKey, CredentialMetadata, CredentialSecret, CredentialStatus,
+        LogoutRequest, ProviderAccountInfo, SecretBackendKind, SecretString, StoredCredential,
+    };
 
     #[test]
     fn device_flow_debug_redacts_user_code_and_device_auth_id() {
@@ -642,21 +648,70 @@ mod audit_remediation_tests {
         assert!(dbg.contains("<redacted>"), "expected redaction markers: {dbg}");
     }
 
-    #[test]
-    fn logout_outcome_remote_revoked_only_when_ok() {
-        // Mirrors CodexAuthProvider::logout match: Err must not claim remote_revoked.
-        let revoke_result: Result<(), String> = Err("upstream 500".into());
-        let mut remote_revoked = false;
-        let mut warning = None;
-        match revoke_result {
-            Ok(()) => remote_revoked = true,
-            Err(e) => {
-                warning = Some(format!(
-                    "remote token revoke failed; local credential will still be removed: {e}"
-                ));
-            }
-        }
-        assert!(!remote_revoked);
-        assert!(warning.as_ref().unwrap().contains("failed"));
+    /// Drive the real [`AuthProvider::logout`] path with a mockito revoke 5xx.
+    #[tokio::test]
+    async fn logout_remote_revoked_false_when_upstream_revoke_fails() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("POST", "/oauth/revoke")
+            .with_status(500)
+            .with_body("upstream revoke failed")
+            .create_async()
+            .await;
+
+        let mut config = CodexOAuthConfig::default();
+        config.issuer = url::Url::parse(&server.url()).expect("issuer url");
+        let provider = CodexAuthProvider::with_client(config, reqwest::Client::new());
+
+        let now = Utc::now();
+        let key = CredentialKey {
+            provider: codex_provider_id(),
+            credential_id: CredentialId::new(),
+        };
+        let stored = StoredCredential {
+            metadata: CredentialMetadata {
+                schema_version: 1,
+                key,
+                alias: "test".into(),
+                account: ProviderAccountInfo::default(),
+                created_at: now,
+                updated_at: now,
+                last_used_at: None,
+                expires_at: Some(now + chrono::Duration::hours(1)),
+                status: CredentialStatus::Ready,
+                generation: 1,
+                secret_backend: SecretBackendKind::Ephemeral,
+            },
+            secret: CredentialSecret {
+                access_token: SecretString::from_str("access-token-canary"),
+                refresh_token: Some(SecretString::from_str("refresh-token-canary")),
+                id_token: None,
+                fields: BTreeMap::new(),
+            },
+        };
+
+        let outcome = AuthProvider::logout(
+            &provider,
+            LogoutRequest {
+                credential: &stored,
+                revoke: true,
+            },
+        )
+        .await
+        .expect("logout must return Ok outcome even when remote revoke fails");
+
+        assert!(
+            !outcome.remote_revoked,
+            "remote_revoked must be false when revoke HTTP fails"
+        );
+        assert!(
+            outcome
+                .warning
+                .as_deref()
+                .is_some_and(|w| w.contains("revoke") || w.contains("failed")),
+            "expected typed warning, got {:?}",
+            outcome.warning
+        );
+        mock.assert_async().await;
     }
 }

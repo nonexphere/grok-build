@@ -744,17 +744,25 @@ impl SamplingClient {
         }
     }
 
+    /// Scheme/presence only — never returns token prefixes (audit CRITICAL).
+    ///
+    /// Does **not** call [`BearerResolver::peek_bearer`] / `current_bearer` so
+    /// multi-provider recovery stamps are not polluted (AUD-006).
     pub fn auth_info(&self) -> crate::sampling_log::AuthInfo {
-        let auth_prefix = self.current_sent_bearer_prefix();
-        let auth_type = match (&self.defaults.auth_scheme, &auth_prefix) {
-            (AuthScheme::XApiKey, Some(_)) => "x-api-key",
-            (AuthScheme::Bearer, Some(_)) => "bearer",
-            (_, None) => "none",
+        let has_static = match self.defaults.auth_scheme {
+            AuthScheme::XApiKey => self
+                .default_headers
+                .get(HeaderName::from_static("x-api-key"))
+                .is_some(),
+            AuthScheme::Bearer => self.default_headers.get(AUTHORIZATION).is_some(),
         };
-        crate::sampling_log::AuthInfo {
-            auth_type,
-            auth_prefix,
-        }
+        let has_auth = has_static || self.bearer_resolver.is_some();
+        let auth_type = match (&self.defaults.auth_scheme, has_auth) {
+            (AuthScheme::XApiKey, true) => "x-api-key",
+            (AuthScheme::Bearer, true) => "bearer",
+            (_, false) => "none",
+        };
+        crate::sampling_log::AuthInfo::scheme_only(auth_type)
     }
 
     /// Check if a header name contains sensitive information that should be redacted.
@@ -2529,10 +2537,9 @@ mod tests {
         }
     }
 
-    /// auth_info / attribution prefix must use peek_bearer, not current_bearer
-    /// (AUD-006: only HTTP send records multi-provider recovery stamps).
+    /// auth_info must not call peek/current_bearer (AUD-006 + secret-prefix ban).
     #[test]
-    fn auth_info_and_prefix_use_peek_bearer_not_send() {
+    fn auth_info_does_not_peek_or_send_or_expose_prefix() {
         let resolver = std::sync::Arc::new(PeekVsSendResolver::new());
         let cfg = SamplerConfig {
             api_key: Some("stale".into()),
@@ -2542,10 +2549,15 @@ mod tests {
         };
         let client = SamplingClient::new(cfg).expect("client");
         let info = client.auth_info();
-        assert_eq!(info.auth_prefix.as_deref(), Some("peek-token"));
+        assert_eq!(info.auth_type, "bearer");
+        assert!(
+            info.auth_prefix.is_none(),
+            "auth_info must never carry token prefixes"
+        );
         assert_eq!(
             resolver.peeks.load(std::sync::atomic::Ordering::SeqCst),
-            1
+            0,
+            "auth_info must not call peek_bearer"
         );
         assert_eq!(
             resolver.sends.load(std::sync::atomic::Ordering::SeqCst),
@@ -2558,13 +2570,64 @@ mod tests {
         assert_eq!(
             resolver.sends.load(std::sync::atomic::Ordering::SeqCst),
             1,
-            "post must call current_bearer once for the wire token"
+            "post must resolve_for_request / current_bearer once for the wire token"
         );
         assert_eq!(
             resolver.peeks.load(std::sync::atomic::Ordering::SeqCst),
-            1,
+            0,
             "post must not call peek_bearer"
         );
+    }
+
+    /// Canary: info-path AuthInfo + span contract must not leak full canary or
+    /// length-4/8/12/20 prefixes into log-facing structures.
+    #[test]
+    fn canary_auth_info_and_request_span_have_zero_secret_hits() {
+        let canary = "sk-canary-SECRET-PREFIX-0123456789abcdef";
+        let cfg = SamplerConfig {
+            api_key: Some(canary.into()),
+            api_backend: ApiBackend::Responses,
+            ..minimal_config()
+        };
+        let client = SamplingClient::new(cfg).expect("client");
+        let info = client.auth_info();
+        assert!(info.auth_prefix.is_none());
+        assert_eq!(info.auth_type, "bearer");
+
+        let surfaces = [
+            format!("{info:?}"),
+            format!("{:?}", crate::sampling_log::AuthInfo::scheme_only(info.auth_type)),
+        ];
+        let prefixes = [4usize, 8, 12, 20];
+        for surface in &surfaces {
+            assert!(
+                !surface.contains(canary),
+                "full canary leaked into log surface: {surface}"
+            );
+            for n in prefixes {
+                let prefix: String = canary.chars().take(n).collect();
+                assert!(
+                    !surface.contains(&prefix),
+                    "canary prefix len={n} leaked into log surface: {surface}"
+                );
+            }
+        }
+
+        // Span field contract: info_span! must not take prefix.
+        let src = include_str!("sampling_log.rs");
+        let span = src
+            .split("tracing::info_span!")
+            .nth(1)
+            .and_then(|s| s.split("\n    )").next())
+            .expect("info_span body");
+        assert!(!span.contains("auth_prefix"), "span fields: {span}");
+        // client_post path must also stay clean (prior fix).
+        let post_src = include_str!("client.rs");
+        let post_start = post_src.find("fn post(&self").expect("post");
+        let post = &post_src[post_start..post_start + 2500.min(post_src.len() - post_start)];
+        assert!(!post.contains("auth_header_prefix"));
+        assert!(!post.contains("chars().take(20)"));
+        assert!(!post.contains("chars().take(12)"));
     }
 
     impl crate::attribution::Auth401AttributionCallback for CountingCallback {
