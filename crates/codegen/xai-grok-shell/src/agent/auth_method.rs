@@ -53,8 +53,13 @@ pub fn has_xai_api_key_env() -> bool {
 /// its tests catch call-site and predicate regressions.
 ///
 /// Probes `std::env` at call time and consults each `ModelEntry` for a
-/// resolvable api_key/env_key -- both inputs can change between calls, so the
-/// result is not cached.
+/// resolvable **BYOK** `api_key`/`env_key` — both inputs can change between
+/// calls, so the result is not cached.
+///
+/// Multi-provider catalog bindings (`codex/{credential_id}/…`) intentionally
+/// do **not** count: they authenticate via `BearerResolver` / TokenManager, not
+/// the `xai.api_key` ACP method. Treating them as advertiseable made every
+/// Codex-logged-in user prefer `xai.api_key` fallthrough without an XAI key.
 ///
 /// `disable_api_key_auth` (`[grok_com_config] disable_api_key_auth` /
 /// `GROK_DISABLE_API_KEY_AUTH`) is the admin kill switch: when true the
@@ -67,7 +72,8 @@ where
     if disable_api_key_auth {
         return false;
     }
-    has_xai_api_key_env() || models.into_iter().any(ModelEntry::has_own_credentials)
+    // BYOK only — not multi-provider binding (`has_own_credentials` is broader).
+    has_xai_api_key_env() || models.into_iter().any(|m| m.own_credential().is_some())
 }
 
 /// Inputs to [`build_auth_methods`].

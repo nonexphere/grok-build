@@ -1937,17 +1937,29 @@ impl ModelGlobSet {
     }
 }
 
-/// Single source of truth for the catalog. Applies, in order: `disabled_models`
-/// (remove), `allowed_models` (mark `user_selectable`), `hidden_models` (mark
-/// `hidden`). Special/internal models (web_search, subagents, …) resolve via
-/// `find_model_by_id`/`models()` and ignore `user_selectable`, so they need no
-/// exemption. Globs are validated at load (`Config::validate_model_filters`);
+/// Single source of truth for the catalog. Applies, in order:
+/// 1. multi-provider Codex merge (Goblin; credential-scoped keys),
+/// 2. `disabled_models` (remove),
+/// 3. `allowed_models` (mark `user_selectable`),
+/// 4. `hidden_models` (mark `hidden`),
+/// 5. reasoning-effort stamps (CLI/config).
+///
+/// Filters run **after** Codex merge so `allowed_models` / `disabled_models` /
+/// `hidden_models` apply to multi-provider entries the same way as xAI models
+/// (merge must not bypass the allowlist with unconditional `user_selectable`).
+/// Special/internal models resolve via `find_model_by_id`/`models()` and ignore
+/// `user_selectable`. Globs are validated at load (`Config::validate_model_filters`);
 /// the arms here fail closed if one slips through.
 pub fn resolve_model_catalog(
     cfg: &config::Config,
     prefetched: Option<IndexMap<String, ModelEntry>>,
 ) -> IndexMap<String, ModelEntry> {
     let mut catalog: IndexMap<String, ModelEntry> = config::resolve_model_list(cfg, prefetched);
+
+    // Goblin: merge Codex before filters + effort stamps so allowlist/disabled
+    // apply to multi-provider keys and CLI effort overrides Medium defaults.
+    #[cfg(feature = "native-multi-provider-auth")]
+    merge_codex_provider_models(&mut catalog);
 
     if let Ok(Some(disabled)) = ModelGlobSet::compile(cfg.models.disabled_models.as_ref()) {
         let before = catalog.len();
@@ -1985,13 +1997,6 @@ pub fn resolve_model_catalog(
             }
         }
     }
-
-    // Goblin fork: merge Codex/ChatGPT models **before** effort stamps so CLI
-    // `--reasoning-effort` / `--effort` and persisted default effort apply to
-    // multi-provider entries (merge inserts Medium defaults that must not win
-    // over an explicit CLI override).
-    #[cfg(feature = "native-multi-provider-auth")]
-    merge_codex_provider_models(&mut catalog);
 
     stamp_reasoning_effort_overrides(cfg, &mut catalog);
 
@@ -2932,6 +2937,67 @@ mod tests {
             catalog[&key].info.reasoning_effort,
             Some(ReasoningEffort::Xhigh),
             "stamp after merge must replace Medium with CLI override"
+        );
+    }
+
+    /// Codex merge must not bypass `allowed_models` (regression: merge used to
+    /// run after the allowlist pass with unconditional `user_selectable = true`).
+    #[cfg(feature = "native-multi-provider-auth")]
+    #[test]
+    fn allowed_models_applies_to_merged_codex_entries() {
+        use std::collections::BTreeSet;
+
+        use xai_grok_auth::{CredentialId, ProviderModel};
+        use xai_grok_multi_auth::cli::{CodexAccountModels, CodexModelsReport};
+        use xai_grok_multi_auth::provider_model_key::format_provider_model_key;
+
+        let credential_id = CredentialId::from_uuid(
+            uuid::Uuid::parse_str("11111111-2222-3333-4444-555555555555").unwrap(),
+        );
+        let provider = xai_grok_auth::ProviderId::new_unchecked("codex");
+        let key = format_provider_model_key(&provider, credential_id, "gpt-5.6-luna");
+
+        set_codex_merge_report_override_for_test(CodexModelsReport {
+            accounts: vec![CodexAccountModels {
+                alias: "work".into(),
+                email: None,
+                credential_id,
+                account_id: Some("acct-allow".into()),
+                models: vec![ProviderModel {
+                    id: "gpt-5.6-luna".into(),
+                    display_name: "GPT-5.6-Luna".into(),
+                    description: None,
+                    context_window: Some(100_000),
+                    priority: 0,
+                    capabilities: BTreeSet::new(),
+                    raw_metadata: serde_json::Value::Null,
+                }],
+                error: None,
+            }],
+        });
+
+        let cfg = config_from_toml(
+            r#"
+            [models]
+            allowed_models = ["keep-*"]
+            [model.keep-1]
+            model = "keep-1"
+            base_url = "https://api.x.ai/v1"
+            context_window = 256000
+            "#,
+        );
+        let catalog = resolve_model_catalog(&cfg, None);
+        assert!(
+            catalog.get(&key).is_some_and(|e| !e.info.user_selectable),
+            "merged Codex entry must be non-selectable under keep-* allowlist"
+        );
+        assert!(
+            catalog.get("keep-1").is_some_and(|e| e.info.user_selectable),
+            "allowed model remains selectable"
+        );
+        assert!(
+            validate_selectable(&cfg, &catalog).is_ok(),
+            "catalog still has at least one selectable model"
         );
     }
 

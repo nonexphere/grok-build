@@ -3320,18 +3320,48 @@ fn fresh_tool_model_rejects_unavailable_exact_key_over_visible_slug_collision() 
     );
 }
 #[test]
-fn fresh_tool_model_rejects_unavailable_first_slug_collision() {
+fn fresh_tool_model_accepts_last_selectable_slug_collision() {
+    // Non-multi-provider short-slug resolution is last-wins (user overrides
+    // beat earlier defaults). Validation must match execution: with a blocked
+    // first entry and a selectable second sharing the same routing slug, the
+    // tool override is accepted.
     let mut models = indexmap::IndexMap::new();
     let mut unavailable_first = test_model_entry("shared-routing-slug");
     unavailable_first.info.user_selectable = false;
     models.insert("blocked-first".to_string(), unavailable_first);
     models.insert("visible-second".to_string(), test_model_entry("shared-routing-slug"));
+    assert!(
+        super::handle_request::task_model_override_error(
+            Some("shared-routing-slug"),
+            ModelOverrideProvenance::Tool,
+            false,
+            &models,
+            false,
+        )
+        .is_none(),
+        "last selectable routing-slug entry must be accepted (matches find_model_by_id)"
+    );
+}
+#[test]
+fn fresh_tool_model_rejects_when_only_unavailable_slug_matches() {
+    let mut models = indexmap::IndexMap::new();
+    let mut unavailable = test_model_entry("shared-routing-slug");
+    unavailable.info.user_selectable = false;
+    models.insert("blocked-only".to_string(), unavailable);
+    models.insert("visible-other".to_string(), test_model_entry("other-slug"));
     assert_eq!(
-        super::handle_request::task_model_override_error(Some("shared-routing-slug"),
-        ModelOverrideProvenance::Tool, false, & models, false,).as_deref(),
-        Some("Unknown Task.model slug 'shared-routing-slug'. Valid model slugs: \
-                 visible-second. Omit `model` to inherit the parent model."),
-        "validation must inspect the first routing-slug entry selected by execution"
+        super::handle_request::task_model_override_error(
+            Some("shared-routing-slug"),
+            ModelOverrideProvenance::Tool,
+            false,
+            &models,
+            false,
+        )
+        .as_deref(),
+        Some(
+            "Unknown Task.model slug 'shared-routing-slug'. Valid model slugs: \
+             visible-other. Omit `model` to inherit the parent model."
+        ),
     );
 }
 #[test]
