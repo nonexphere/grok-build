@@ -1,9 +1,9 @@
 # Epic v1-task-graph-subagents — DAG, isolamento e integração
 
-Status: rascunho  
-Prioridade: lançamento-bloqueante  
-Depende de: `../v1-runtime-continuation/`, `../v1-tools-verification/`  
-Habilita: `v1-clients-projections`  
+Status: rascunho
+Prioridade: lançamento-bloqueante
+Depende de: `../v1-runtime-continuation/`, `../v1-tools-verification/`
+Habilita: `v1-clients-projections`
 Skills relacionadas: `@implementation-loop`, `@code-review`
 
 ## Arquitetura

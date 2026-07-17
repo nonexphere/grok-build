@@ -1,9 +1,9 @@
 # Epic v1-runtime-continuation — Runtime e loop determinístico
 
-Status: rascunho  
-Prioridade: lançamento-bloqueante  
-Depende de: `../v1-persistence-leases-accounting/`  
-Habilita: `v1-tools-verification`, `v1-task-graph-subagents`  
+Status: rascunho
+Prioridade: lançamento-bloqueante
+Depende de: `../v1-persistence-leases-accounting/`
+Habilita: `v1-tools-verification`, `v1-task-graph-subagents`
 Skills relacionadas: `@implementation-loop`, `@code-review`
 
 ## Arquitetura

@@ -1,9 +1,9 @@
 # Epic v1-characterization-domain — Baseline e domínio puro
 
-Status: rascunho  
-Prioridade: lançamento-bloqueante  
-Depende de: nenhuma  
-Habilita: `v1-persistence-leases-accounting`, `v1-architecture-protocol` (vocabulário compartilhado)  
+Status: rascunho
+Prioridade: lançamento-bloqueante
+Depende de: nenhuma
+Habilita: `v1-persistence-leases-accounting`, `v1-architecture-protocol` (vocabulário compartilhado)
 Skills relacionadas: `@repository-exploration`, `@architecture-spec-authoring`, `@implementation-loop`
 
 ## Arquitetura

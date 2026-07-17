@@ -1,9 +1,9 @@
 # Epic v1-core-in-process — Vertical slice Thread/Turn/Item
 
-Status: rascunho  
-Prioridade: lançamento-bloqueante  
-Depende de: `../v1-runtime-facade-projection/`  
-Habilita: `v1-history-replay`, `v1-approvals-control`  
+Status: rascunho
+Prioridade: lançamento-bloqueante
+Depende de: `../v1-runtime-facade-projection/`
+Habilita: `v1-history-replay`, `v1-approvals-control`
 Skills relacionadas: `@implementation-loop`, `@code-review`
 
 ## Arquitetura

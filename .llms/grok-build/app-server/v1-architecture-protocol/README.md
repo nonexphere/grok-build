@@ -1,9 +1,9 @@
 # Epic v1-architecture-protocol — ADRs e contrato v1
 
-Status: rascunho  
-Prioridade: lançamento-bloqueante  
-Depende de: nenhuma  
-Habilita: `v1-runtime-facade-projection`  
+Status: rascunho
+Prioridade: lançamento-bloqueante
+Depende de: nenhuma
+Habilita: `v1-runtime-facade-projection`
 Skills relacionadas: `@repository-exploration`, `@architecture-spec-authoring`, `@implementation-loop`
 
 ## Arquitetura

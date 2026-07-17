@@ -1,9 +1,9 @@
 # Epic v1-daemon-transports-security — Leader promovido e transportes
 
-Status: rascunho  
-Prioridade: lançamento-bloqueante  
-Depende de: `../v1-history-replay/`, `../v1-approvals-control/`  
-Habilita: `v1-tui-migration`  
+Status: rascunho
+Prioridade: lançamento-bloqueante
+Depende de: `../v1-history-replay/`, `../v1-approvals-control/`
+Habilita: `v1-tui-migration`
 Skills relacionadas: `@implementation-loop`, `@code-audit`, `@code-review`
 
 ## Arquitetura

@@ -227,6 +227,9 @@ impl acp::Agent for MvpAgent {
             disable_api_key_auth,
             self.models_manager.models().values(),
         );
+        let has_multi_provider_ready = auth_method::should_advertise_multi_provider_auth(
+            self.models_manager.models().values(),
+        );
         let init_has_current = self.auth_manager.current().is_some();
         let init_is_expired = self.auth_manager.is_expired();
         xai_grok_telemetry::unified_log::info(
@@ -307,12 +310,19 @@ impl acp::Agent for MvpAgent {
             Some(crate::auth::PreferredAuthMethod::Oidc) => false,
             _ => has_external_api_key,
         };
+        // Enterprise pins exclude multi-provider from the ACP method list.
+        let has_multi_provider_ready = match preferred_method {
+            Some(crate::auth::PreferredAuthMethod::Oidc)
+            | Some(crate::auth::PreferredAuthMethod::ApiKey) => false,
+            None => has_multi_provider_ready,
+        };
         let has_cached_token = match preferred_method {
             Some(crate::auth::PreferredAuthMethod::ApiKey) => false,
             _ => has_cached_token,
         };
         let built = auth_method::build_auth_methods(auth_method::AuthMethodsBuildInputs {
             has_external_api_key,
+            has_multi_provider_ready,
             has_cached_token,
             has_enterprise_oidc,
             enterprise_oidc_issuer: enterprise_oidc_issuer.as_deref(),
@@ -473,6 +483,27 @@ impl acp::Agent for MvpAgent {
             }
         }
         match arguments.method_id.0.as_ref() {
+            auth_method::MULTI_PROVIDER_AUTH_METHOD_ID => {
+                // Credentials already live in multi-auth store; request paths
+                // resolve tokens via BearerResolver. Accept when catalog still
+                // exposes a multi-provider binding.
+                if !auth_method::should_advertise_multi_provider_auth(
+                    self.models_manager.models().values(),
+                ) {
+                    emit_login_span(false, "multi_provider", None, Some("no_binding"));
+                    return Err(acp::Error::auth_required().data(
+                        "No multi-provider credential is ready. Run `goblin login --provider codex`.",
+                    ));
+                }
+                self.set_auth_method(arguments.method_id.clone());
+                self.ensure_telemetry_client();
+                emit_login_span(true, "multi_provider", None, None);
+                log_event(xai_grok_telemetry::events::Login {
+                    auth_method: "multi_provider".to_string(),
+                    user_id: None,
+                });
+                Ok(Default::default())
+            }
             auth_method::XAI_API_KEY_METHOD_ID => {
                 if self.cfg.borrow().grok_com_config.api_key_auth_disabled() {
                     emit_login_span(false, "api_key", None, Some("disabled_by_admin"));

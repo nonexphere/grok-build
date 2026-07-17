@@ -1,9 +1,9 @@
 # Epic v1-ecosystem-ga — Adapters, SDK e produção
 
-Status: rascunho  
-Prioridade: lançamento-bloqueante  
-Depende de: `../v1-tui-migration/`, `../../goal-runtime/v1-clients-projections/`  
-Habilita: App Server v1 GA  
+Status: rascunho
+Prioridade: lançamento-bloqueante
+Depende de: `../v1-tui-migration/`, `../../goal-runtime/v1-clients-projections/`
+Habilita: App Server v1 GA
 Skills relacionadas: `@code-audit`, `@release-checklist`, `@code-review`, `@delivery-report`
 
 ## Arquitetura

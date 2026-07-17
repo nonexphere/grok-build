@@ -1,7 +1,7 @@
 # Provider Matrix — Cloudflare, Groq, OpenRouter
 
-**Purpose:** Capture wire/auth/model facts for planning.  
-**Sources:** Official docs research (2026-07), plus Goblin code evidence for how we would attach.  
+**Purpose:** Capture wire/auth/model facts for planning.
+**Sources:** Official docs research (2026-07), plus Goblin code evidence for how we would attach.
 **Not** a promise of full API surface support.
 
 ---
@@ -34,7 +34,7 @@
 - Key created at openrouter.ai keys UI
 - Optional headers (docs):
   - `HTTP-Referer` — site URL
-  - `X-Title` — site title  
+  - `X-Title` — site title
   Goblin already has `extra_headers` infrastructure; product may set Goblin defaults.
 
 ### 2.2 Endpoints
@@ -95,7 +95,7 @@ login openrouter → paste key → validate GET /models → store credential
 | Models | `GET https://api.groq.com/openai/v1/models` (convention) |
 | Responses | Same base, Responses API documented for supported models |
 
-Base URL: `https://api.groq.com/openai/v1`  
+Base URL: `https://api.groq.com/openai/v1`
 **Note:** missing `/v1` is a common integration bug (404).
 
 ### 3.3 Backend policy for Goblin
@@ -129,15 +129,15 @@ name = "Llama 3.3 70B (Groq)"
 
 Unlike Groq/OpenRouter, Cloudflare needs **two** identity pieces for the common OpenAI-compat path:
 
-1. **API Token** with Workers AI permission  
-2. **Account ID** embedded in the URL  
+1. **API Token** with Workers AI permission
+2. **Account ID** embedded in the URL
 
 ```text
 https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/v1
 Authorization: Bearer {api_token}
 ```
 
-Chat: `POST …/ai/v1/chat/completions`  
+Chat: `POST …/ai/v1/chat/completions`
 Models: OpenAI-compat models list under that base (verify during implementation).
 
 There is also a native `…/ai/run/@cf/...` path — **not** what Goblin’s Chat Completions client expects. Prefer OpenAI-compat base.
@@ -150,7 +150,7 @@ Cloudflare AI Gateway uses different bases, e.g.:
 https://gateway.ai.cloudflare.com/v1/{account_id}/{gateway_id}/compat
 ```
 
-or workers-ai-specific gateway paths.  
+or workers-ai-specific gateway paths.
 **Recommendation for problem scope:** first-class **Workers AI OpenAI-compat** with account_id + token; treat AI Gateway as a second profile later.
 
 ### 4.3 Backend policy for Goblin
@@ -199,9 +199,9 @@ Fallback strategy for plan: bundled curated model list if discovery fails, with 
 
 Minimum validation before persist:
 
-1. Reject empty key / whitespace.  
-2. `GET /models` or a tiny authenticated call → 401 = bad key.  
-3. Cloudflare: validate account id format + 401/403 distinction.  
+1. Reject empty key / whitespace.
+2. `GET /models` or a tiny authenticated call → 401 = bad key.
+3. Cloudflare: validate account id format + 401/403 distinction.
 4. Never log key material (including prefixes).
 
 ### 5.3 Multi-key semantics
@@ -252,8 +252,8 @@ Product request maps to **L1–L2 minimum**, **L3 desirable**, **L4–L5 phased*
 
 ## 7. External doc references (for planners)
 
-- OpenRouter quickstart / auth / Responses beta — openrouter.ai docs  
-- Groq OpenAI compatibility + Responses API — console.groq.com docs  
-- Cloudflare Workers AI OpenAI compatibility — developers.cloudflare.com/workers-ai  
+- OpenRouter quickstart / auth / Responses beta — openrouter.ai docs
+- Groq OpenAI compatibility + Responses API — console.groq.com docs
+- Cloudflare Workers AI OpenAI compatibility — developers.cloudflare.com/workers-ai
 
 Re-verify base paths during implementation; do not freeze unverified edge URLs into production without a live smoke.

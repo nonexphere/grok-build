@@ -884,6 +884,50 @@ mod tests {
         assert_eq!(mode, AuthStartMode::Pending);
     }
 
+    #[test]
+    fn startup_auth_multi_provider_no_login() {
+        use xai_grok_shell::agent::auth_method::multi_provider_auth_method;
+        let methods = vec![multi_provider_auth_method()];
+        let (needs, label, method_id, mode) = startup_auth_metadata(&methods);
+        assert!(!needs, "Codex multi-provider must not force interactive login");
+        assert!(label.is_none());
+        assert!(method_id.is_none());
+        assert_eq!(mode, AuthStartMode::Pending);
+    }
+
+    /// Shell→pager: Codex-only (multi-provider ready, no xAI key/token) skips
+    /// the login screen and does not advertise fake `xai.api_key`.
+    #[test]
+    fn shell_built_auth_methods_for_codex_only_user_skip_login_screen() {
+        use xai_grok_shell::agent::auth_method::{
+            AuthMethodKind, AuthMethodsBuildInputs, MULTI_PROVIDER_AUTH_METHOD_ID,
+            XAI_API_KEY_METHOD_ID, build_auth_methods,
+        };
+        let built = build_auth_methods(AuthMethodsBuildInputs {
+            has_external_api_key: false,
+            has_multi_provider_ready: true,
+            has_cached_token: false,
+            has_enterprise_oidc: false,
+            enterprise_oidc_issuer: None,
+            login_label: None,
+            has_auth_provider_command: false,
+            preferred_method: None,
+        });
+        assert_eq!(
+            built.methods.first().map(|m| m.id().0.as_ref()),
+            Some(MULTI_PROVIDER_AUTH_METHOD_ID)
+        );
+        assert!(
+            !built
+                .methods
+                .iter()
+                .any(|m| m.id().0.as_ref() == XAI_API_KEY_METHOD_ID)
+        );
+        assert!(!AuthMethodKind::from_id(built.methods[0].id()).needs_interactive_login());
+        let (needs, _, _, _) = startup_auth_metadata(&built.methods);
+        assert!(!needs, "Codex-only startup must have needs_login=false");
+    }
+
     /// CROSS-CRATE REGRESSION GUARD:
     ///
     /// Enterprise/BYOK configs (e.g. an enterprise `~/.grok/config.toml` with a
@@ -912,6 +956,7 @@ mod tests {
             // enterprise-style: model has `env_key` set and the env var resolves,
             // so the shell-side predicate returns true.
             has_external_api_key: true,
+            has_multi_provider_ready: false,
             // Realistic enterprise user: no cached session token, default `grok.com`
             // login (no enterprise OIDC).
             has_cached_token: false,

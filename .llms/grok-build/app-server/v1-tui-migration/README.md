@@ -1,9 +1,9 @@
 # Epic v1-tui-migration — Cliente de referência e parity gate
 
-Status: rascunho  
-Prioridade: lançamento-bloqueante  
-Depende de: `../v1-daemon-transports-security/`  
-Habilita: `v1-ecosystem-ga`  
+Status: rascunho
+Prioridade: lançamento-bloqueante
+Depende de: `../v1-daemon-transports-security/`
+Habilita: `v1-ecosystem-ga`
 Skills relacionadas: `@implementation-loop`, `@code-review`, `@delivery-report`
 
 ## Arquitetura

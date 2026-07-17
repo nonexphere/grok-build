@@ -465,16 +465,26 @@ pub(crate) async fn generate_session_compact(
             }
         }
         ApiBackend::Responses => {
-            // PC10: explicit prompt_cache_key policy for compaction (opaque
-            // session key on Codex; omit otherwise — never anonymous).
+            // PC10 / data-002: account-scoped prompt_cache_key for Codex
+            // compaction (same binding-aware derivation as normal turns).
             let agent = xai_grok_telemetry::id::agent_id();
+            let provider_id = sampling_config
+                .extra_headers
+                .iter()
+                .find(|(k, _)| k.eq_ignore_ascii_case("x-goblin-provider-id"))
+                .map(|(_, v)| v.as_str());
+            let credential_id = sampling_config
+                .extra_headers
+                .iter()
+                .find(|(k, _)| k.eq_ignore_ascii_case("x-goblin-credential-id"))
+                .map(|(_, v)| v.as_str());
             let is_codex = xai_grok_sampling_types::classify_codex_responses_backend(
                 &xai_grok_sampling_types::CodexBackendHints {
                     base_url: &sampling_config.base_url,
-                    provider_id: None,
+                    provider_id,
                     multi_provider_codex_pin: xai_grok_sampling_types::is_codex_responses_backend(
                         &sampling_config.base_url,
-                    ),
+                    ) || provider_id.is_some_and(|p| p.eq_ignore_ascii_case("codex")),
                     capability_codex: false,
                 },
             );
@@ -493,6 +503,8 @@ pub(crate) async fn generate_session_compact(
                     is_codex,
                     Some(session_id.0.as_ref()),
                     Some(agent.as_str()),
+                    provider_id,
+                    credential_id,
                 ),
                 ..Default::default()
             };

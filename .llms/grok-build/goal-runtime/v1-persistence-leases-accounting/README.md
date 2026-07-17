@@ -1,9 +1,9 @@
 # Epic v1-persistence-leases-accounting — Estado transacional
 
-Status: rascunho  
-Prioridade: lançamento-bloqueante  
-Depende de: `../v1-characterization-domain/`  
-Habilita: `v1-runtime-continuation`  
+Status: rascunho
+Prioridade: lançamento-bloqueante
+Depende de: `../v1-characterization-domain/`
+Habilita: `v1-runtime-continuation`
 Skills relacionadas: `@architecture-spec-authoring`, `@implementation-loop`, `@code-review`
 
 ## Arquitetura

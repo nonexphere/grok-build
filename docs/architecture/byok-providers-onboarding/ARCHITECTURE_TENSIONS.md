@@ -18,9 +18,9 @@ This document names the **hard design collisions** a planner must resolve. It do
 
 ### Resolution options (planner must choose)
 
-1. **Extend World B** with `LoginTransport::ApiKey` providers for openrouter/groq/cloudflare; merge catalogs like Codex.  
-2. **Productize World A** with a wizard that writes `[model.*]` blocks (and maybe a secrets file).  
-3. **Hybrid:** store secrets in multi-auth; materialize ephemeral `ModelEntry`s without persisting keys in TOML.  
+1. **Extend World B** with `LoginTransport::ApiKey` providers for openrouter/groq/cloudflare; merge catalogs like Codex.
+2. **Productize World A** with a wizard that writes `[model.*]` blocks (and maybe a secrets file).
+3. **Hybrid:** store secrets in multi-auth; materialize ephemeral `ModelEntry`s without persisting keys in TOML.
 
 Codex lessons strongly push away from “put live tokens in `ModelEntry.api_key`” for anything that needs lifecycle. API keys don’t refresh, but multi-key + logout + status still benefit from the store.
 
@@ -32,8 +32,8 @@ Users say “I use Groq”. The codebase thinks in **models** that happen to sha
 
 Risks:
 
-- User expects one Groq login → all models appear.  
-- Config model assumes one row per selectable model.  
+- User expects one Groq login → all models appear.
+- Config model assumes one row per selectable model.
 - Features like web search are **per model**, not per provider.
 
 Any design must define:
@@ -50,13 +50,13 @@ See `API_BACKENDS.md`.
 
 Agent features are uneven:
 
-- Codex path heavily Responses-optimized.  
-- Groq/OR/CF happy path is Chat Completions.  
+- Codex path heavily Responses-optimized.
+- Groq/OR/CF happy path is Chat Completions.
 - Web search documented as Responses-only.
 
 If onboarding only enables Chat Completions models:
 
-- Users may think “Goblin is broken” when web search / some agent paths expect Responses.  
+- Users may think “Goblin is broken” when web search / some agent paths expect Responses.
 - Session history conversion across backend switch needs clear rules.
 
 **Planner must specify feature matrix per backend**, not imply full parity.
@@ -67,7 +67,7 @@ If onboarding only enables Chat Completions models:
 
 Credential resolve order falls through to `XAI_API_KEY`. For third-party base URLs this is dangerous:
 
-- Wrong key sent to OpenRouter/Groq → confusing 401.  
+- Wrong key sent to OpenRouter/Groq → confusing 401.
 - Accidental leak of xAI key to third party if misconfigured.
 
 Onboarded providers should use **own credentials only** (fail closed if missing), never silent fallback to `XAI_API_KEY`.
@@ -76,7 +76,7 @@ Onboarded providers should use **own credentials only** (fail closed if missing)
 
 ## Tension T5 — `GROK_MODELS_BASE_URL` is single-tenant
 
-Enterprise env vars assume **one** external OpenAI-compatible stack.  
+Enterprise env vars assume **one** external OpenAI-compatible stack.
 User wants **simultaneous** OpenRouter + Groq + Cloudflare + xAI + Codex.
 
 Therefore `GROK_MODELS_BASE_URL` is **not** the multi-provider solution; at best a migration path or power-user override.
@@ -85,8 +85,8 @@ Therefore `GROK_MODELS_BASE_URL` is **not** the multi-provider solution; at best
 
 ## Tension T6 — API_KEY_LOGIN capability exists but is unfinished
 
-`ProviderCapabilities::API_KEY_LOGIN` is defined.  
-`LoginCoordinator::run_login` rejects `LoginTransport::ApiKey`.  
+`ProviderCapabilities::API_KEY_LOGIN` is defined.
+`LoginCoordinator::run_login` rejects `LoginTransport::ApiKey`.
 Codex/xAI providers error on ApiKey transport.
 
 Implementing three providers means **finishing a transport class**, not only three modules.
@@ -131,8 +131,8 @@ OpenRouter can return a huge model list. Codex lists a manageable set.
 
 UX tension:
 
-- Import all → unusable picker.  
-- Import none until user types model id → weaker “automatic models” story.  
+- Import all → unusable picker.
+- Import none until user types model id → weaker “automatic models” story.
 - Curated defaults + search/fetch → more product work.
 
 Must be explicit in plan.
@@ -149,8 +149,8 @@ The maintainer goal **does** own login + credentials + lifecycle UX. So this wor
 
 Planner should decide whether to:
 
-- widen `add-provider` for API-key providers, or  
-- create `add-api-key-provider` skill, or  
+- widen `add-provider` for API-key providers, or
+- create `add-api-key-provider` skill, or
 - keep custom-model wizard outside AuthProvider.
 
 ---
@@ -159,10 +159,10 @@ Planner should decide whether to:
 
 Wizard will handle raw secrets (paste in TTY). Requirements from multi-auth lessons:
 
-- No secrets in status JSON.  
-- No prefix logging.  
-- Prefer not writing secrets into `config.toml`.  
-- File backend 0600 atomic writes already exist for multi-auth.  
+- No secrets in status JSON.
+- No prefix logging.
+- Prefer not writing secrets into `config.toml`.
+- File backend 0600 atomic writes already exist for multi-auth.
 - Keyring deferred — plan must not claim keyring without implementing it.
 
 ---
@@ -171,9 +171,9 @@ Wizard will handle raw secrets (paste in TTY). Requirements from multi-auth less
 
 The repo is mid multi-provider/Codex. Risk of:
 
-- Conflicting catalog merge order.  
-- Dual TokenManager assumptions.  
-- Feature flag interactions.  
+- Conflicting catalog merge order.
+- Dual TokenManager assumptions.
+- Feature flag interactions.
 - Docs drift.
 
 BYOK work should **compose** with Codex merge, not fork a third auth system. Ideal: one catalog merge pipeline with provider-specific sources.
@@ -217,7 +217,7 @@ api_backend: provider default or per-model map
 request auth: Bearer from store (no refresh)
 ```
 
-Pros: consistent with Goblin direction; multi-key ready.  
+Pros: consistent with Goblin direction; multi-key ready.
 Cons: more code than a TOML writer; must implement ApiKey transport properly.
 
 ### Candidate B — “Config writer wizard”
@@ -227,7 +227,7 @@ CLI wizard → appends [model.*] blocks + sets env instructions
 Optional: write keys to a secrets include file
 ```
 
-Pros: reuses 100% of World A.  
+Pros: reuses 100% of World A.
 Cons: multi-key and cleanup are messy; secrets in config risk; feels less “native”.
 
 ### Candidate C — “Provider profiles in config without per-model rows”
@@ -240,7 +240,7 @@ api_backend = "chat_completions"
 models = ["auto"] # or curated
 ```
 
-Pros: cleaner than N model rows.  
+Pros: cleaner than N model rows.
 Cons: **schema does not exist today**; shell catalog would need new loader.
 
 ### Candidate D — Hybrid A + C
@@ -253,10 +253,10 @@ Often the best product, highest design cost.
 
 ## Invariants any candidate must keep
 
-1. In-flight request binding does not flip.  
-2. No secret leakage in logs/status.  
-3. No silent `XAI_API_KEY` fallback for third-party hosts.  
-4. Correct `api_backend` for the selected model.  
-5. Existing custom `[model.*]` continues to work.  
-6. Codex OAuth path remains independent and non-regressed.  
+1. In-flight request binding does not flip.
+2. No secret leakage in logs/status.
+3. No silent `XAI_API_KEY` fallback for third-party hosts.
+4. Correct `api_backend` for the selected model.
+5. Existing custom `[model.*]` continues to work.
+6. Codex OAuth path remains independent and non-regressed.
 7. Compile-time registration of built-in providers (D6) if using AuthProvider registry.

@@ -68,38 +68,41 @@ impl MultiProviderSessionAuth {
     }
 
     /// Generation-aware 401 recovery using the stamp from the **exact** resolve
-    /// attempt that failed (A1 / AUD-006). Prefer `attempt_id` from the
-    /// `SamplingError`; FIFO is only a last-resort when the error carries no id.
+    /// attempt that failed (A1 / AUD-006 / data-001).
+    ///
+    /// Fail-closed: missing `attempt_id` or an unknown/already-consumed id never
+    /// falls back to FIFO — that would steal another concurrent request's stamp.
     pub fn try_recover_unauthorized(&self) -> bool {
         self.try_recover_unauthorized_for_attempt(None)
     }
 
     /// Recover using an explicit multi-provider attempt id when known.
+    ///
+    /// Returns `false` without consuming any other stamp when `attempt_id` is
+    /// `None` or does not match a ledger entry (data-001).
     pub fn try_recover_unauthorized_for_attempt(&self, attempt_id: Option<u64>) -> bool {
         let Some(credential_id) = self.binding.credential else {
             return false;
         };
-        let stamp = match attempt_id {
-            Some(id) => self.resolver.take_attempt(id).or_else(|| {
-                tracing::warn!(
-                    attempt_id = id,
-                    "multi-provider 401: attempt stamp missing; falling back to FIFO"
-                );
-                self.resolver.take_stamp_for_recovery()
-            }),
-            None => {
-                tracing::warn!(
-                    "multi-provider 401: no attempt_id on error; FIFO recovery (legacy)"
-                );
-                self.resolver.take_stamp_for_recovery()
-            }
+        let Some(id) = attempt_id else {
+            tracing::error!(
+                "multi-provider 401: no attempt_id on error; fail closed (no FIFO)"
+            );
+            return false;
+        };
+        let Some(stamp) = self.resolver.take_attempt(id) else {
+            tracing::error!(
+                attempt_id = id,
+                "multi-provider 401: attempt stamp missing/consumed; fail closed (no FIFO)"
+            );
+            return false;
         };
         let home = token_resolve::grok_home();
         match token_resolve::recover_unauthorized_with_stamp_blocking(
             &home,
             &self.binding.provider,
             credential_id,
-            stamp,
+            Some(stamp),
         ) {
             Ok(true) => {
                 tracing::info!(
@@ -664,6 +667,58 @@ mod tests {
         assert_eq!(r.last_stamp().unwrap().generation, 2);
         assert_eq!(r.take_stamp_for_recovery().unwrap().generation, 1);
         assert_eq!(r.take_stamp_for_recovery().unwrap().generation, 2);
+    }
+
+    /// data-001: missing attempt_id must not FIFO-consume an unrelated stamp.
+    #[test]
+    fn recovery_missing_attempt_id_fail_closed_leaves_other_stamp() {
+        use xai_grok_auth::{AccountFingerprint, CredentialKey};
+
+        let provider = ProviderId::new_unchecked("codex");
+        let cred = CredentialId::from_uuid(
+            uuid::Uuid::parse_str("cccccccc-cccc-cccc-cccc-cccccccccccc").unwrap(),
+        );
+        let auth = MultiProviderSessionAuth::new(provider.clone(), cred, "gpt-test");
+        auth.resolver().set_last_stamp_for_test(SentCredentialStamp {
+            key: CredentialKey {
+                provider: provider.clone(),
+                credential_id: cred,
+            },
+            generation: 7,
+            account_fingerprint: AccountFingerprint::from([7u8; 32]),
+        });
+        assert!(!auth.try_recover_unauthorized_for_attempt(None));
+        assert_eq!(
+            auth.resolver().take_stamp_for_recovery().unwrap().generation,
+            7,
+            "FIFO stamp must remain after fail-closed missing attempt_id"
+        );
+    }
+
+    /// data-001: unknown/consumed attempt_id must not steal a queued stamp.
+    #[test]
+    fn recovery_unknown_attempt_id_fail_closed_leaves_other_stamp() {
+        use xai_grok_auth::{AccountFingerprint, CredentialKey};
+
+        let provider = ProviderId::new_unchecked("codex");
+        let cred = CredentialId::from_uuid(
+            uuid::Uuid::parse_str("dddddddd-dddd-dddd-dddd-dddddddddddd").unwrap(),
+        );
+        let auth = MultiProviderSessionAuth::new(provider.clone(), cred, "gpt-test");
+        auth.resolver().set_last_stamp_for_test(SentCredentialStamp {
+            key: CredentialKey {
+                provider: provider.clone(),
+                credential_id: cred,
+            },
+            generation: 11,
+            account_fingerprint: AccountFingerprint::from([11u8; 32]),
+        });
+        assert!(!auth.try_recover_unauthorized_for_attempt(Some(9_999_999)));
+        assert_eq!(
+            auth.resolver().take_stamp_for_recovery().unwrap().generation,
+            11,
+            "queued stamp must remain after unknown attempt_id fail-closed"
+        );
     }
 
     /// Production call order: auth_info/peek before post, attribution after.

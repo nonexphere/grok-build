@@ -1,10 +1,10 @@
 # BYOK Providers Onboarding — Analysis Package
 
-**Status:** Problem definition / discovery (not an implementation plan)  
-**Date:** 2026-07-17  
-**Repo:** `grok-goblin` (fork of `xai-org/grok-build`)  
-**Branch context:** multi-provider auth (Codex OAuth) already in progress  
-**Audience for this package:** human maintainer + external planner (e.g. ChatGPT) that will produce an implementation-ready plan  
+**Status:** Problem definition / discovery (not an implementation plan)
+**Date:** 2026-07-17
+**Repo:** `grok-goblin` (fork of `xai-org/grok-build`)
+**Branch context:** multi-provider auth (Codex OAuth) already in progress
+**Audience for this package:** human maintainer + external planner (e.g. ChatGPT) that will produce an implementation-ready plan
 
 ## Goal of this package
 

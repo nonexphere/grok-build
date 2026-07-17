@@ -377,14 +377,14 @@ Logs/sessões locais (instalação):
 
 Úteis:
 
-- `subagent_spawned` → `model`, `subagent_type`, description  
-- `prompt.drain_blocked` (ulog) → reason + queue_depth  
-- `tool_started` / `tool_completed` no parent durante “freeze”  
-- `RedirectKind` / interjection events se o user usou send-now  
+- `subagent_spawned` → `model`, `subagent_type`, description
+- `prompt.drain_blocked` (ulog) → reason + queue_depth
+- `tool_started` / `tool_completed` no parent durante “freeze”
+- `RedirectKind` / interjection events se o user usou send-now
 
 No monorepo, testes e2e de fila/interject vivem sob:
 
-- `crates/codegen/xai-grok-pager/tests/pty_e2e/`  
+- `crates/codegen/xai-grok-pager/tests/pty_e2e/`
   (ex.: `queued_message_renders_once_not_twice.rs`, `edit_interject_lone_queued_row_keeps_tui_alive.rs`)
 
 ---

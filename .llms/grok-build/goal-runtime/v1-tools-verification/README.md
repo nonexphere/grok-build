@@ -1,9 +1,9 @@
 # Epic v1-tools-verification — Intents e completion audit
 
-Status: rascunho  
-Prioridade: lançamento-bloqueante  
-Depende de: `../v1-runtime-continuation/`  
-Habilita: `v1-task-graph-subagents`, `v1-clients-projections`  
+Status: rascunho
+Prioridade: lançamento-bloqueante
+Depende de: `../v1-runtime-continuation/`
+Habilita: `v1-task-graph-subagents`, `v1-clients-projections`
 Skills relacionadas: `@implementation-loop`, `@session-evidence-gate`, `@code-review`
 
 ## Arquitetura

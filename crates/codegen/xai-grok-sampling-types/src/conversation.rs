@@ -2797,19 +2797,33 @@ pub fn title_inference_route_is_safe(
     !is_xai_api_base_url(client_base_url)
 }
 
-/// PC10: `prompt_cache_key` for compaction requests.
+/// PC10 / data-002: `prompt_cache_key` for compaction requests.
 ///
-/// Codex: opaque key from session/agent identity when present; **never**
-/// anonymous. Non-Codex: omit (caller may set independently).
+/// Codex: opaque account-scoped key from session/agent **and** optional
+/// provider/credential identity (same derivation as normal turns via
+/// [`derive_prompt_cache_key_with_binding`]); **never** anonymous.
+/// Non-Codex: omit (caller may set independently).
+///
+/// When `provider_id`/`credential_id` are known (from sampling config binding
+/// headers), two Codex accounts sharing a session id get distinct keys.
 pub fn prompt_cache_key_for_compaction(
     backend_is_codex: bool,
     session_id: Option<&str>,
     agent_id: Option<&str>,
+    provider_id: Option<&str>,
+    credential_id: Option<&str>,
 ) -> Option<String> {
     if !backend_is_codex {
         return None;
     }
-    derive_prompt_cache_key(session_id, None, agent_id)
+    derive_prompt_cache_key_with_binding(
+        "goblin",
+        provider_id,
+        credential_id,
+        session_id,
+        session_id,
+        agent_id,
+    )
 }
 
 /// Explicit AUD-011 policy for non-text system/developer content on hoist.
@@ -5351,13 +5365,64 @@ mod tests {
 
     #[test]
     fn compaction_prompt_cache_key_policy_codex_only_opaque() {
-        let k = prompt_cache_key_for_compaction(true, Some("sess-1"), Some("agent-1"))
-            .expect("codex with identity");
+        let k = prompt_cache_key_for_compaction(
+            true,
+            Some("sess-1"),
+            Some("agent-1"),
+            None,
+            None,
+        )
+        .expect("codex with identity");
         assert!(k.starts_with("gpc_"));
         assert!(!k.contains("sess-1"));
         assert!(!k.contains("anonymous"));
-        assert!(prompt_cache_key_for_compaction(true, None, None).is_none());
-        assert!(prompt_cache_key_for_compaction(false, Some("sess-1"), None).is_none());
+        assert!(prompt_cache_key_for_compaction(true, None, None, None, None).is_none());
+        assert!(
+            prompt_cache_key_for_compaction(false, Some("sess-1"), None, None, None).is_none()
+        );
+    }
+
+    #[test]
+    fn compaction_prompt_cache_key_account_scoped_by_credential() {
+        let a = prompt_cache_key_for_compaction(
+            true,
+            Some("sess-same"),
+            Some("agent-1"),
+            Some("codex"),
+            Some("cred-a"),
+        )
+        .expect("key a");
+        let b = prompt_cache_key_for_compaction(
+            true,
+            Some("sess-same"),
+            Some("agent-1"),
+            Some("codex"),
+            Some("cred-b"),
+        )
+        .expect("key b");
+        let same = prompt_cache_key_for_compaction(
+            true,
+            Some("sess-same"),
+            Some("agent-1"),
+            Some("codex"),
+            Some("cred-a"),
+        )
+        .expect("key a again");
+        assert_eq!(a, same);
+        assert_ne!(a, b);
+        assert!(!a.contains("cred-a"));
+        assert!(!a.contains("codex"));
+        // Same binding-aware hash material as normal turns (session + agent + binding).
+        let normal = derive_prompt_cache_key_with_binding(
+            "goblin",
+            Some("codex"),
+            Some("cred-a"),
+            Some("sess-same"),
+            Some("sess-same"),
+            Some("agent-1"),
+        )
+        .expect("normal-turn style key");
+        assert_eq!(a, normal);
     }
 
     #[test]

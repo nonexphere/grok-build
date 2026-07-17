@@ -37,9 +37,9 @@ extra_headers = { ... }            # optional
 
 Credential resolution order for a model:
 
-1. `api_key` on the model entry  
-2. `env_key` (first set non-empty env var)  
-3. global `XAI_API_KEY` / legacy env  
+1. `api_key` on the model entry
+2. `env_key` (first set non-empty env var)
+3. global `XAI_API_KEY` / legacy env
 
 **Implication:** third-party keys often accidentally fall through to `XAI_API_KEY` if misconfigured — wrong host + wrong key.
 
@@ -77,11 +77,11 @@ Two OpenRouter keys cannot be first-class dual catalog entries without the user 
 
 ### 3.2 What Codex teaches (reusable pattern)
 
-1. **Login** → persist credential in multi-auth store (`~/.grok/auth/…`).  
-2. **List models** with that credential.  
-3. **Merge** into catalog as `codex/{credential_uuid}/{slug}` with `api_key: None`.  
-4. **Request-time** resolve bearer (and headers like `ChatGPT-Account-ID`).  
-5. **Immutable** `ModelBinding` for the request lifetime.  
+1. **Login** → persist credential in multi-auth store (`~/.grok/auth/…`).
+2. **List models** with that credential.
+3. **Merge** into catalog as `codex/{credential_uuid}/{slug}` with `api_key: None`.
+4. **Request-time** resolve bearer (and headers like `ChatGPT-Account-ID`).
+5. **Immutable** `ModelBinding` for the request lifetime.
 6. **Session pin** so catalog reloads don’t flip accounts mid-session.
 
 ### 3.3 What Codex does *not* teach

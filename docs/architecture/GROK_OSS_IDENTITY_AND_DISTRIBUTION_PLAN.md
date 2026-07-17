@@ -3,7 +3,7 @@
 **Status:** DEFERRED — document only. **Do not implement** until multi-provider /
 Codex on this tree is declared **100% complete** (see gate below).
 
-**Last updated:** 2026-07-17  
+**Last updated:** 2026-07-17
 **Audience:** maintainers of the current fork (`nonexphere/grok-build`) and the
 future Grok OSS line (`brasalabs6/grok-oss`).
 

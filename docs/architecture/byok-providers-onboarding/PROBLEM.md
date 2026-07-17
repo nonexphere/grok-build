@@ -84,8 +84,8 @@ The product request sits **between** A and B:
 
 A bad plan either:
 
-1. only documents better TOML examples (no product delta), or  
-2. forces every API-key provider through full OAuth-shaped `AuthProvider` with no reuse of the working sampler path, or  
+1. only documents better TOML examples (no product delta), or
+2. forces every API-key provider through full OAuth-shaped `AuthProvider` with no reuse of the working sampler path, or
 3. pastes API keys into `ModelEntry.api_key` in a way that blocks multi-key, rotation, and multi-account (the Codex audit already banned static OAuth tokens in `api_key`).
 
 ## 5. Success criteria (testable later)

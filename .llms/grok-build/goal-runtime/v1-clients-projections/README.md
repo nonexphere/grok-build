@@ -1,9 +1,9 @@
 # Epic v1-clients-projections — UX, ACP e headless
 
-Status: rascunho  
-Prioridade: lançamento-bloqueante  
-Depende de: `../v1-tools-verification/`, `../v1-task-graph-subagents/`  
-Habilita: `v1-recovery-rollout`, `../../app-server/v1-ecosystem-ga/`  
+Status: rascunho
+Prioridade: lançamento-bloqueante
+Depende de: `../v1-tools-verification/`, `../v1-task-graph-subagents/`
+Habilita: `v1-recovery-rollout`, `../../app-server/v1-ecosystem-ga/`
 Skills relacionadas: `@implementation-loop`, `@code-review`
 
 ## Arquitetura

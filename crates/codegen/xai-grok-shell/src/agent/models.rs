@@ -2940,11 +2940,8 @@ mod tests {
         );
     }
 
-    /// Codex merge must not bypass `allowed_models` (regression: merge used to
-    /// run after the allowlist pass with unconditional `user_selectable = true`).
     #[cfg(feature = "native-multi-provider-auth")]
-    #[test]
-    fn allowed_models_applies_to_merged_codex_entries() {
+    fn inject_codex_fixture(credential_hex: &str, slug: &str) -> String {
         use std::collections::BTreeSet;
 
         use xai_grok_auth::{CredentialId, ProviderModel};
@@ -2952,20 +2949,19 @@ mod tests {
         use xai_grok_multi_auth::provider_model_key::format_provider_model_key;
 
         let credential_id = CredentialId::from_uuid(
-            uuid::Uuid::parse_str("11111111-2222-3333-4444-555555555555").unwrap(),
+            uuid::Uuid::parse_str(credential_hex).unwrap(),
         );
         let provider = xai_grok_auth::ProviderId::new_unchecked("codex");
-        let key = format_provider_model_key(&provider, credential_id, "gpt-5.6-luna");
-
+        let key = format_provider_model_key(&provider, credential_id, slug);
         set_codex_merge_report_override_for_test(CodexModelsReport {
             accounts: vec![CodexAccountModels {
                 alias: "work".into(),
                 email: None,
                 credential_id,
-                account_id: Some("acct-allow".into()),
+                account_id: Some("acct-filter".into()),
                 models: vec![ProviderModel {
-                    id: "gpt-5.6-luna".into(),
-                    display_name: "GPT-5.6-Luna".into(),
+                    id: slug.into(),
+                    display_name: slug.into(),
                     description: None,
                     context_window: Some(100_000),
                     priority: 0,
@@ -2975,7 +2971,15 @@ mod tests {
                 error: None,
             }],
         });
+        key
+    }
 
+    /// Codex merge must not bypass `allowed_models` (regression: merge used to
+    /// run after the allowlist pass with unconditional `user_selectable = true`).
+    #[cfg(feature = "native-multi-provider-auth")]
+    #[test]
+    fn allowed_models_applies_to_merged_codex_entries() {
+        let key = inject_codex_fixture("11111111-2222-3333-4444-555555555555", "gpt-5.6-luna");
         let cfg = config_from_toml(
             r#"
             [models]
@@ -2998,6 +3002,72 @@ mod tests {
         assert!(
             validate_selectable(&cfg, &catalog).is_ok(),
             "catalog still has at least one selectable model"
+        );
+    }
+
+    /// disabled_models removes Codex entries by full catalog key and by wire slug.
+    #[cfg(feature = "native-multi-provider-auth")]
+    #[test]
+    fn disabled_models_removes_merged_codex_by_key_and_slug() {
+        let key = inject_codex_fixture("22222222-2222-2222-2222-222222222222", "gpt-disabled");
+        let cfg_key = config_from_toml(&format!(
+            r#"
+            [models]
+            disabled_models = ["{key}"]
+            "#
+        ));
+        let catalog_key = resolve_model_catalog(&cfg_key, None);
+        assert!(
+            !catalog_key.contains_key(&key),
+            "disabled full catalog key must remove Codex entry"
+        );
+
+        let _key2 = inject_codex_fixture("33333333-3333-3333-3333-333333333333", "gpt-slug-off");
+        let cfg_slug = config_from_toml(
+            r#"
+            [models]
+            disabled_models = ["gpt-slug-off"]
+            "#,
+        );
+        let catalog_slug = resolve_model_catalog(&cfg_slug, None);
+        assert!(
+            catalog_slug
+                .values()
+                .all(|e| e.info.model != "gpt-slug-off"),
+            "disabled wire slug must remove all matching Codex entries"
+        );
+    }
+
+    /// hidden_models marks Codex entries by full key and by wire slug.
+    #[cfg(feature = "native-multi-provider-auth")]
+    #[test]
+    fn hidden_models_hides_merged_codex_by_key_and_slug() {
+        let key = inject_codex_fixture("44444444-4444-4444-4444-444444444444", "gpt-hidden");
+        let cfg_key = config_from_toml(&format!(
+            r#"
+            [models]
+            hidden_models = ["{key}"]
+            "#
+        ));
+        let catalog_key = resolve_model_catalog(&cfg_key, None);
+        assert!(
+            catalog_key.get(&key).is_some_and(|e| e.info.hidden),
+            "hidden full catalog key must mark Codex entry"
+        );
+
+        let key_slug = inject_codex_fixture("55555555-5555-5555-5555-555555555555", "gpt-hide-slug");
+        let cfg_slug = config_from_toml(
+            r#"
+            [models]
+            hidden_models = ["gpt-hide-slug"]
+            "#,
+        );
+        let catalog_slug = resolve_model_catalog(&cfg_slug, None);
+        assert!(
+            catalog_slug
+                .get(&key_slug)
+                .is_some_and(|e| e.info.hidden),
+            "hidden wire slug must mark Codex entry"
         );
     }
 

@@ -76,6 +76,32 @@ where
     has_xai_api_key_env() || models.into_iter().any(|m| m.own_credential().is_some())
 }
 
+/// Whether a non-interactive multi-provider ACP method should be advertised.
+///
+/// True when the catalog contains at least one entry with a multi-provider
+/// binding (`codex/{credential_id}/…` headers). That means a persisted Codex
+/// (or other provider) credential is usable at request time via
+/// `BearerResolver` — the user must not be forced into interactive `grok.com`
+/// login solely because they have no xAI session/API key.
+///
+/// Does **not** advertise `xai.api_key` (that remains BYOK-only).
+pub fn should_advertise_multi_provider_auth<'a, I>(models: I) -> bool
+where
+    I: IntoIterator<Item = &'a ModelEntry>,
+{
+    #[cfg(feature = "native-multi-provider-auth")]
+    {
+        models
+            .into_iter()
+            .any(|m| crate::auth::multi_provider_resolve::binding_from_model_entry(m).is_some())
+    }
+    #[cfg(not(feature = "native-multi-provider-auth"))]
+    {
+        let _ = models;
+        false
+    }
+}
+
 /// Inputs to [`build_auth_methods`].
 ///
 /// Booleans are computed by the caller (`MvpAgent::initialize()`) because they
@@ -87,6 +113,10 @@ pub struct AuthMethodsBuildInputs<'a> {
     /// [`should_advertise_xai_api_key`]. When `preferred_method` is `Oidc`,
     /// this is ignored (API key is never advertised under that pin).
     pub has_external_api_key: bool,
+    /// True if the catalog has multi-provider bindings ready for request-time
+    /// auth (Codex OAuth etc.). Advertises non-interactive
+    /// [`MULTI_PROVIDER_AUTH_METHOD_ID`] — never as `xai.api_key`.
+    pub has_multi_provider_ready: bool,
     /// True if a cached session token is available (either present at startup
     /// or recovered via silent refresh).
     pub has_cached_token: bool,
@@ -127,24 +157,28 @@ pub struct BuiltAuthMethods {
 /// the pager send per-model-key users to the login screen. Unit tests lock this.
 ///
 /// Unpinned ordering (when each method is enabled):
-/// 1. `xai.api_key`     (if `has_external_api_key`)
-/// 2. `cached_token`    (if `has_cached_token`)
-/// 3. exactly one of:
+/// 1. `xai.api_key`              (if `has_external_api_key`)
+/// 2. `goblin.multi_provider`    (if `has_multi_provider_ready`)
+/// 3. `cached_token`             (if `has_cached_token`)
+/// 4. exactly one of:
 ///    - `oidc`          (if `has_enterprise_oidc`)
 ///    - `grok.com`      (otherwise)
 ///
 /// Unpinned `default_auth_method_id`:
 /// - `cached_token` if `has_cached_token`
 /// - `xai.api_key`  else if `has_external_api_key`
+/// - `goblin.multi_provider` else if `has_multi_provider_ready`
 /// - `None`         otherwise
 ///
 /// Pinned (`preferred_method`):
 /// - `ApiKey`: only `xai.api_key` if available; else empty list + `None` (fail).
-/// - `Oidc`: `cached_token` (if any) + interactive login; never `xai.api_key`.
+/// - `Oidc`: `cached_token` (if any) + interactive login; never `xai.api_key`
+///   or multi-provider (enterprise IdP pin).
 ///   Default is `cached_token` when present, else `None` (interactive).
 pub fn build_auth_methods(inputs: AuthMethodsBuildInputs<'_>) -> BuiltAuthMethods {
     let AuthMethodsBuildInputs {
         has_external_api_key,
+        has_multi_provider_ready,
         has_cached_token,
         has_enterprise_oidc,
         enterprise_oidc_issuer,
@@ -164,6 +198,7 @@ pub fn build_auth_methods(inputs: AuthMethodsBuildInputs<'_>) -> BuiltAuthMethod
         ),
         None => build_unpinned(
             has_external_api_key,
+            has_multi_provider_ready,
             has_cached_token,
             has_enterprise_oidc,
             enterprise_oidc_issuer,
@@ -222,6 +257,7 @@ fn build_pinned_oidc(
 
 fn build_unpinned(
     has_external_api_key: bool,
+    has_multi_provider_ready: bool,
     has_cached_token: bool,
     has_enterprise_oidc: bool,
     enterprise_oidc_issuer: Option<&str>,
@@ -236,18 +272,32 @@ fn build_unpinned(
         default_auth_method_id = Some(acp::AuthMethodId::new(XAI_API_KEY_METHOD_ID));
     }
 
+    // Non-interactive multi-provider (Codex OAuth binding). Placed after BYOK
+    // so enterprise API-key users still get xai.api_key first, but Codex-only
+    // users get this method first → pager needs_login=false without faking
+    // xai.api_key.
+    if has_multi_provider_ready {
+        methods.push(multi_provider_auth_method());
+        if default_auth_method_id.is_none() {
+            default_auth_method_id =
+                Some(acp::AuthMethodId::new(MULTI_PROVIDER_AUTH_METHOD_ID));
+        }
+    }
+
     if has_cached_token {
         methods.push(cached_token_auth_method());
-        // cached_token wins over xai.api_key for default_auth_method_id so
-        // is_session_based_auth() returns true and OIDC refresh stays alive.
-        let overrode_api_key = default_auth_method_id.is_some();
+        // cached_token wins over xai.api_key / multi_provider for
+        // default_auth_method_id so is_session_based_auth() returns true and
+        // OIDC refresh stays alive.
+        let overrode = default_auth_method_id.is_some();
         default_auth_method_id = Some(acp::AuthMethodId::new(CACHED_TOKEN_AUTH_METHOD_ID));
-        if overrode_api_key {
+        if overrode {
             xai_grok_telemetry::unified_log::info(
-                "auth method priority: cached_token overrides xai.api_key for default_auth_method_id",
+                "auth method priority: cached_token overrides prior default_auth_method_id",
                 None,
                 Some(serde_json::json!({
                     "has_external_api_key": has_external_api_key,
+                    "has_multi_provider_ready": has_multi_provider_ready,
                     "has_cached_token": has_cached_token,
                 })),
             );
@@ -294,6 +344,8 @@ fn push_interactive_login(
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AuthMethodKind {
     XaiApiKey,
+    /// Persisted multi-provider credential (e.g. Codex OAuth) ready at request time.
+    MultiProvider,
     CachedToken,
     GrokCom,
     Oidc,
@@ -304,6 +356,7 @@ impl AuthMethodKind {
     pub fn from_id(id: &acp::AuthMethodId) -> Self {
         match id.0.as_ref() {
             XAI_API_KEY_METHOD_ID => Self::XaiApiKey,
+            MULTI_PROVIDER_AUTH_METHOD_ID => Self::MultiProvider,
             CACHED_TOKEN_AUTH_METHOD_ID => Self::CachedToken,
             GROK_COM_METHOD_ID => Self::GrokCom,
             OIDC_METHOD_ID => Self::Oidc,
@@ -322,6 +375,8 @@ impl AuthMethodKind {
     }
 
     /// Requires user interaction (browser, OIDC redirect, or external auth command).
+    /// Multi-provider is non-interactive: credentials were obtained via
+    /// `goblin login --provider …` and bind at request time.
     pub fn needs_interactive_login(self) -> bool {
         matches!(self, Self::GrokCom | Self::Oidc)
     }
@@ -438,6 +493,24 @@ pub fn xai_api_key_auth_method() -> acp::AuthMethod {
         .description(Some(format!(
             "{XAI_API_KEY_ENV_VAR} or api_key/env_key in config.toml"
         ))),
+    )
+}
+
+/// Non-interactive multi-provider auth (Codex/ChatGPT OAuth and future providers).
+///
+/// Distinct from `xai.api_key`: tokens resolve via multi-auth TokenManager at
+/// request time, not a static env/API key.
+pub const MULTI_PROVIDER_AUTH_METHOD_ID: &str = "goblin.multi_provider";
+pub fn multi_provider_auth_method() -> acp::AuthMethod {
+    acp::AuthMethod::Agent(
+        acp::AuthMethodAgent::new(
+            acp::AuthMethodId::new(MULTI_PROVIDER_AUTH_METHOD_ID),
+            "goblin.multi_provider".to_string(),
+        )
+        .description(Some(
+            "Persisted multi-provider credential (e.g. Codex via `goblin login --provider codex`)"
+                .to_string(),
+        )),
     )
 }
 
@@ -568,6 +641,7 @@ mod tests {
     fn default_inputs() -> AuthMethodsBuildInputs<'static> {
         AuthMethodsBuildInputs {
             has_external_api_key: false,
+            has_multi_provider_ready: false,
             has_cached_token: false,
             has_enterprise_oidc: false,
             enterprise_oidc_issuer: None,
@@ -599,7 +673,8 @@ mod tests {
     #[test]
     fn enterprise_byok_first_method_is_xai_api_key() {
         let inputs = AuthMethodsBuildInputs {
-            has_external_api_key: true, // enterprise user with resolved per-model env_key
+            has_external_api_key: true,
+            has_multi_provider_ready: false, // enterprise user with resolved per-model env_key
             has_cached_token: false,
             ..default_inputs()
         };
@@ -634,6 +709,7 @@ mod tests {
     fn byok_with_cached_token_keeps_xai_api_key_first() {
         let inputs = AuthMethodsBuildInputs {
             has_external_api_key: true,
+            has_multi_provider_ready: false,
             has_cached_token: true,
             ..default_inputs()
         };
@@ -669,6 +745,7 @@ mod tests {
     fn session_only_user_first_method_is_cached_token() {
         let inputs = AuthMethodsBuildInputs {
             has_external_api_key: false,
+            has_multi_provider_ready: false,
             has_cached_token: true,
             ..default_inputs()
         };
@@ -706,6 +783,7 @@ mod tests {
     fn enterprise_oidc_replaces_grok_com_but_xai_api_key_still_first() {
         let inputs = AuthMethodsBuildInputs {
             has_external_api_key: true,
+            has_multi_provider_ready: false,
             has_cached_token: false,
             has_enterprise_oidc: true,
             enterprise_oidc_issuer: Some("https://sso.example.com"),
@@ -1001,6 +1079,7 @@ mod tests {
         // cached_token so pager skips login screen.
         let built = build_auth_methods(AuthMethodsBuildInputs {
             has_external_api_key: false,
+            has_multi_provider_ready: false,
             has_cached_token,
             ..default_inputs()
         });
@@ -1046,6 +1125,7 @@ mod tests {
 
         let built = build_auth_methods(AuthMethodsBuildInputs {
             has_external_api_key: false,
+            has_multi_provider_ready: false,
             has_cached_token: mgr.current().is_some(),
             ..default_inputs()
         });
@@ -1056,12 +1136,93 @@ mod tests {
         );
     }
 
+    /// Codex-only catalog: multi-provider first, never fake `xai.api_key`, and
+    /// first method is non-interactive (pager `needs_login=false`).
+    #[cfg(feature = "native-multi-provider-auth")]
+    #[test]
+    #[serial]
+    fn codex_only_catalog_advertises_multi_provider_not_xai_api_key() {
+        use std::collections::BTreeSet;
+
+        use xai_grok_auth::{CredentialId, ProviderModel};
+        use xai_grok_multi_auth::cli::{CodexAccountModels, CodexModelsReport};
+        use xai_grok_test_support::EnvGuard;
+
+        let _unset = EnvGuard::unset(XAI_API_KEY_ENV_VAR);
+        let _legacy = EnvGuard::unset(LEGACY_XAI_API_KEY_ENV_VAR);
+
+        let credential_id = CredentialId::from_uuid(
+            uuid::Uuid::parse_str("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee").unwrap(),
+        );
+        crate::agent::models::set_codex_merge_report_override_for_test(CodexModelsReport {
+            accounts: vec![CodexAccountModels {
+                alias: "work".into(),
+                email: None,
+                credential_id,
+                account_id: Some("acct-codex-only".into()),
+                models: vec![ProviderModel {
+                    id: "gpt-5.6-luna".into(),
+                    display_name: "GPT-5.6-Luna".into(),
+                    description: None,
+                    context_window: Some(100_000),
+                    priority: 0,
+                    capabilities: BTreeSet::new(),
+                    raw_metadata: serde_json::Value::Null,
+                }],
+                error: None,
+            }],
+        });
+        let cfg = crate::agent::config::Config::default();
+        let catalog = crate::agent::models::resolve_model_catalog(&cfg, None);
+
+        assert!(
+            should_advertise_multi_provider_auth(catalog.values()),
+            "Codex merge must expose multi-provider bindings"
+        );
+        assert!(
+            !should_advertise_xai_api_key(false, catalog.values()),
+            "must not advertise xai.api_key for Codex-only binding"
+        );
+
+        let built = build_auth_methods(AuthMethodsBuildInputs {
+            has_external_api_key: false,
+            has_multi_provider_ready: true,
+            has_cached_token: false,
+            ..default_inputs()
+        });
+        assert_eq!(
+            first_kind(&built.methods),
+            Some(AuthMethodKind::MultiProvider),
+            "Codex-only: goblin.multi_provider must be auth_methods.first()"
+        );
+        assert_ne!(
+            built.methods[0].id().0.as_ref(),
+            XAI_API_KEY_METHOD_ID,
+            "must not fake xai.api_key for Codex OAuth"
+        );
+        assert!(
+            !AuthMethodKind::from_id(built.methods[0].id()).needs_interactive_login(),
+            "first method must be non-interactive so pager needs_login=false"
+        );
+        assert_eq!(
+            built
+                .default_auth_method_id
+                .as_ref()
+                .map(|id| id.0.as_ref()),
+            Some(MULTI_PROVIDER_AUTH_METHOD_ID),
+        );
+        // Mirror pager::startup_auth_metadata first-method gate.
+        let needs_login = AuthMethodKind::from_id(built.methods[0].id()).needs_interactive_login();
+        assert!(!needs_login);
+    }
+
     // ── preferred_method pin (fail-closed) ──────────────────────────────
 
     #[test]
     fn pin_api_key_with_key_only_advertises_api_key() {
         let built = build_auth_methods(AuthMethodsBuildInputs {
             has_external_api_key: true,
+            has_multi_provider_ready: false,
             has_cached_token: true,
             preferred_method: Some(PreferredAuthMethod::ApiKey),
             ..default_inputs()
@@ -1074,6 +1235,7 @@ mod tests {
     fn pin_api_key_without_key_fails_closed_even_with_session() {
         let built = build_auth_methods(AuthMethodsBuildInputs {
             has_external_api_key: false,
+            has_multi_provider_ready: false,
             has_cached_token: true,
             preferred_method: Some(PreferredAuthMethod::ApiKey),
             ..default_inputs()
@@ -1086,6 +1248,7 @@ mod tests {
     fn pin_oidc_with_session_hides_api_key() {
         let built = build_auth_methods(AuthMethodsBuildInputs {
             has_external_api_key: true,
+            has_multi_provider_ready: false,
             has_cached_token: true,
             preferred_method: Some(PreferredAuthMethod::Oidc),
             ..default_inputs()
@@ -1101,6 +1264,7 @@ mod tests {
     fn pin_oidc_without_session_is_interactive_only() {
         let built = build_auth_methods(AuthMethodsBuildInputs {
             has_external_api_key: true,
+            has_multi_provider_ready: false,
             has_cached_token: false,
             preferred_method: Some(PreferredAuthMethod::Oidc),
             ..default_inputs()

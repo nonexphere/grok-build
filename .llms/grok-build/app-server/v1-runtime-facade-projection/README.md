@@ -1,9 +1,9 @@
 # Epic v1-runtime-facade-projection — Facade e eventos normalizados
 
-Status: rascunho  
-Prioridade: lançamento-bloqueante  
-Depende de: `../v1-architecture-protocol/`  
-Habilita: `v1-core-in-process`  
+Status: rascunho
+Prioridade: lançamento-bloqueante
+Depende de: `../v1-architecture-protocol/`
+Habilita: `v1-core-in-process`
 Skills relacionadas: `@repository-exploration`, `@implementation-loop`, `@code-review`
 
 ## Arquitetura

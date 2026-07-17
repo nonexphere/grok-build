@@ -132,10 +132,10 @@ Onboarding must not claim “Responses feature parity” for Chat Completions mo
 
 ## 10. Questions this backend split forces on any plan
 
-1. Is the first vertical slice allowed to support **only Chat Completions** for the three providers?  
-2. Should the catalog expose Responses variants as separate entries or as a toggle?  
-3. How does `/model` display backend so users understand feature differences?  
-4. When a session switches from Responses (Codex) to Chat (Groq), what happens to history items that only exist in Responses form?  
+1. Is the first vertical slice allowed to support **only Chat Completions** for the three providers?
+2. Should the catalog expose Responses variants as separate entries or as a toggle?
+3. How does `/model` display backend so users understand feature differences?
+4. When a session switches from Responses (Codex) to Chat (Groq), what happens to history items that only exist in Responses form?
 5. Are embeddings-only or image-only models filtered from the agent picker?
 
 These are planner decisions; this doc only records that they are **real** constraints.

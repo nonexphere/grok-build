@@ -114,23 +114,23 @@ Items marked **[HUMAN]** need product choice. Items marked **[PLAN]** are for th
 
 These are **facts**, not questions:
 
-1. No AuthProvider modules for openrouter/groq/cloudflare.  
-2. `LoginTransport::ApiKey` not implemented end-to-end.  
-3. Login CLI parser only accepts xai/grok/codex.  
-4. Catalog merge for multi-auth exists for Codex only.  
-5. Default `api_backend` is chat_completions — good for these three, bad if someone copies Codex merge blindly (`Responses`).  
-6. Global models_base_url cannot express multi-provider multi-key.  
+1. No AuthProvider modules for openrouter/groq/cloudflare.
+2. `LoginTransport::ApiKey` not implemented end-to-end.
+3. Login CLI parser only accepts xai/grok/codex.
+4. Catalog merge for multi-auth exists for Codex only.
+5. Default `api_backend` is chat_completions — good for these three, bad if someone copies Codex merge blindly (`Responses`).
+6. Global models_base_url cannot express multi-provider multi-key.
 7. Skill text currently steers pure custom-model work away from `@add-provider` — goal as stated **is** lifecycle-owned, so skill boundary needs update after architecture choice.
 
 ---
 
 ## 11. Out-of-scope risks to name, not silently absorb
 
-- OpenRouter OAuth for user accounts (optional future).  
-- Billing/balance display.  
-- Automatic provider failover on rate limit.  
-- Scraping web UIs for keys.  
-- Claiming Responses feature parity for all models.  
+- OpenRouter OAuth for user accounts (optional future).
+- Billing/balance display.
+- Automatic provider failover on rate limit.
+- Scraping web UIs for keys.
+- Claiming Responses feature parity for all models.
 - Treating Cloudflare CDN notes in codebase as Workers AI integration.
 
 ---
@@ -157,8 +157,8 @@ Then replicate for Groq and Cloudflare with provider-specific fields.
 
 See README “Suggested prompt”. Expected artifacts from the planner:
 
-1. Architecture decision record (chosen candidate + rejected options).  
-2. Provider implementation matrix (rows from add-provider checklist adapted for API keys).  
-3. Phased plan with tests.  
-4. Explicit answers to every **[HUMAN]** item (or list them as blockers).  
+1. Architecture decision record (chosen candidate + rejected options).
+2. Provider implementation matrix (rows from add-provider checklist adapted for API keys).
+3. Phased plan with tests.
+4. Explicit answers to every **[HUMAN]** item (or list them as blockers).
 5. File-level touch list based on `EVIDENCE_MAP.md`.

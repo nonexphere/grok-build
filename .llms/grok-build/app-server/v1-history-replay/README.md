@@ -1,9 +1,9 @@
 # Epic v1-history-replay — Projection store e continuidade
 
-Status: rascunho  
-Prioridade: lançamento-bloqueante  
-Depende de: `../v1-core-in-process/`  
-Habilita: `v1-daemon-transports-security`  
+Status: rascunho
+Prioridade: lançamento-bloqueante
+Depende de: `../v1-core-in-process/`
+Habilita: `v1-daemon-transports-security`
 Skills relacionadas: `@architecture-spec-authoring`, `@implementation-loop`, `@code-review`
 
 ## Arquitetura

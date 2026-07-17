@@ -148,12 +148,12 @@ goblin logout --provider openrouter
 
 ## 10. Suggested first code-read order for implementers (after plan)
 
-1. `ApiBackend` + `SamplerConfig`  
-2. `resolve` path model → sampling config in shell `agent/config.rs`  
-3. Codex merge + bearer resolver (template for BYOK merge)  
-4. `CredentialStore` create/list/delete  
-5. Login CLI in `pager-bin`  
-6. One end-to-end test pattern from multi-auth tests  
+1. `ApiBackend` + `SamplerConfig`
+2. `resolve` path model → sampling config in shell `agent/config.rs`
+3. Codex merge + bearer resolver (template for BYOK merge)
+4. `CredentialStore` create/list/delete
+5. Login CLI in `pager-bin`
+6. One end-to-end test pattern from multi-auth tests
 
 ---
 
@@ -161,6 +161,6 @@ goblin logout --provider openrouter
 
 When the architecture decision lands:
 
-- Keep this package as **problem/context** or mark `SUPERSEDED by <plan path>`.  
-- Do not silently edit PROBLEM outcomes to match an implementation that was never approved.  
+- Keep this package as **problem/context** or mark `SUPERSEDED by <plan path>`.
+- Do not silently edit PROBLEM outcomes to match an implementation that was never approved.
 - Update `EVIDENCE_MAP` if symbols move during large refactors.

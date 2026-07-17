@@ -1,9 +1,9 @@
 # Epic v1-recovery-rollout — Migração e production gate
 
-Status: rascunho  
-Prioridade: lançamento-bloqueante  
-Depende de: todos os épicos Goal Runtime v1 anteriores  
-Habilita: release estável do Goal Runtime  
+Status: rascunho
+Prioridade: lançamento-bloqueante
+Depende de: todos os épicos Goal Runtime v1 anteriores
+Habilita: release estável do Goal Runtime
 Skills relacionadas: `@code-audit`, `@code-review`, `@release-checklist`, `@delivery-report`
 
 ## Arquitetura
