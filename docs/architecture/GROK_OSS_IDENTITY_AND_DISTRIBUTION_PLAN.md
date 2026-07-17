@@ -1,46 +1,38 @@
 # Grok OSS — Identity, Distribution & Dual-Fork Plan
 
-**Status:** DEFERRED — document only. **Do not implement** until multi-provider /
-Codex on this tree is declared **100% complete** (see gate below).
+**Status:** **CUTOVER IN PROGRESS** — product identity constants, install, npm
+layout, and CI/release workflows land on this tree. **npm publish** still
+requires a human `NPM_TOKEN` (see `TO_RELEASE_NPM.md`).
 
 **Last updated:** 2026-07-17
 **Audience:** maintainers of the current fork (`nonexphere/grok-build`) and the
-future Grok OSS line (`brasalabs6/grok-oss`).
+Grok OSS line (`brasalabs6/grok-oss` when remote is ready).
 
 This file is the **source of truth for locked product-identity and distribution
 decisions** for the Grok OSS / Goblin split. It does **not** replace `task.md`
-(multi-provider behavior) or `GOBLIN.md` (current Goblin fork process while work
-continues on `nonexphere/grok-build`).
+(multi-provider behavior) or `GOBLIN.md` (branch/PR process).
 
 ---
 
-## 0. Non-goals right now
+## 0. Current implementation status
 
-Until the gate in §1 opens:
+| Surface | Status |
+|---------|--------|
+| Binary `grok-oss` | **Shipped** (`[[bin]]` + `scripts/install-grok-oss.sh`) |
+| Home `~/.grok-oss` | **Shipped** (`xai-grok-config` `PRODUCT_*` + `GROK_OSS_HOME`) |
+| npm `@brasalabs/grok-oss` | **Layout + pack** under `npm/`; publish gated on secret |
+| CI / release workflows | **`.github/workflows/ci-grok-oss.yml`**, `release-grok-oss.yml` |
+| npm registry publish | **Blocked only on `NPM_TOKEN`** |
 
-- Do **not** rename the `goblin` binary, `~/.grok` defaults, npm packages, or
-  branch policy.
-- Do **not** push identity rebrands into the multi-provider / Codex feature
-  branches.
-- Do **not** migrate history or cut over remotes as part of Codex work.
-- **Do** keep finishing multi-provider / Codex on the current Goblin-shaped
-  tree (`nonexphere/grok-build`, binary `goblin`, install via
-  `./scripts/install-goblin.sh`).
-
-Planning and documenting here is intentional; code identity stays as-is.
+Legacy `goblin` binary name remains as an optional alias for transition.
 
 ---
 
-## 1. Gate — when this plan becomes executable
+## 1. Gate — cutover opened
 
-| Prerequisite | Evidence |
-|--------------|----------|
-| Multi-provider auth control plane complete per `task.md` + `GOBLIN.md` | Acceptance criteria + tests green |
-| Codex provider production path complete | `TO_RELEASE.md` / readiness matrix honest **PASS** for required R-items |
-| No open P0 blockers on auth, token refresh, model binding, request auth | Issue/plan ledger |
-| Explicit maintainer decision: “identity cutover starts” | Human go-ahead |
-
-Until then, any agent or human must treat identity work as **out of scope**.
+Maintainer OBJECTIVE (2026-07-17) opened identity cutover on this tree so that
+the only remaining external step is the npm org token. Multi-provider/Codex
+continues on the same product binary (`grok-oss`).
 
 ---
 

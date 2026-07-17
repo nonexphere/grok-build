@@ -51,23 +51,27 @@ Also see root [`AGENTS.md`](AGENTS.md).
 - The first Goblin release tag will be `goblin-v0.1.0` (see Release Tags
   below).
 
-## Public Surface
+## Public Surface (Grok OSS)
 
-- **Public fork CLI command: `goblin`** (installed onto `PATH` for users of this
-  fork). Build with `cargo build -p xai-grok-pager-bin --bin goblin` or
-  `./scripts/install-goblin.sh` (see **Local build & test loop** below).
-- Upstream artifact name `xai-grok-pager` is still produced to minimize merge
-  drift; `goblin` is an additional `[[bin]]` entry pointing at the same
-  `main.rs`. Clap accepts `goblin` as `argv[0]` for help/usage.
-- Internal Rust crate names remain `xai-grok-*` (no renames).
-- No new npm package is introduced by this fork.
+| Surface | Value |
+|---------|--------|
+| **CLI binary** | **`grok-oss`** (`[[bin]]` in `xai-grok-pager-bin`; legacy `goblin` alias remains) |
+| **User home** | **`~/.grok-oss`** (env: `GROK_OSS_HOME`, fallback `GROK_HOME`) |
+| **npm** | **`@brasalabs/grok-oss`** + `@brasalabs/grok-oss-<os>-<arch>` under `npm/` |
+| **Install** | `./scripts/install-grok-oss.sh` |
+| **Crates** | Internal names remain `xai-grok-*` (no mass rename) |
+
+Upstream artifact name `xai-grok-pager` is still produced to minimize merge drift.
+Clap accepts `grok-oss` / `goblin` / `grok` / `agent` as `argv[0]`.
+
+npm publish requires secret `NPM_TOKEN` — see [`TO_RELEASE_NPM.md`](TO_RELEASE_NPM.md).
 
 ### Local build & test loop
 
 Rust does not hot-reload the TUI: after code changes that affect the CLI, you
 must **rebuild the binary** (or use a wrapper that always execs the latest
 `target/` artifact). `cargo check` / `cargo test -p …` prove libraries; they
-do **not** update the interactive `goblin` you run.
+do **not** update the interactive `grok-oss` you run.
 
 #### Canonical commands
 
@@ -76,19 +80,19 @@ do **not** update the interactive `goblin` you run.
 cd ~/github/grok-goblin   # or your checkout path
 
 # 1) Fastest day-to-day binary (debug, incremental)
-cargo build -p xai-grok-pager-bin --bin goblin
+cargo build -p xai-grok-pager-bin --bin grok-oss
 
 # 2) Run the just-built binary (always correct for this checkout)
-./target/debug/goblin --version
-./target/debug/goblin --model gpt-5.6-luna
+./target/debug/grok-oss --version
+./target/debug/grok-oss --model gpt-5.6-luna
 
 # 3) Install / refresh PATH helper (wrapper prefers newest target/* build)
-PROFILE=debug ./scripts/install-goblin.sh
-goblin --version   # should match: grok … (<git-sha>) …
+PROFILE=debug ./scripts/install-grok-oss.sh
+grok-oss --version   # should match: grok … (<git-sha>) …
 
 # Optional: slower optimized binary (only when you care about runtime speed)
-cargo build -p xai-grok-pager-bin --bin goblin --release
-./target/release/goblin --version
+cargo build -p xai-grok-pager-bin --bin grok-oss --release
+./target/release/grok-oss --version
 ```
 
 #### What each mode is for
@@ -97,27 +101,27 @@ cargo build -p xai-grok-pager-bin --bin goblin --release
 |---------|------------------------|-------------|
 | `cargo check -p xai-grok-shell --lib` | No | Agent / CI typecheck |
 | `cargo test -p xai-grok-sampler --lib` | No | Unit proof |
-| `cargo build -p xai-grok-pager-bin --bin goblin` | **Yes** → `target/debug/goblin` | **Human test after code changes** |
-| `… --release` | **Yes** → `target/release/goblin` | Perf / handoff install |
-| `PROFILE=debug ./scripts/install-goblin.sh` | **Yes** + PATH wrapper | Daily PATH = latest debug/release in `target/` |
+| `cargo build -p xai-grok-pager-bin --bin grok-oss` | **Yes** → `target/debug/grok-oss` | **Human test after code changes** |
+| `… --release` | **Yes** → `target/release/grok-oss` | Perf / handoff install |
+| `PROFILE=debug ./scripts/install-grok-oss.sh` | **Yes** + PATH wrapper | Daily PATH = latest debug/release in `target/` |
 
-#### PATH wrapper behavior (`scripts/install-goblin.sh`)
+#### PATH wrapper behavior (`scripts/install-grok-oss.sh`)
 
-The install script writes `~/.local/bin/goblin` as a **small launcher**, not a
+The install script writes `~/.local/bin/grok-oss` as a **small launcher**, not a
 stale copy of the binary. On each invocation it picks, in order of preference:
 
-1. Newest among `target/debug/goblin` and `target/release/goblin` under the
+1. Newest among `target/debug/grok-oss` and `target/release/grok-oss` under the
    repo path baked into the wrapper (this clone).
-2. Else a last-built copy under `~/.local/lib/goblin/goblin-pager` if present.
+2. Else a last-built copy under `~/.local/lib/grok-oss/` if present.
 
-So the loop is: **edit → `cargo build -p xai-grok-pager-bin --bin goblin` →
-`goblin …`** without reinstalling every time. First-time setup still needs
-`PROFILE=debug ./scripts/install-goblin.sh` once so the launcher is on PATH.
+So the loop is: **edit → `cargo build -p xai-grok-pager-bin --bin grok-oss` →
+`grok-oss …`** without reinstalling every time. First-time setup still needs
+`PROFILE=debug ./scripts/install-grok-oss.sh` once so the launcher is on PATH.
 
 Confirm you are on the right binary:
 
 ```bash
-goblin --version
+grok-oss --version
 # expect: grok 0.2.xxx (<short-sha of HEAD>) [stable]
 ```
 
@@ -136,19 +140,19 @@ running an old install outside this wrapper).
   compiler cache — install at the OS user level and point
   `~/.cargo/config.toml` at them if desired.
 - Agents validating product behavior for a human tester should end the slice
-  with a **binary** build (`cargo build -p xai-grok-pager-bin --bin goblin`),
+  with a **binary** build (`cargo build -p xai-grok-pager-bin --bin grok-oss`),
   not only `cargo check`.
 
 ### Install
 
 ```bash
-PROFILE=debug ./scripts/install-goblin.sh   # recommended for dev (wrapper + debug build)
+PROFILE=debug ./scripts/install-grok-oss.sh   # recommended for dev (wrapper + debug build)
 # or release install (slower build, faster runtime):
-./scripts/install-goblin.sh                 # PROFILE=release by default
+./scripts/install-grok-oss.sh                 # PROFILE=release by default
 
-goblin login --provider codex
-goblin auth status
-goblin logout
+grok-oss login --provider codex
+grok-oss auth status
+grok-oss logout
 ```
 
 ## Architecture Contract
@@ -327,10 +331,11 @@ providers use the structured layout below.
 
 ## Release Tags
 
-- Goblin release tags use the `goblin-v*` format, e.g. `goblin-v0.1.0`.
-- Tags are created on the `goblin` branch.
-- The upstream `rust-v*` / version scheme is not reused; Goblin versions
-  are independent to avoid confusion with upstream releases.
+- Product release tags use **`grok-oss-v*`** (e.g. `grok-oss-v0.2.102`) for the
+  Grok OSS npm/GitHub Release pipeline (see `release-grok-oss.yml`).
+- Legacy `goblin-v*` tags may still be used for interim branch milestones.
+- Tags are created on the `goblin` branch (integration line).
+- The upstream `rust-v*` scheme is not reused.
 
 ## Source of Truth
 
@@ -342,14 +347,10 @@ providers use the structured layout below.
   architecture specification (D1–D10, component specs, protocol baseline,
   CLI/TUI flows, configuration format, security model), and the
   implementation plan.
-- **Deferred identity / dual-fork (Grok OSS → Goblin):** locked decisions and
-  post-Codex cutover plan live in
+- **Identity / dual-fork (Grok OSS):** cutover **in progress** —
   [`docs/architecture/GROK_OSS_IDENTITY_AND_DISTRIBUTION_PLAN.md`](docs/architecture/GROK_OSS_IDENTITY_AND_DISTRIBUTION_PLAN.md).
-  **Do not implement** that plan until multi-provider/Codex is 100% and a
-  maintainer opens the gate. Summary of locked targets: binary `grok-oss`,
-  home `~/.grok-oss`, npm `@brasalabs/grok-oss`, repo
-  `https://github.com/brasalabs6/grok-oss`; Goblin later gets a new repo and
-  inherits Grok OSS.
+  Product surface: binary `grok-oss`, home `~/.grok-oss`, npm
+  `@brasalabs/grok-oss`. Remaining human step: npm `NPM_TOKEN` (`TO_RELEASE_NPM.md`).
 - Where this file and `task.md` disagree on product behavior, `task.md`
   wins. Where they disagree on fork process (branches, tags, sync),
-  this file wins until the Grok OSS cutover.
+  this file wins.

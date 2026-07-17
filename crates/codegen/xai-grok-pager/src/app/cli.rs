@@ -791,15 +791,15 @@ pub enum ResumeTarget {
 impl PagerArgs {
     /// Parse CLI arguments and apply `--cwd` if provided.
     pub fn parse_and_apply_cwd() -> anyhow::Result<Self> {
-        // Accept fork CLI name `goblin` (this repo) plus upstream `grok`/`agent`.
+        // Accept Grok OSS `grok-oss`, legacy `goblin`, and upstream `grok`/`agent`.
         let bin_name = std::env::args()
             .next()
             .as_deref()
             .map(std::path::Path::new)
             .and_then(|p| p.file_name())
             .and_then(|n| n.to_str())
-            .filter(|n| matches!(*n, "grok" | "agent" | "goblin"))
-            .unwrap_or("grok")
+            .filter(|n| matches!(*n, "grok" | "agent" | "goblin" | "grok-oss"))
+            .unwrap_or("grok-oss")
             .to_owned();
         let mut args = Self::parse_from(std::iter::once(bin_name).chain(std::env::args().skip(1)));
         if let Some(socket) = args.leader_socket.take() {

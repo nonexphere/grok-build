@@ -15,7 +15,12 @@ default-run = "xai-grok-pager"
 name = "xai-grok-pager"
 path = "src/main.rs"
 
-# Goblin fork public CLI entry (same main as xai-grok-pager).
+# Grok OSS public CLI entry (same main as xai-grok-pager).
+[[bin]]
+name = "grok-oss"
+path = "src/main.rs"
+
+# Legacy Goblin alias (same main); prefer `grok-oss` for new installs.
 [[bin]]
 name = "goblin"
 path = "src/main.rs"

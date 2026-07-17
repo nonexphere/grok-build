@@ -1,0 +1,41 @@
+{
+    "name": "@brasalabs/grok-oss",
+    "version": "0.2.102",
+    "description": "Grok OSS — multi-provider terminal agent (fork of Grok Build)",
+    "license": "Apache-2.0",
+    "bin": {
+        "grok-oss": "bin/grok-oss"
+    },
+    "files": [
+        "bin/"
+    ],
+    "os": [
+        "darwin",
+        "linux",
+        "win32"
+    ],
+    "cpu": [
+        "arm64",
+        "x64"
+    ],
+    "scripts": {
+        "postinstall": "node bin/postinstall.js"
+    },
+    "publishConfig": {
+        "access": "public"
+    },
+    "engines": {
+        "node": ">=20"
+    },
+    "dependencies": {
+        "@iarna/toml": "^3.0.0"
+    },
+    "optionalDependencies": {
+        "@brasalabs/grok-oss-darwin-arm64": "0.2.102",
+        "@brasalabs/grok-oss-darwin-x64": "0.2.102",
+        "@brasalabs/grok-oss-linux-arm64": "0.2.102",
+        "@brasalabs/grok-oss-linux-x64": "0.2.102",
+        "@brasalabs/grok-oss-win32-arm64": "0.2.102",
+        "@brasalabs/grok-oss-win32-x64": "0.2.102"
+    }
+}

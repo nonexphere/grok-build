@@ -1,0 +1,19 @@
+{
+    "name": "@brasalabs/grok-oss-linux-x64",
+    "version": "0.2.102",
+    "description": "linux-x64 binary for @brasalabs/grok-oss. Do not install directly; install @brasalabs/grok-oss instead.",
+    "license": "Apache-2.0",
+    "files": [
+        "bin/",
+        "THIRD_PARTY_NOTICES.md"
+    ],
+    "os": [
+        "linux"
+    ],
+    "cpu": [
+        "x64"
+    ],
+    "publishConfig": {
+        "access": "public"
+    }
+}

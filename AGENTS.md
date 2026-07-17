@@ -63,20 +63,20 @@ This tree may have **another agent** mid-edit with uncommitted changes.
 - Rebases, force-pushes of feature branches, and conflict resolution for PR: use a **separate git worktree**.
 - Do not commit or stage unrelated dirty files.
 
-## Goblin product docs
+## Goblin / Grok OSS product docs
 
-- [`GOBLIN.md`](GOBLIN.md) — fork contract (interim: `nonexphere/grok-build`)
+- [`GOBLIN.md`](GOBLIN.md) — fork contract + **public surface `grok-oss`**
 - [`task.md`](task.md) — multi-provider / Codex plan
-- [`CODEX_AUDIT_REMEDIATION_PLAN.md`](CODEX_AUDIT_REMEDIATION_PLAN.md) — audit remediation (when present)
+- [`TO_RELEASE_NPM.md`](TO_RELEASE_NPM.md) — npm publish remaining step (`NPM_TOKEN`)
 - [`TO_RELEASE.md`](TO_RELEASE.md) — release honesty (when present)
 - [`docs/architecture/GROK_OSS_IDENTITY_AND_DISTRIBUTION_PLAN.md`](docs/architecture/GROK_OSS_IDENTITY_AND_DISTRIBUTION_PLAN.md) —
-  **deferred** dual-fork / identity plan (`grok-oss`, `~/.grok-oss`,
-  `@brasalabs/grok-oss`, `brasalabs6/grok-oss`). Do **not** implement until
-  multi-provider/Codex is complete and the plan gate is opened.
+  identity cutover (**in progress**): binary `grok-oss`, home `~/.grok-oss`,
+  npm `@brasalabs/grok-oss`. Only registry auth is external.
 
 ## Default agent behavior
 
 1. Implement on a `goblin-*` feature branch based on `goblin` when possible.
 2. Validate with package-scoped `cargo test` / `cargo check`.
+3. Product CLI for humans: **`grok-oss`** (`PROFILE=debug ./scripts/install-grok-oss.sh`).
 3. Open/update PRs with `@create-pr` (base `goblin`).
 4. Leave `main` as upstream mirror only.

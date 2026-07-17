@@ -1,0 +1,85 @@
+# PR / push CI for Grok OSS product surface (no npm publish; no NPM_TOKEN required).
+name: ci-grok-oss
+
+on:
+  push:
+    branches: [goblin, goblin-*, main]
+  pull_request:
+    branches: [goblin]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  identity-and-build:
+    name: build-grok-oss (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - os: macos-latest
+            target: aarch64-apple-darwin
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Unit tests (product home / identity)
+        run: cargo test -p xai-grok-config --lib paths -- --test-threads=2
+
+      - name: Build grok-oss
+        run: cargo build -p xai-grok-pager-bin --bin grok-oss --release
+
+      - name: Version smoke
+        run: |
+          ./target/release/grok-oss --version | tee grok-oss-version.txt
+          test -s grok-oss-version.txt
+
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: grok-oss-${{ matrix.os }}
+          path: target/release/grok-oss
+          if-no-files-found: error
+
+  npm-pack-host:
+    name: npm-pack-local (no publish)
+    runs-on: ubuntu-latest
+    needs: identity-and-build
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Build host binary
+        run: cargo build -p xai-grok-pager-bin --bin grok-oss
+      - name: Assemble + npm pack
+        run: |
+          chmod +x npm/scripts/pack-local.sh
+          ./npm/scripts/pack-local.sh
+          ls -la npm/dist
+          # Assert meta package name and bin
+          node -e '
+            const p=require("./npm/grok-oss/package.json");
+            if (p.name !== "@brasalabs/grok-oss") process.exit(1);
+            if (!p.bin || !p.bin["grok-oss"]) process.exit(2);
+            const opts=Object.keys(p.optionalDependencies||{});
+            if (!opts.every(n => n.startsWith("@brasalabs/grok-oss-"))) process.exit(3);
+            console.log("meta ok", p.name, p.version, opts.join(","));
+          '
+      - uses: actions/upload-artifact@v4
+        with:
+          name: npm-tarballs
+          path: npm/dist/*
+          if-no-files-found: error
