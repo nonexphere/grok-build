@@ -631,7 +631,7 @@ fn grok_home() -> std::path::PathBuf {
     })
 }
 
-/// Returns `~/.grok/worktrees/<repo_slug>` for the given git root.
+/// Returns `$GROK_HOME/worktrees/<repo_slug>` (default `~/.grok-oss/worktrees/...`).
 ///
 /// Uses [`repo_slug`] to derive a collision-resistant directory name from
 /// the last two meaningful path components.
@@ -640,10 +640,10 @@ pub fn worktree_base_dir(git_root: &Path) -> std::path::PathBuf {
     grok_home().join("worktrees").join(slug)
 }
 
-/// Resolves the worktree base directory (`~/.grok/worktrees/<repo_name>`)
+/// Resolves the worktree base directory (`~/.grok-oss/worktrees/<repo_name>` by default)
 /// for a given source path, correctly handling grok-managed worktrees.
 ///
-/// When `source_path` is already under `~/.grok/worktrees/<repo>/...`, the
+/// When `source_path` is already under `$GROK_HOME/worktrees/<repo>/...`, the
 /// repo name is derived from the directory structure directly. This avoids
 /// `find_main_repo_root_from_path`, which misidentifies standalone worktrees
 /// as the main repo root (returning the worktree itself instead of the

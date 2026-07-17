@@ -201,10 +201,10 @@ impl WorktreeDb {
         })
     }
 
-    /// Open the default DB at `~/.grok/worktrees.db`.
+    /// Open the default DB at `$GROK_HOME/worktrees.db` (default `~/.grok-oss`).
     ///
-    /// Discovers grok home via `$GROK_HOME`, falling back to the canonicalized
-    /// `$HOME/.grok` (matching `xai_grok_config::grok_home`).
+    /// Discovers home via `$GROK_OSS_HOME` / `$GROK_HOME`, falling back to the
+    /// canonicalized `$HOME/.grok-oss` (matching `xai_grok_config::grok_home`).
     /// Path is resolved fresh each call (~1µs env var read) to support
     /// test overrides. Each call opens its own connection — callers in hot
     /// paths should cache the `WorktreeDb` instance.
