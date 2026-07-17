@@ -16,20 +16,20 @@ if (!meta.bin || meta.bin['grok-oss'] !== 'bin/grok-oss') {
     errors.push(`meta.bin.grok-oss expected bin/grok-oss got ${JSON.stringify(meta.bin)}`);
 }
 const opts = Object.keys(meta.optionalDependencies || {});
-if (opts.length < 6) {
-    errors.push(`expected ≥6 optionalDependencies, got ${opts.length}`);
+if (opts.length < 5) {
+    errors.push(`expected ≥5 optionalDependencies (publish matrix), got ${opts.length}`);
 }
 for (const n of opts) {
     if (!n.startsWith('@brasalabs/grok-oss-')) {
         errors.push(`optionalDependency not platform-scoped: ${n}`);
     }
 }
+// Platforms published today (must match optionalDependencies + release matrix).
 const platforms = [
     'darwin-arm64',
     'darwin-x64',
     'linux-arm64',
     'linux-x64',
-    'win32-arm64',
     'win32-x64',
 ];
 for (const p of platforms) {
@@ -41,6 +41,13 @@ for (const p of platforms) {
     const pkg = JSON.parse(fs.readFileSync(pj, 'utf8'));
     if (pkg.name !== `@brasalabs/grok-oss-${p}`) {
         errors.push(`${p}: name ${pkg.name}`);
+    }
+}
+// Must not list optionalDeps we never build (empty publish risk).
+for (const n of opts) {
+    const suffix = n.replace('@brasalabs/grok-oss-', '');
+    if (!platforms.includes(suffix)) {
+        errors.push(`optionalDependency ${n} is not in publish matrix ${platforms.join(',')}`);
     }
 }
 if (!fs.existsSync(path.join(root, 'grok-oss', 'bin', 'postinstall.js'))) {

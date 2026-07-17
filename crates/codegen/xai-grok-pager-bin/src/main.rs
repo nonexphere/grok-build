@@ -1939,10 +1939,7 @@ async fn async_main() -> Result<()> {
                             "Native Codex login ({transport:?}) — no Codex CLI required"
                         );
 
-                        let home = std::env::var_os("GROK_HOME")
-                            .map(std::path::PathBuf::from)
-                            .or_else(|| dirs::home_dir().map(|h| h.join(".grok")))
-                            .unwrap_or_else(|| std::path::PathBuf::from(".grok"));
+                        let home = xai_grok_multi_auth::token_resolve::grok_home();
                         let store = std::sync::Arc::new(
                             xai_grok_multi_auth::store::FileCredentialStore::new(home),
                         )
@@ -1987,13 +1984,8 @@ async fn async_main() -> Result<()> {
                 let _otel_guard = xai_grok_telemetry::otel_layer::otel_guard();
                 match command {
                     xai_grok_pager::app::cli::AuthCommand::Status { json: _ } => {
-                        // Prefer durable file store under GROK_HOME / ~/.grok.
-                        let home = std::env::var_os("GROK_HOME")
-                            .map(std::path::PathBuf::from)
-                            .or_else(|| {
-                                dirs::home_dir().map(|h| h.join(".grok"))
-                            })
-                            .unwrap_or_else(|| std::path::PathBuf::from(".grok"));
+                        // Prefer durable file store under product home (~/.grok-oss).
+                        let home = xai_grok_multi_auth::token_resolve::grok_home();
                         let file_store =
                             xai_grok_multi_auth::store::FileCredentialStore::new(home);
                         let registry =
@@ -2017,10 +2009,7 @@ async fn async_main() -> Result<()> {
 
                 // Multi-provider logout (Codex + any native store accounts) and
                 // legacy xAI auth.json clear.
-                let home = std::env::var_os("GROK_HOME")
-                    .map(std::path::PathBuf::from)
-                    .or_else(|| dirs::home_dir().map(|h| h.join(".grok")))
-                    .unwrap_or_else(|| std::path::PathBuf::from(".grok"));
+                let home = xai_grok_multi_auth::token_resolve::grok_home();
                 let store =
                     xai_grok_multi_auth::store::FileCredentialStore::new(home);
                 let report = xai_grok_multi_auth::cli::logout_providers(

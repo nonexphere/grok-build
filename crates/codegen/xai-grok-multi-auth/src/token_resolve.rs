@@ -279,12 +279,63 @@ where
     }
 }
 
-/// Grok home directory used by multi-provider credential storage.
+/// Product home for multi-provider credential storage (must match
+/// `xai_grok_config::paths`: `GROK_OSS_HOME` → `GROK_HOME` → `~/.grok-oss`).
 pub fn grok_home() -> PathBuf {
-    std::env::var_os("GROK_HOME")
-        .map(PathBuf::from)
-        .or_else(|| dirs::home_dir().map(|h| h.join(".grok")))
-        .unwrap_or_else(|| PathBuf::from(".grok"))
+    if let Some(v) = std::env::var_os("GROK_OSS_HOME") {
+        return PathBuf::from(v);
+    }
+    if let Some(v) = std::env::var_os("GROK_HOME") {
+        return PathBuf::from(v);
+    }
+    dirs::home_dir()
+        .map(|h| h.join(".grok-oss"))
+        .unwrap_or_else(|| PathBuf::from(".grok-oss"))
+}
+
+#[cfg(test)]
+mod home_tests {
+    use super::grok_home;
+    use std::sync::Mutex;
+
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    #[test]
+    fn multi_auth_home_prefers_grok_oss_home_then_default_segment() {
+        let _g = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        // SAFETY: single-threaded under ENV_LOCK; test-only env mutation.
+        unsafe {
+            let prev_oss = std::env::var_os("GROK_OSS_HOME");
+            let prev_legacy = std::env::var_os("GROK_HOME");
+            std::env::remove_var("GROK_OSS_HOME");
+            std::env::remove_var("GROK_HOME");
+            let def = grok_home();
+            assert!(
+                def.ends_with(".grok-oss"),
+                "default multi-auth home must be ~/.grok-oss, got {}",
+                def.display()
+            );
+            std::env::set_var("GROK_OSS_HOME", "/tmp/oss-home-test-xyz");
+            assert_eq!(
+                grok_home(),
+                std::path::PathBuf::from("/tmp/oss-home-test-xyz")
+            );
+            std::env::remove_var("GROK_OSS_HOME");
+            std::env::set_var("GROK_HOME", "/tmp/legacy-home-test-xyz");
+            assert_eq!(
+                grok_home(),
+                std::path::PathBuf::from("/tmp/legacy-home-test-xyz")
+            );
+            match prev_oss {
+                Some(v) => std::env::set_var("GROK_OSS_HOME", v),
+                None => std::env::remove_var("GROK_OSS_HOME"),
+            }
+            match prev_legacy {
+                Some(v) => std::env::set_var("GROK_HOME", v),
+                None => std::env::remove_var("GROK_HOME"),
+            }
+        }
+    }
 }
 
 /// Drop shared managers (tests that rebind home paths).

@@ -134,11 +134,27 @@ const targets = [
 const onlyHost = process.argv.includes('--host-only');
 const hostKey = `${process.platform}-${process.arch}`;
 
+// Platforms we publish today (must match optionalDependencies + release matrix).
+// win32-arm64 is intentionally omitted until CI builds it.
+const REQUIRED_FULL = new Set([
+    'linux-x64',
+    'linux-arm64',
+    'darwin-x64',
+    'darwin-arm64',
+    'win32-x64',
+]);
+
 let ok = 0;
 let fail = 0;
+const failedNames = [];
 for (const t of targets) {
-    if (onlyHost && `${t.platform}-${t.arch}` !== hostKey) {
-        console.log(`[assemble] skip ${t.platform}-${t.arch} (--host-only)`);
+    const name = `${t.platform}-${t.arch}`;
+    if (onlyHost && name !== hostKey) {
+        console.log(`[assemble] skip ${name} (--host-only)`);
+        continue;
+    }
+    if (!onlyHost && !REQUIRED_FULL.has(name)) {
+        console.log(`[assemble] skip ${name} (not in REQUIRED_FULL publish set)`);
         continue;
     }
     // Prefer debug bin for local host-only if release missing.
@@ -151,9 +167,17 @@ for (const t of targets) {
     }
     const success = await packPlatform(t);
     if (success) ok++;
-    else fail++;
+    else {
+        fail++;
+        failedNames.push(name);
+    }
 }
 
-// Stamp meta package version is already source of truth.
-console.log(`[assemble] done: ${ok} ok, ${fail} failed (meta @brasalabs/grok-oss@${VERSION})`);
-process.exit(fail > 0 && ok === 0 ? 1 : 0);
+console.log(
+    `[assemble] done: ${ok} ok, ${fail} failed (meta @brasalabs/grok-oss@${VERSION})` +
+        (failedNames.length ? ` missing=[${failedNames.join(',')}]` : '')
+);
+// Full assemble must not silently ship empty platform packages.
+if (!onlyHost && fail > 0) process.exit(1);
+if (onlyHost && ok === 0) process.exit(1);
+process.exit(0);

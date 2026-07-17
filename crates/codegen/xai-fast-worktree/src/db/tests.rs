@@ -688,3 +688,32 @@ fn journal_conversion_respects_deadline_under_contention() {
     let db = WorktreeDb::open_at_with_journal_mode(&path, JournalMode::Truncate).unwrap();
     assert_eq!(journal_mode(&db), "truncate");
 }
+
+#[test]
+fn resolve_grok_home_product_segment_when_no_env() {
+    let lock = super::GROK_HOME_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let prev_oss = std::env::var_os("GROK_OSS_HOME");
+    let prev_legacy = std::env::var_os("GROK_HOME");
+    // SAFETY: serialized under GROK_HOME_ENV_LOCK
+    unsafe {
+        std::env::remove_var("GROK_OSS_HOME");
+        std::env::remove_var("GROK_HOME");
+    }
+    let path = super::resolve_grok_home().expect("home");
+    assert!(
+        path.ends_with(".grok-oss"),
+        "worktree home must be ~/.grok-oss, got {}",
+        path.display()
+    );
+    unsafe {
+        match prev_oss {
+            Some(v) => std::env::set_var("GROK_OSS_HOME", v),
+            None => std::env::remove_var("GROK_OSS_HOME"),
+        }
+        match prev_legacy {
+            Some(v) => std::env::set_var("GROK_HOME", v),
+            None => std::env::remove_var("GROK_HOME"),
+        }
+    }
+    drop(lock);
+}

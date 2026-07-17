@@ -35,7 +35,6 @@
         "@brasalabs/grok-oss-darwin-x64": "0.2.102",
         "@brasalabs/grok-oss-linux-arm64": "0.2.102",
         "@brasalabs/grok-oss-linux-x64": "0.2.102",
-        "@brasalabs/grok-oss-win32-arm64": "0.2.102",
         "@brasalabs/grok-oss-win32-x64": "0.2.102"
     }
 }

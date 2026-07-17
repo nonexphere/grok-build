@@ -209,9 +209,10 @@ jobs:
             echo "::notice title=npm publish skipped::NPM_TOKEN secret is not set. Build/pack artifacts are complete. Add NPM_TOKEN for org brasalabs and re-run. See TO_RELEASE_NPM.md"
             exit 0
           fi
+          # Only platforms produced by build-matrix (no win32-arm64 until CI builds it).
           for d in npm/grok-oss-linux-x64 npm/grok-oss-linux-arm64 \
                    npm/grok-oss-darwin-x64 npm/grok-oss-darwin-arm64 \
-                   npm/grok-oss-win32-x64 npm/grok-oss-win32-arm64; do
+                   npm/grok-oss-win32-x64; do
             if [[ -f "$d/package.json" ]]; then
               echo "Publishing $d …"
               (cd "$d" && npm publish --access public)

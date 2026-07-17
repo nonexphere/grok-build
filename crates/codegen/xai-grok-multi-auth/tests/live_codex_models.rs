@@ -1,7 +1,5 @@
-//! Live smoke: list Codex models using credentials under ~/.grok.
+//! Live smoke: list Codex models using credentials under ~/.grok-oss.
 //! Ignored in CI by default unless RUN_LIVE_CODEX=1.
-
-use std::path::PathBuf;
 
 #[tokio::test]
 async fn live_list_codex_models_from_home() {
@@ -9,9 +7,7 @@ async fn live_list_codex_models_from_home() {
         eprintln!("skip: set RUN_LIVE_CODEX=1 to run");
         return;
     }
-    let home = std::env::var_os("GROK_HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from(std::env::var("HOME").unwrap()).join(".grok"));
+    let home = xai_grok_multi_auth::token_resolve::grok_home();
     let report = xai_grok_multi_auth::cli::list_codex_models(&home)
         .await
         .expect("list_codex_models");
