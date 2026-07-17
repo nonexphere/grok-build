@@ -24,7 +24,9 @@ pub mod store;
 pub mod token_manager;
 pub mod token_resolve;
 
-pub use session_pin::{session_pin_decision, SessionPinDecision};
+pub use session_pin::{
+    session_pin_decision, session_pin_decision_for_turn, SessionPinDecision,
+};
 
 // Re-export the key control-plane types from xai-grok-auth so downstream
 // callers can reach everything from one crate.

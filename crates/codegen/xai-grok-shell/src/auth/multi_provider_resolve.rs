@@ -225,7 +225,62 @@ pub fn bearer_resolver_for_codex_account_header(
 }
 
 // A4 pin policy lives in multi-auth so unit tests run without shell harness.
-pub use xai_grok_multi_auth::{session_pin_decision, SessionPinDecision};
+pub use xai_grok_multi_auth::{
+    session_pin_decision, session_pin_decision_for_turn, SessionPinDecision,
+};
+
+/// Whether this sampling config still targets multi-provider inference.
+///
+/// Used by turn pin policy so a **mid-session model switch** (Codex → xAI)
+/// clears sticky pin, while a same-Codex rebuild that lost headers for one
+/// tick still keeps the pin (base_url remains Codex).
+///
+/// True when any of:
+/// - catalog key `provider/credential/slug`;
+/// - goblin binding headers;
+/// - Codex/ChatGPT Responses base URL.
+pub fn sampling_config_is_multi_provider_target(
+    model_id_or_slug: &str,
+    base_url: &str,
+    extra_headers: &indexmap::IndexMap<String, String>,
+) -> bool {
+    if parse_provider_model_key(model_id_or_slug).is_some() {
+        return true;
+    }
+    if extra_headers.iter().any(|(k, _)| {
+        k.eq_ignore_ascii_case("x-goblin-credential-id")
+            || k.eq_ignore_ascii_case("x-goblin-provider-id")
+    }) {
+        return true;
+    }
+    let lower = base_url.to_ascii_lowercase();
+    lower.contains("chatgpt.com") || lower.contains("/codex")
+}
+
+/// Production pin decision for one sampler turn (same logic as
+/// `reconstruct_full_config` in `sampler_turn`).
+///
+/// Callers pass the live session pin (if any) and the **new** sampling
+/// config after a model switch. Returns [`SessionPinDecision::None`] when
+/// switching away from multi-provider so Codex bearer is not sent to xAI.
+pub fn multi_provider_pin_decision_for_sampling_config(
+    pin_credential: Option<CredentialId>,
+    pin_provider: Option<&ProviderId>,
+    model_id_or_slug: &str,
+    base_url: &str,
+    extra_headers: &indexmap::IndexMap<String, String>,
+) -> SessionPinDecision {
+    let hint = credential_from_sampling_hints(model_id_or_slug, base_url, extra_headers);
+    let sampling_is_mp =
+        sampling_config_is_multi_provider_target(model_id_or_slug, base_url, extra_headers);
+    session_pin_decision_for_turn(
+        pin_credential,
+        pin_provider,
+        hint.as_ref().map(|(_, c)| *c),
+        hint.as_ref().map(|(p, _)| p),
+        sampling_is_mp,
+    )
+}
 
 /// Prefer catalog-key; else credential-id header; else account lookup.
 /// Returns full session auth so the caller can pin binding + stamp holder.
@@ -797,5 +852,145 @@ mod tests {
         // Recovery for first 401 must be gen=1 (the POST), not a peek.
         assert_eq!(r.stamps.take_for_recovery().unwrap().generation, 1);
         assert_eq!(r.stamps.take_for_recovery().unwrap().generation, 2);
+    }
+
+    // ── Mid-session model switch pin policy (regression: sticky Codex → xAI) ─
+
+    fn codex_pin_ids() -> (ProviderId, CredentialId) {
+        let provider = ProviderId::new_unchecked("codex");
+        let cred = CredentialId::from_uuid(
+            uuid::Uuid::parse_str("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee").unwrap(),
+        );
+        (provider, cred)
+    }
+
+    /// Production path used by sampler_turn: Codex pin + grok-4.5 sampling
+    /// config (cli-chat-proxy) must **clear** sticky pin — otherwise Codex
+    /// OAuth is sent to xAI and 401s with multi-provider recovery thrash.
+    #[test]
+    fn pin_decision_clears_on_codex_to_xai_model_switch() {
+        let (provider, cred) = codex_pin_ids();
+        let empty = indexmap::IndexMap::new();
+        let decision = multi_provider_pin_decision_for_sampling_config(
+            Some(cred),
+            Some(&provider),
+            "grok-4.5",
+            "https://cli-chat-proxy.grok.com/v1",
+            &empty,
+        );
+        assert_eq!(
+            decision,
+            SessionPinDecision::None,
+            "switch to xAI must not KeepPin Codex bearer (user log 019f71e8…)"
+        );
+    }
+
+    /// Same-model Codex rebuild with temporarily missing account headers still
+    /// KeepPin when base_url remains Codex (A4 sticky for header-less rebuild).
+    #[test]
+    fn pin_decision_keeps_on_codex_rebuild_without_headers() {
+        let (provider, cred) = codex_pin_ids();
+        let empty = indexmap::IndexMap::new();
+        let decision = multi_provider_pin_decision_for_sampling_config(
+            Some(cred),
+            Some(&provider),
+            "gpt-5.6-luna",
+            "https://chatgpt.com/backend-api/codex",
+            &empty,
+        );
+        assert_eq!(
+            decision,
+            SessionPinDecision::KeepPin,
+            "same Codex backend without headers must keep pin"
+        );
+    }
+
+    /// First turn on Codex catalog key adopts multi-provider (no prior pin).
+    #[test]
+    fn pin_decision_adopts_hints_from_catalog_key() {
+        let (provider, cred) = codex_pin_ids();
+        let key = format_provider_model_key(&provider, cred, "gpt-5.6-luna");
+        let empty = indexmap::IndexMap::new();
+        let decision = multi_provider_pin_decision_for_sampling_config(
+            None,
+            None,
+            &key,
+            "https://chatgpt.com/backend-api/codex",
+            &empty,
+        );
+        assert_eq!(decision, SessionPinDecision::AdoptHints);
+    }
+
+    /// Credential switch (pin A, hints B) adopts new account.
+    #[test]
+    fn pin_decision_adopts_on_credential_switch() {
+        let (provider, cred_a) = codex_pin_ids();
+        let cred_b = CredentialId::from_uuid(
+            uuid::Uuid::parse_str("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb").unwrap(),
+        );
+        let key_b = format_provider_model_key(&provider, cred_b, "gpt-5.6-luna");
+        let empty = indexmap::IndexMap::new();
+        let decision = multi_provider_pin_decision_for_sampling_config(
+            Some(cred_a),
+            Some(&provider),
+            &key_b,
+            "https://chatgpt.com/backend-api/codex",
+            &empty,
+        );
+        assert_eq!(decision, SessionPinDecision::AdoptHints);
+    }
+
+    /// xAI sampling is never multi-provider target (guards false positive KeepPin).
+    #[test]
+    fn sampling_target_xai_is_not_multi_provider() {
+        let empty = indexmap::IndexMap::new();
+        assert!(!sampling_config_is_multi_provider_target(
+            "grok-4.5",
+            "https://cli-chat-proxy.grok.com/v1",
+            &empty,
+        ));
+        assert!(sampling_config_is_multi_provider_target(
+            "gpt-5.6-luna",
+            "https://chatgpt.com/backend-api/codex",
+            &empty,
+        ));
+        let (provider, cred) = codex_pin_ids();
+        let key = format_provider_model_key(&provider, cred, "gpt-5.6-luna");
+        assert!(sampling_config_is_multi_provider_target(
+            &key,
+            "https://api.x.ai/v1", // key alone is enough
+            &empty,
+        ));
+    }
+
+    /// multi_provider 401 recovery gate must not fire for xAI after clear:
+    /// pin decision None + no sampling hints ⇒ multi_provider_auth_401 false.
+    #[test]
+    fn after_xai_switch_recovery_must_not_use_multi_provider_path() {
+        let (provider, cred) = codex_pin_ids();
+        let empty = indexmap::IndexMap::new();
+        let model = "grok-4.5";
+        let base = "https://cli-chat-proxy.grok.com/v1";
+        let decision = multi_provider_pin_decision_for_sampling_config(
+            Some(cred),
+            Some(&provider),
+            model,
+            base,
+            &empty,
+        );
+        // After None, session clears pin — recovery uses:
+        // multi_provider_auth.is_some() || credential_from_sampling_hints
+        let pin_cleared = matches!(decision, SessionPinDecision::None);
+        let hints = credential_from_sampling_hints(model, base, &empty);
+        assert!(pin_cleared);
+        assert!(
+            hints.is_none(),
+            "xAI sampling must not claim multi-provider credential hints"
+        );
+        let multi_provider_auth_401 = !pin_cleared || hints.is_some();
+        assert!(
+            !multi_provider_auth_401,
+            "must not enter multi-provider 401 recovery after Codex→xAI switch"
+        );
     }
 }

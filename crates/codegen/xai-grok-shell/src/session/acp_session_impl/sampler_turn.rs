@@ -315,6 +315,11 @@ impl SessionActor {
             // A4: ModelBinding pin is authoritative. Rebuild from hints only when
             // first pin or explicit credential change (catalog key), not from
             // ChatGPT-Account-ID / base_url alone on every reconstruct.
+            //
+            // Mid-session switch off multi-provider (Codex → grok-4.5): sampling
+            // config has no MP hints. Sticky KeepPin would send the Codex
+            // bearer to cli-chat-proxy and 401 with multi-provider recovery
+            // thrash — clear the pin when the target is unambiguously not MP.
             let from_hints =
                 crate::auth::multi_provider_resolve::session_auth_for_sampling_hints(
                     cfg.model.as_str(),
@@ -323,11 +328,13 @@ impl SessionActor {
                 );
             let existing = self.multi_provider_auth.lock().clone();
             use crate::auth::multi_provider_resolve::SessionPinDecision;
-            let decision = crate::auth::multi_provider_resolve::session_pin_decision(
+            // Shared pure policy (unit-tested): Codex→xAI model switch clears pin.
+            let decision = crate::auth::multi_provider_resolve::multi_provider_pin_decision_for_sampling_config(
                 existing.as_ref().and_then(|p| p.credential_id()),
                 existing.as_ref().map(|p| p.provider()),
-                from_hints.as_ref().and_then(|h| h.credential_id()),
-                from_hints.as_ref().map(|h| h.provider()),
+                cfg.model.as_str(),
+                &cfg.base_url,
+                &extra_headers,
             );
             let resolver = match (decision, existing, from_hints) {
                 (SessionPinDecision::KeepPin, Some(pinned), _) => {
@@ -349,6 +356,9 @@ impl SessionActor {
                     Some(shared)
                 }
                 _ => {
+                    // Drop sticky multi-provider pin when leaving Codex (or no
+                    // multi-provider auth at all) so xAI session/API-key auth runs.
+                    *self.multi_provider_auth.lock() = None;
                     if use_bearer_resolver {
                         self.auth_manager.as_ref().map(|am| {
                             std::sync::Arc::new(AuthManagerBearerResolver(am.clone()))
