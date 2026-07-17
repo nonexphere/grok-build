@@ -31,7 +31,10 @@ fn assistant_text(text: &str) -> ConversationItem {
         model_id: None,
         model_fingerprint: None,
         reasoning_effort: None,
-    })
+    
+        phase: None,
+        message_id: None,
+})
 }
 
 fn assistant_with_tool_call(text: &str, name: &str, args: &str) -> ConversationItem {
@@ -45,19 +48,16 @@ fn assistant_with_tool_call(text: &str, name: &str, args: &str) -> ConversationI
         model_id: None,
         model_fingerprint: None,
         reasoning_effort: None,
-    })
+    
+        phase: None,
+        message_id: None,
+})
 }
 
-/// Build an `AssistantItem` with arbitrary `reasoning`, `content`,
-/// and `tool_calls` for the `[assistant reasoning]` test coverage.
-/// Trivially-defaulted fields (`raw_output`, `model_id`,
-/// `model_fingerprint`) are filled with `None` so each test stays a
-/// one-liner.
 /// Build `[Reasoning(text), Assistant(content, tool_calls)]` as the
-/// reasoning-as-sibling equivalent of the old
-/// `AssistantItem { reasoning, content, tool_calls }` literal. When
-/// `reasoning_text` is empty, no Reasoning item is emitted (callers
-/// who want an encrypted-only sibling should build that variant
+/// reasoning-as-sibling equivalent of the old bundled-reasoning assistant
+/// literal. When `reasoning_text` is empty, no Reasoning item is emitted
+/// (callers who want an encrypted-only sibling should build that variant
 /// inline).
 fn assistant_with_reasoning_items(
     reasoning_text: &str,
@@ -86,7 +86,10 @@ fn assistant_with_reasoning_items(
         model_id: None,
         model_fingerprint: None,
         reasoning_effort: None,
-    }));
+    
+        phase: None,
+        message_id: None,
+}));
     out
 }
 
@@ -205,7 +208,10 @@ fn flatten_skips_reasoning_when_encrypted_only() {
             model_id: None,
             model_fingerprint: None,
             reasoning_effort: None,
-        }),
+        
+            phase: None,
+            message_id: None,
+}),
     ];
     let out = flatten_transcript_for_classifier(&items, true);
     assert!(
@@ -237,7 +243,10 @@ fn flatten_skips_reasoning_when_text_is_empty() {
             model_id: None,
             model_fingerprint: None,
             reasoning_effort: None,
-        }),
+        
+            phase: None,
+            message_id: None,
+}),
     ];
     let out = flatten_transcript_for_classifier(&items, true);
     assert!(
@@ -542,7 +551,10 @@ fn window_assistant_text_pin_skips_empty_assistant_turns() {
         model_id: None,
         model_fingerprint: None,
         reasoning_effort: None,
-    });
+    
+        phase: None,
+        message_id: None,
+});
     // 5 real text turns at idxs 0..5, then 10 empty turns.
     let mut items: Vec<ConversationItem> =
         (0..5).map(|i| assistant_text(&format!("t{i}"))).collect();

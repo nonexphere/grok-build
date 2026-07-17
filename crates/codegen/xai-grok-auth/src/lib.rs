@@ -68,7 +68,7 @@ pub use provider::{
 #[cfg(feature = "native-multi-provider-auth")]
 pub use request_auth::{
     AuthFailureClass, AuthFailureResponse, CredentialBinding, LogoutOutcome, LogoutRequest,
-    ModelCatalog, ModelListRequest, ProviderCredentialUpdate, ProviderEndpointKind,
+    ModelCatalog, ModelCatalogSource, ModelListRequest, ProviderCredentialUpdate, ProviderEndpointKind,
     ProviderEndpointRequest, ProviderModel, ProviderRequestAuth, RefreshRequest,
     RequestAuthContext, RequestKind, SentCredentialStamp, TokenRequest, TokenResolution,
     TokenUseReason, UnauthorizedRecovery, ValidToken,

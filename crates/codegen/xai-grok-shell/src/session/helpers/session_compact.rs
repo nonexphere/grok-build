@@ -465,6 +465,19 @@ pub(crate) async fn generate_session_compact(
             }
         }
         ApiBackend::Responses => {
+            // PC10: explicit prompt_cache_key policy for compaction (opaque
+            // session key on Codex; omit otherwise — never anonymous).
+            let agent = xai_grok_telemetry::id::agent_id();
+            let is_codex = xai_grok_sampling_types::classify_codex_responses_backend(
+                &xai_grok_sampling_types::CodexBackendHints {
+                    base_url: &sampling_config.base_url,
+                    provider_id: None,
+                    multi_provider_codex_pin: xai_grok_sampling_types::is_codex_responses_backend(
+                        &sampling_config.base_url,
+                    ),
+                    capability_codex: false,
+                },
+            );
             let request = ConversationRequest {
                 items: chat_history,
                 tool_choice: (!tools.is_empty()).then_some(ConversationToolChoice::None),
@@ -475,12 +488,17 @@ pub(crate) async fn generate_session_compact(
                 x_grok_conv_id: Some(session_id.to_string()),
                 x_grok_req_id: Some(format!("xai-compact-{}", uuid::Uuid::new_v4())),
                 x_grok_session_id: Some(session_id.to_string()),
-                x_grok_agent_id: Some(xai_grok_telemetry::id::agent_id()),
+                x_grok_agent_id: Some(agent.clone()),
+                prompt_cache_key: xai_grok_sampling_types::prompt_cache_key_for_compaction(
+                    is_codex,
+                    Some(session_id.0.as_ref()),
+                    Some(agent.as_str()),
+                ),
                 ..Default::default()
             };
             let stream_result = client.conversation_stream_responses(request).await;
             let mut stream = match stream_result {
-                Ok((s, _metadata, _doom_loop)) => s,
+                Ok((s, _metadata, _doom_loop, _phase_map)) => s,
                 Err(e) => return Err(classify_sampling_error(e)),
             };
             let mut timing = StreamTiming::new();
@@ -978,7 +996,10 @@ mod compacted_history_shape_tests {
                 model_id: None,
                 model_fingerprint: None,
                 reasoning_effort: None,
-            }),
+            
+                phase: None,
+                message_id: None,
+}),
             ConversationItem::tool_result("tc1", "fn login() { /* buggy code */ }"),
             ConversationItem::Assistant(AssistantItem {
                 content: "Found the bug, applying fix.".into(),
@@ -989,7 +1010,10 @@ mod compacted_history_shape_tests {
                 model_id: None,
                 model_fingerprint: None,
                 reasoning_effort: None,
-            }),
+            
+                phase: None,
+                message_id: None,
+}),
             ConversationItem::tool_result("tc2", "Successfully replaced text."),
         ];
         let mut edited_paths = BTreeSet::new();
@@ -1154,7 +1178,10 @@ mod compacted_history_shape_tests {
                 model_id: None,
                 model_fingerprint: None,
                 reasoning_effort: None,
-            }),
+            
+                phase: None,
+                message_id: None,
+}),
             ConversationItem::tool_result("tc1", "fn login() { /* ... */ }"),
         ];
         let full = CompactionStateContext::build(&conversation, CompactionInputs::default()).await;

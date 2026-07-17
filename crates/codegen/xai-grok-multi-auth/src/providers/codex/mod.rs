@@ -9,6 +9,7 @@ pub mod claims;
 pub mod config;
 pub mod device;
 pub mod errors;
+pub mod model_cache;
 pub mod models;
 pub mod pkce;
 pub mod request_auth;
@@ -540,7 +541,40 @@ impl AuthProvider for CodexAuthProvider {
         } else {
             request.client_version
         };
-        models::fetch_codex_models(&self.http_client, &credential, version).await
+
+        // M7/D9: per-credential disk cache + stale/bundled fallback.
+        let home = crate::token_resolve::grok_home();
+        let cache_path =
+            model_cache::cache_path(&home, credential.metadata.key.credential_id);
+        let now = Utc::now();
+        let prior_etag = model_cache::load_cache(&cache_path).and_then(|c| {
+            if c.is_fresh(now) {
+                None // fresh: return without network
+            } else {
+                c.etag
+            }
+        });
+        if let Some(cached) = model_cache::load_cache(&cache_path) {
+            if cached.is_fresh(now) {
+                return Ok(cached.into_model_catalog(xai_grok_auth::ModelCatalogSource::FreshDisk));
+            }
+        }
+
+        let fetch = models::fetch_codex_models_with_etag(
+            &self.http_client,
+            &credential,
+            version,
+            prior_etag.as_deref(),
+        )
+        .await
+        .map_err(|e| e.to_string());
+        let (catalog, source) = model_cache::resolve_after_fetch(fetch, &cache_path, now);
+        if source == model_cache::CacheSource::AuthFailure {
+            return Err(ProviderError::ModelDiscovery(
+                "Codex model list failed: auth/identity error (not serving stale catalog)".into(),
+            ));
+        }
+        Ok(catalog)
     }
 
     fn resolve_endpoint(

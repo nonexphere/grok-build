@@ -14,17 +14,32 @@ provider, and request-scoped token resolution.
 
 ## Branches
 
-- `main` is an **upstream mirror** of `xai-org/grok-build`. It must be kept
-  as a clean read-only mirror of upstream. **Never land Goblin-specific
-  commits on `main`.**
-- `goblin` is the **default development branch** for this fork. All fork
-  features, CI, releases, and documentation land here.
-- **Sync workflow:**
-  1. Update `main` from `upstream/main` (fast-forward or rebase).
-  2. Rebase or merge `goblin` onto the updated `main`.
-  3. Resolve conflicts in fork-only files (this file, `docs/architecture/`,
-     `task.md`) in favor of the fork, unless upstream changed the same line.
-  4. Never push Goblin commits back to `main`.
+| Branch | Role |
+|--------|------|
+| **`main`** | **Upstream mirror** of `xai-org/grok-build`. Keep as a clean mirror. **Never land Goblin-specific commits on `main`.** Never open feature PRs into `main`. |
+| **`goblin`** | **Principal / default development branch** of this fork. Features, CI, releases, and documentation land here. **All product PRs target `goblin`.** |
+| **`goblin-*`** | Feature branches. PR **into `goblin` only**. |
+
+### Remotes (this clone)
+
+| Remote | Repository |
+|--------|------------|
+| `origin` | `xai-org/grok-build` (upstream) |
+| `fork` | `nonexphere/grok-build` (push + PRs) |
+
+### Sync workflow
+
+1. Update local `main` from `origin/main` (prefer updating the ref without
+   checkout if another agent owns the worktree: `git branch -f main origin/main`).
+2. Push mirror: `git push fork main --force-with-lease` so `fork/main` matches upstream.
+3. Rebase or merge `goblin` onto the updated `main` (after the fork has unique
+   history — do not blind-reset `goblin` to `main` once it has product merges).
+4. Resolve conflicts in fork-only files (this file, `docs/architecture/`,
+   `task.md`) in favor of the fork, unless upstream changed the same line.
+5. Never push Goblin product commits to `main`.
+6. Open PRs with base **`goblin`** — skill `@create-pr`.
+
+Also see root [`AGENTS.md`](AGENTS.md).
 
 ## Stable Base
 
@@ -196,11 +211,12 @@ providers use the structured layout below.
 
 ## Sync Playbook and Conflict Resolution
 
-1. **Fetch upstream:** `git fetch upstream`
-2. **Update main:** `git checkout main && git merge --ff-only upstream/main`
-3. **Rebase goblin:** `git checkout goblin && git rebase main`
-   - Alternatively, merge: `git merge main` if a linear history is not
-     required.
+1. **Fetch:** `git fetch origin && git fetch fork`
+2. **Update main mirror (safe without dirty-checkout):**  
+   `git branch -f main origin/main && git push fork main --force-with-lease`  
+   (`fork/main` is allowed to force-update **only** as an upstream mirror.)
+3. **Advance goblin:** on a clean tree or isolated worktree:  
+   `git checkout goblin && git rebase main` (or `git merge main`).
 4. **Conflict resolution rules:**
    - Files that exist only in the fork (`GOBLIN.md`,
      `docs/architecture/multi-provider-auth/*`, `task.md`): keep the fork
@@ -208,10 +224,13 @@ providers use the structured layout below.
      area.
    - Shared source files: prefer upstream changes; re-apply fork-specific
      additions on top.
-   - `README.md`: keep the upstream body intact; preserve the small "Fork
-     (Goblin)" section added by this fork.
-5. **Never force-push `main`.** Force-push to `goblin` only during rebase
-   cleanup before a release, and only if no collaborators are mid-rebase.
+   - `README.md`: keep the upstream body intact; preserve the "Fork (Goblin)"
+     section and branch policy table.
+5. **Force-push:** allowed for `fork/main` only as mirror sync. Force-push
+   `goblin` only during deliberate rebase cleanup before a release, and only
+   if no collaborators are mid-rebase. Feature force-push: only that feature
+   branch, preferably from an isolated worktree.
+6. **PRs:** always `--base goblin` (never `--base main`). See `@create-pr`.
 
 ## Security Rules
 

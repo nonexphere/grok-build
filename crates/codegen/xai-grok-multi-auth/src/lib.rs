@@ -18,9 +18,13 @@ pub mod provider_model_key;
 pub mod providers;
 pub mod registry;
 pub mod request_auth;
+pub mod request_stamp;
+pub mod session_pin;
 pub mod store;
 pub mod token_manager;
 pub mod token_resolve;
+
+pub use session_pin::{session_pin_decision, SessionPinDecision};
 
 // Re-export the key control-plane types from xai-grok-auth so downstream
 // callers can reach everything from one crate.

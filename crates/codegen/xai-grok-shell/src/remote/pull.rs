@@ -441,6 +441,8 @@ pub(crate) mod hydrate {
                 model_id: None,
                 model_fingerprint: None,
                 reasoning_effort: None,
+                phase: None,
+                message_id: None,
             });
             self.has_agent_content = false;
             self.item_count += 1;

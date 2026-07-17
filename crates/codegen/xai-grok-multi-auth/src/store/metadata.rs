@@ -158,27 +158,61 @@ pub fn commit_accounts_and_secrets(
     write_json_atomic(paths.txn_journal(), &journal)?;
     save_secrets(paths, secrets)?;
     save_accounts(paths, accounts)?;
-    let _ = fs::remove_file(paths.txn_journal());
+    remove_journal_durable(paths.txn_journal())?;
     Ok(())
 }
 
+/// Remove a journal file; `NotFound` is success. Other I/O errors propagate
+/// (AUD-008: never silently leave a journal that failed to delete).
+fn remove_journal_durable(path: &Path) -> Result<(), StoreError> {
+    match fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(StoreError::Backend(format!(
+            "failed to remove txn journal {}: {e}",
+            path.display()
+        ))),
+    }
+}
+
 /// If a journal remains from a crashed commit, finish applying it.
+///
+/// Corrupt journals are quarantined (renamed) and returned as
+/// [`StoreError::Corrupt`] rather than silently ignored (AUD-008).
 pub fn recover_pending_txn(paths: &StorePaths) -> Result<(), StoreError> {
     let path = paths.txn_journal();
     if !path.exists() {
         return Ok(());
     }
-    match read_json_recover_empty::<CredentialTxnJournal>(path)? {
-        None => {
-            let _ = fs::remove_file(path);
+    match read_json_recover_empty::<CredentialTxnJournal>(path) {
+        Ok(None) => {
+            // Empty/truncated journal: drop it so we do not block future commits.
+            remove_journal_durable(path)?;
             Ok(())
         }
-        Some(j) => {
+        Ok(Some(j)) => {
             save_secrets(paths, &j.secrets)?;
             save_accounts(paths, &j.accounts)?;
-            let _ = fs::remove_file(path);
+            remove_journal_durable(path)?;
             Ok(())
         }
+        Err(e @ StoreError::Corrupt(_)) => {
+            // Quarantine so operators can inspect; fail loud to the caller.
+            let quarantine = path.with_extension(format!(
+                "journal.quarantine.{}",
+                std::process::id()
+            ));
+            if let Err(rename_err) = fs::rename(path, &quarantine) {
+                return Err(StoreError::Corrupt(format!(
+                    "txn journal corrupt ({e}) and quarantine failed: {rename_err}"
+                )));
+            }
+            Err(StoreError::Corrupt(format!(
+                "txn journal corrupt (quarantined to {}): {e}",
+                quarantine.display()
+            )))
+        }
+        Err(e) => Err(e),
     }
 }
 

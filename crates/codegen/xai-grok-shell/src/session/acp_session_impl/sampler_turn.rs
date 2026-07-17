@@ -311,23 +311,56 @@ impl SessionActor {
         // Multi-provider (Codex): request-time TokenManager (B1/B3). chat_state
         // keeps the wire model slug; recover credential via ChatGPT-Account-ID.
         #[cfg(feature = "native-multi-provider-auth")]
-        let bearer_resolver: Option<xai_grok_sampler::SharedBearerResolver> =
-            if let Some(mp) =
-                crate::auth::multi_provider_resolve::bearer_resolver_for_sampling_hints(
+        let bearer_resolver: Option<xai_grok_sampler::SharedBearerResolver> = {
+            // A4: ModelBinding pin is authoritative. Rebuild from hints only when
+            // first pin or explicit credential change (catalog key), not from
+            // ChatGPT-Account-ID / base_url alone on every reconstruct.
+            let from_hints =
+                crate::auth::multi_provider_resolve::session_auth_for_sampling_hints(
                     cfg.model.as_str(),
                     &cfg.base_url,
                     &extra_headers,
-                )
-            {
-                Some(mp)
-            } else if use_bearer_resolver {
-                self.auth_manager.as_ref().map(|am| {
-                    std::sync::Arc::new(AuthManagerBearerResolver(am.clone()))
-                        as xai_grok_sampler::SharedBearerResolver
-                })
-            } else {
-                None
+                );
+            let existing = self.multi_provider_auth.lock().clone();
+            use crate::auth::multi_provider_resolve::SessionPinDecision;
+            let decision = crate::auth::multi_provider_resolve::session_pin_decision(
+                existing.as_ref().and_then(|p| p.credential_id()),
+                existing.as_ref().map(|p| p.provider()),
+                from_hints.as_ref().and_then(|h| h.credential_id()),
+                from_hints.as_ref().map(|h| h.provider()),
+            );
+            let resolver = match (decision, existing, from_hints) {
+                (SessionPinDecision::KeepPin, Some(pinned), _) => {
+                    // Same account or hints lost: pin authoritative (A4).
+                    // AUD-011: surface provider for Codex classification without URL-only.
+                    extra_headers.insert(
+                        "x-goblin-provider-id".into(),
+                        pinned.provider().as_str().to_string(),
+                    );
+                    Some(pinned.shared_bearer_resolver())
+                }
+                (SessionPinDecision::AdoptHints, _, Some(hinted)) => {
+                    extra_headers.insert(
+                        "x-goblin-provider-id".into(),
+                        hinted.provider().as_str().to_string(),
+                    );
+                    let shared = hinted.shared_bearer_resolver();
+                    *self.multi_provider_auth.lock() = Some(hinted);
+                    Some(shared)
+                }
+                _ => {
+                    if use_bearer_resolver {
+                        self.auth_manager.as_ref().map(|am| {
+                            std::sync::Arc::new(AuthManagerBearerResolver(am.clone()))
+                                as xai_grok_sampler::SharedBearerResolver
+                        })
+                    } else {
+                        None
+                    }
+                }
             };
+            resolver
+        };
         #[cfg(not(feature = "native-multi-provider-auth"))]
         let bearer_resolver: Option<xai_grok_sampler::SharedBearerResolver> =
             if use_bearer_resolver {
@@ -462,7 +495,7 @@ impl SessionActor {
                         x_grok_session_id: Some(session_id),
                         x_grok_agent_id: Some(xai_grok_telemetry::id::agent_id()),
                         ..ConversationRequest::default()
-                    };
+};
                     let fut = sampling_client.conversation_collect(request);
                     let response =
                         tokio::time::timeout(std::time::Duration::from_millis(TIMEOUT_MS), fut)
@@ -674,12 +707,13 @@ impl SessionActor {
         // even when the model looks like BYOK (static-api-key gate would skip).
         #[cfg(feature = "native-multi-provider-auth")]
         let multi_provider_auth_401 = matches!(error.kind, SamplingErrorKind::Auth)
-            && crate::auth::multi_provider_resolve::credential_from_sampling_hints(
-                &model_id_for_auth,
-                &base_url_for_auth,
-                &extra_headers_for_auth,
-            )
-            .is_some();
+            && (self.multi_provider_auth.lock().is_some()
+                || crate::auth::multi_provider_resolve::credential_from_sampling_hints(
+                    &model_id_for_auth,
+                    &base_url_for_auth,
+                    &extra_headers_for_auth,
+                )
+                .is_some());
         #[cfg(not(feature = "native-multi-provider-auth"))]
         let multi_provider_auth_401 = false;
 
@@ -745,13 +779,26 @@ impl SessionActor {
         }
         // Prefer multi-provider TokenManager recovery when the session is bound
         // to a Codex credential (B1/B3 production composition).
+        // A1: use session-pinned MultiProviderSessionAuth so recovery reads the
+        // SentCredentialStamp from the same resolver that sent the failed request.
         #[cfg(feature = "native-multi-provider-auth")]
         if auth_recovery_eligible && multi_provider_auth_401 {
-            if crate::auth::multi_provider_resolve::try_recover_unauthorized_for_sampling(
-                &model_id_for_auth,
-                &base_url_for_auth,
-                &extra_headers_for_auth,
-            ) {
+            let recovered = {
+                let guard = self.multi_provider_auth.lock();
+                if let Some(auth) = guard.as_ref() {
+                    crate::auth::multi_provider_resolve::try_recover_unauthorized_with_session_auth(
+                        auth,
+                    )
+                } else {
+                    // No session pin yet — last resort (new resolver, no stamp).
+                    crate::auth::multi_provider_resolve::try_recover_unauthorized_for_sampling(
+                        &model_id_for_auth,
+                        &base_url_for_auth,
+                        &extra_headers_for_auth,
+                    )
+                }
+            };
+            if recovered {
                 tracing::info!(
                     session_id = % self.session_info.id.0,
                     "auth recovery: multi-provider 401, recovered, retrying once"

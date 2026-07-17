@@ -35,10 +35,24 @@ struct ModelsResponse {
 pub const DEFAULT_MODELS_CLIENT_VERSION: &str = "0.0.0";
 
 /// Fetch the Codex model catalog using the credential's access token.
+///
+/// When `if_none_match` is set, sends `If-None-Match` so a 304 can short-circuit
+/// (caller should keep the existing cache). Currently Codex may not always
+/// return ETag; we still capture it when present (AUD-010).
 pub async fn fetch_codex_models(
     client: &reqwest::Client,
     credential: &StoredCredential,
     client_version: &str,
+) -> Result<ModelCatalog, ProviderError> {
+    fetch_codex_models_with_etag(client, credential, client_version, None).await
+}
+
+/// Like [`fetch_codex_models`] with an optional `If-None-Match` header.
+pub async fn fetch_codex_models_with_etag(
+    client: &reqwest::Client,
+    credential: &StoredCredential,
+    client_version: &str,
+    if_none_match: Option<&str>,
 ) -> Result<ModelCatalog, ProviderError> {
     let headers = build_codex_request_headers(credential)?;
     let url = format!(
@@ -52,12 +66,21 @@ pub async fn fetch_codex_models(
             req = req.header(name.as_str(), v);
         }
     }
+    if let Some(etag) = if_none_match {
+        req = req.header(reqwest::header::IF_NONE_MATCH, etag);
+    }
 
     let resp = req
         .send()
         .await
         .map_err(|e| ProviderError::Transport(e.to_string()))?;
     let status = resp.status();
+    // Capture ETag when the server provides one (AUD-010 / M7).
+    let etag = resp
+        .headers()
+        .get(reqwest::header::ETAG)
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string());
     let body = resp
         .text()
         .await
@@ -105,8 +128,10 @@ pub async fn fetch_codex_models(
 
     Ok(ModelCatalog {
         models,
-        etag: None,
+        etag,
         fetched_at: chrono::Utc::now(),
+        source: xai_grok_auth::ModelCatalogSource::Network,
+        is_stale: false,
     })
 }
 

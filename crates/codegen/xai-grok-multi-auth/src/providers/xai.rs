@@ -132,6 +132,8 @@ impl AuthProvider for XaiAuthProvider {
             models: Vec::new(),
             etag: None,
             fetched_at: chrono::Utc::now(),
+            source: xai_grok_auth::ModelCatalogSource::Unknown,
+            is_stale: false,
         })
     }
 

@@ -2684,7 +2684,10 @@ actual user question";
                 model_id: Some("grok-3".to_string()),
                 model_fingerprint: None,
                 reasoning_effort: None,
-            }),
+            
+                phase: None,
+                message_id: None,
+}),
             ConversationItem::tool_result(
                 "call_1",
                 "fn main() {\n    println!(\"hello world\");\n}",
@@ -2717,7 +2720,10 @@ actual user question";
                 model_id: Some("grok-3".to_string()),
                 model_fingerprint: None,
                 reasoning_effort: None,
-            }),
+            
+                phase: None,
+                message_id: None,
+}),
             ConversationItem::tool_result("call_3", "File edited successfully."),
             ConversationItem::tool_result(
                 "call_4",
@@ -2976,7 +2982,10 @@ The user asked to read main.rs and lib.rs. main.rs prints hello world, lib.rs ha
                 model_id: None,
                 model_fingerprint: None,
                 reasoning_effort: None,
-            }),
+            
+                phase: None,
+                message_id: None,
+}),
         ]);
         assert_eq!(result.len(), 3);
         assert!(matches!(result[1], ConversationItem::Reasoning(_)));
@@ -3000,7 +3009,10 @@ The user asked to read main.rs and lib.rs. main.rs prints hello world, lib.rs ha
                 model_id: None,
                 model_fingerprint: None,
                 reasoning_effort: None,
-            }),
+            
+                phase: None,
+                message_id: None,
+}),
         ]);
         assert_eq!(result.len(), 1, "reasoning sibling must be dropped");
         assert!(matches!(result[0], ConversationItem::Assistant(_)));
@@ -3050,7 +3062,10 @@ The user asked to read main.rs and lib.rs. main.rs prints hello world, lib.rs ha
                 model_id: None,
                 model_fingerprint: None,
                 reasoning_effort: None,
-            }),
+            
+                phase: None,
+                message_id: None,
+}),
             ConversationItem::tool_result("tc1", "match found"),
         ]);
         assert_eq!(
@@ -3093,7 +3108,10 @@ The user asked to read main.rs and lib.rs. main.rs prints hello world, lib.rs ha
                 model_id: None,
                 model_fingerprint: None,
                 reasoning_effort: None,
-            }),
+            
+                phase: None,
+                message_id: None,
+}),
         ]);
         assert_eq!(result.len(), 1);
         let ConversationItem::Assistant(a) = &result[0] else {
@@ -3129,7 +3147,10 @@ The user asked to read main.rs and lib.rs. main.rs prints hello world, lib.rs ha
                 model_id: None,
                 model_fingerprint: None,
                 reasoning_effort: None,
-            }),
+            
+                phase: None,
+                message_id: None,
+}),
             ConversationItem::tool_result("tc1", "match"),
             ConversationItem::user("second turn"),
             mk_reasoning(),
@@ -3139,7 +3160,10 @@ The user asked to read main.rs and lib.rs. main.rs prints hello world, lib.rs ha
                 model_id: None,
                 model_fingerprint: None,
                 reasoning_effort: None,
-            }),
+            
+                phase: None,
+                message_id: None,
+}),
             ConversationItem::tool_result("tc2", "stray"),
             ConversationItem::user("third turn"),
             ConversationItem::Assistant(AssistantItem {
@@ -3148,7 +3172,10 @@ The user asked to read main.rs and lib.rs. main.rs prints hello world, lib.rs ha
                 model_id: None,
                 model_fingerprint: None,
                 reasoning_effort: None,
-            }),
+            
+                phase: None,
+                message_id: None,
+}),
         ]);
         assert_eq!(result.len(), 6);
         assert!(
@@ -3217,7 +3244,10 @@ The user asked to read main.rs and lib.rs. main.rs prints hello world, lib.rs ha
                 model_id: None,
                 model_fingerprint: None,
                 reasoning_effort: None,
-            }),
+            
+                phase: None,
+                message_id: None,
+}),
             ConversationItem::tool_result("tc1", "files"),
         ];
         let once = prepare_conversation_for_summarization(input.clone());

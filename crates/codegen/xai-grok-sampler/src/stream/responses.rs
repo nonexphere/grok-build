@@ -91,12 +91,16 @@ pub(crate) fn responses_event_has_meaningful_content(event: &rs::ResponseStreamE
 /// `SamplingClient::conversation_stream_responses`; any signals the SSE
 /// decoder recorded are drained onto the final `ConversationResponse`.
 /// `None` (check disabled) leaves the response untouched.
+///
+/// `phase_map` is filled by the SSE decoder with OpenResponses `phase`
+/// values (`message_id` → phase) that typed OutputMessage cannot carry.
 pub fn stream_responses<'a>(
     raw_stream: BoxStream<'a, Result<rs::ResponseStreamEvent, SamplingError>>,
     model_metadata: Option<ResponseModelMetadata>,
     request_id: RequestId,
     idle_timeout: Duration,
     doom_loop: Option<crate::doom_loop::DoomLoopSignalCollector>,
+    phase_map: crate::client::AssistantPhaseMap,
 ) -> impl Stream<Item = SamplingEvent> + Send + 'a {
     async_stream::stream! {
         use rs::{ResponseStreamEvent, Status};
@@ -124,7 +128,12 @@ pub fn stream_responses<'a>(
         // Codex ChatGPT leaves `response.completed.output` empty even after
         // streaming text; recover from deltas / output_item.done.
         let mut text_acc = String::new();
-        let mut streamed_output_items: Vec<rs::OutputItem> = Vec::new();
+        let mut commentary_acc = String::new();
+        let mut streamed_by_index: BTreeMap<u32, rs::OutputItem> = BTreeMap::new();
+        let mut item_id_to_index: std::collections::HashMap<String, u32> =
+            std::collections::HashMap::new();
+        let mut commentary_output_indexes: std::collections::HashSet<u32> =
+            std::collections::HashSet::new();
         let mut last_content_chunk_at = Instant::now();
 
         // Maps Responses API `output_index` to our tool-only `tool_index`.
@@ -197,20 +206,45 @@ pub fn stream_responses<'a>(
                         }
                         chunk_timestamps.push(Instant::now());
                         chunk_index += 1;
-                        message_chunk_count += 1;
-                        text_acc.push_str(&delta);
-                        yield SamplingEvent::ChannelToken {
-                            request_id: request_id.clone(),
-                            channel: SamplingChannel::Text,
-                            text: delta,
-                            chunk_index,
-                        };
+                        let is_commentary = commentary_output_indexes
+                            .contains(&text_delta_event.output_index)
+                            || item_id_to_index
+                                .get(&text_delta_event.item_id)
+                                .is_some_and(|idx| commentary_output_indexes.contains(idx));
+                        if is_commentary {
+                            commentary_acc.push_str(&delta);
+                            reasoning_acc.push_str(&delta);
+                            yield SamplingEvent::ChannelToken {
+                                request_id: request_id.clone(),
+                                channel: SamplingChannel::Reasoning,
+                                text: delta,
+                                chunk_index,
+                            };
+                        } else {
+                            message_chunk_count += 1;
+                            text_acc.push_str(&delta);
+                            yield SamplingEvent::ChannelToken {
+                                request_id: request_id.clone(),
+                                channel: SamplingChannel::Text,
+                                text: delta,
+                                chunk_index,
+                            };
+                        }
                     }
                 }
 
                 // Full text for a content part (Codex emits this; completed.output may still be []).
                 ResponseStreamEvent::ResponseOutputTextDone(text_done) => {
-                    if text_acc.is_empty() && !text_done.text.is_empty() {
+                    let is_commentary = commentary_output_indexes.contains(&text_done.output_index)
+                        || item_id_to_index
+                            .get(&text_done.item_id)
+                            .is_some_and(|idx| commentary_output_indexes.contains(idx));
+                    if is_commentary {
+                        if commentary_acc.is_empty() && !text_done.text.is_empty() {
+                            commentary_acc = text_done.text.clone();
+                            reasoning_acc.push_str(&text_done.text);
+                        }
+                    } else if text_acc.is_empty() && !text_done.text.is_empty() {
                         text_acc = text_done.text;
                     }
                 }
@@ -257,18 +291,42 @@ pub fn stream_responses<'a>(
                 // Start of a Responses FunctionCall — emit initial id+name
                 // and remember the output_index → tool_index mapping.
                 ResponseStreamEvent::ResponseOutputItemAdded(added_event) => {
-                    if let rs::OutputItem::FunctionCall(fc) = added_event.item {
-                        let tool_index = next_tool_index;
-                        next_tool_index += 1;
-                        output_to_tool_index.insert(added_event.output_index, tool_index);
-
-                        yield SamplingEvent::ToolCallDelta {
-                            request_id: request_id.clone(),
-                            tool_index,
-                            id: Some(fc.call_id),
-                            name: Some(fc.name),
-                            arguments_delta: None,
-                        };
+                    match &added_event.item {
+                        rs::OutputItem::FunctionCall(fc) => {
+                            let tool_index = next_tool_index;
+                            next_tool_index += 1;
+                            output_to_tool_index.insert(added_event.output_index, tool_index);
+                            // Seed materialize map so arg deltas can accumulate (AUD-002).
+                            streamed_by_index
+                                .insert(added_event.output_index, added_event.item.clone());
+                            yield SamplingEvent::ToolCallDelta {
+                                request_id: request_id.clone(),
+                                tool_index,
+                                id: Some(fc.call_id.clone()),
+                                name: Some(fc.name.clone()),
+                                arguments_delta: None,
+                            };
+                        }
+                        rs::OutputItem::Message(msg) => {
+                            if !msg.id.is_empty() {
+                                item_id_to_index.insert(msg.id.clone(), added_event.output_index);
+                                if let Ok(guard) = phase_map.lock() {
+                                    if guard.get(&msg.id).is_some_and(|p| p.is_commentary()) {
+                                        commentary_output_indexes.insert(added_event.output_index);
+                                    }
+                                }
+                            }
+                            streamed_by_index
+                                .insert(added_event.output_index, added_event.item.clone());
+                        }
+                        rs::OutputItem::Reasoning(_)
+                        | rs::OutputItem::WebSearchCall(_)
+                        | rs::OutputItem::CustomToolCall(_)
+                        | rs::OutputItem::CodeInterpreterCall(_) => {
+                            streamed_by_index
+                                .insert(added_event.output_index, added_event.item.clone());
+                        }
+                        _ => {}
                     }
                 }
 
@@ -276,18 +334,33 @@ pub fn stream_responses<'a>(
                 // Drop silently if no preceding OutputItemAdded mapped.
                 ResponseStreamEvent::ResponseFunctionCallArgumentsDelta(args_event) => {
                     let delta = args_event.delta;
-                    if !delta.is_empty()
-                        && let Some(&tool_index) =
+                    if !delta.is_empty() {
+                        // Materialize into history map (not only UI ToolCallDelta).
+                        xai_grok_sampling_types::append_function_call_arguments_delta(
+                            &mut streamed_by_index,
+                            args_event.output_index,
+                            &delta,
+                        );
+                        if let Some(&tool_index) =
                             output_to_tool_index.get(&args_event.output_index)
-                    {
-                        yield SamplingEvent::ToolCallDelta {
-                            request_id: request_id.clone(),
-                            tool_index,
-                            id: None,
-                            name: None,
-                            arguments_delta: Some(delta),
-                        };
+                        {
+                            yield SamplingEvent::ToolCallDelta {
+                                request_id: request_id.clone(),
+                                tool_index,
+                                id: None,
+                                name: None,
+                                arguments_delta: Some(delta),
+                            };
+                        }
                     }
+                }
+
+                ResponseStreamEvent::ResponseFunctionCallArgumentsDone(done_args) => {
+                    xai_grok_sampling_types::set_function_call_arguments_done(
+                        &mut streamed_by_index,
+                        done_args.output_index,
+                        done_args.arguments,
+                    );
                 }
 
                 ResponseStreamEvent::ResponseCompleted(completed_event) => {
@@ -362,11 +435,25 @@ pub fn stream_responses<'a>(
                 // `response.completed.output` empty — keep a copy for recovery.
                 ResponseStreamEvent::ResponseOutputItemDone(done_event) => {
                     match &done_event.item {
-                        rs::OutputItem::Message(_) | rs::OutputItem::Reasoning(_) => {
-                            streamed_output_items.push(done_event.item.clone());
+                        rs::OutputItem::Message(msg) => {
+                            if !msg.id.is_empty() {
+                                item_id_to_index.insert(msg.id.clone(), done_event.output_index);
+                                if let Ok(guard) = phase_map.lock() {
+                                    if guard.get(&msg.id).is_some_and(|p| p.is_commentary()) {
+                                        commentary_output_indexes.insert(done_event.output_index);
+                                    }
+                                }
+                            }
+                            streamed_by_index
+                                .insert(done_event.output_index, done_event.item.clone());
+                        }
+                        rs::OutputItem::Reasoning(_) | rs::OutputItem::FunctionCall(_) => {
+                            streamed_by_index
+                                .insert(done_event.output_index, done_event.item.clone());
                         }
                         rs::OutputItem::WebSearchCall(ws) => {
-                            streamed_output_items.push(done_event.item.clone());
+                            streamed_by_index
+                                .insert(done_event.output_index, done_event.item.clone());
                             let result = serde_json::to_value(ws).ok();
                             yield SamplingEvent::BackendToolCallCompleted {
                                 request_id: request_id.clone(),
@@ -381,7 +468,8 @@ pub fn stream_responses<'a>(
                         // the specific sub-type is in the serialized result payload
                         // and extracted by the pager from raw_output.name.
                         rs::OutputItem::CustomToolCall(ct) => {
-                            streamed_output_items.push(done_event.item.clone());
+                            streamed_by_index
+                                .insert(done_event.output_index, done_event.item.clone());
                             let result = serde_json::to_value(ct).ok();
                             yield SamplingEvent::BackendToolCallCompleted {
                                 request_id: request_id.clone(),
@@ -389,6 +477,10 @@ pub fn stream_responses<'a>(
                                 name: "x_search".to_string(),
                                 result,
                             };
+                        }
+                        rs::OutputItem::CodeInterpreterCall(_) => {
+                            streamed_by_index
+                                .insert(done_event.output_index, done_event.item.clone());
                         }
                         _ => {}
                     }
@@ -479,20 +571,35 @@ pub fn stream_responses<'a>(
         // ChatGPT Codex Responses: `response.completed` often has `output: []`
         // even after streaming a full Message via `output_item.done`. Rebuild
         // output from streamed items so we do not empty-retry forever.
-        if response.output.is_empty() && !streamed_output_items.is_empty() {
+        let completed_before = response.output.len();
+        response.output = xai_grok_sampling_types::materialize_response_output(
+            std::mem::take(&mut response.output),
+            &streamed_by_index,
+        );
+        if completed_before == 0 && !response.output.is_empty() {
             tracing::info!(
                 request_id = %request_id,
-                recovered = streamed_output_items.len(),
-                "responses: completed.output empty; recovering from output_item.done"
+                recovered = response.output.len(),
+                "responses: completed.output empty; recovered from stream materialize"
             );
-            response.output = streamed_output_items;
         }
 
-        // Convert to ConversationItem(s); patch in accumulated reasoning
-        // text as a fallback when the final response lacks `content` /
-        // `summary` (the streaming deltas may have arrived out of band).
-        // Splice policy lives in `inject_streaming_reasoning_fallback`.
-        let mut items = xai_grok_sampling_types::response_to_conversation_items(response);
+        let phases_snapshot: std::collections::HashMap<_, _> =
+            phase_map.lock().map(|g| g.clone()).unwrap_or_default();
+        if let Some(usage) = &usage {
+            tracing::info!(
+                request_id = %request_id,
+                input_tokens = usage.prompt_tokens,
+                cached_tokens = usage.cached_prompt_tokens,
+                output_tokens = usage.completion_tokens,
+                "responses: usage including cached_tokens"
+            );
+        }
+
+        let mut items = xai_grok_sampling_types::response_to_conversation_items_with_phases(
+            response,
+            &phases_snapshot,
+        );
         xai_grok_sampling_types::inject_streaming_reasoning_fallback(&mut items, reasoning_acc);
         xai_grok_sampling_types::inject_streaming_text_fallback(&mut items, text_acc);
 
@@ -553,6 +660,10 @@ mod tests {
     use async_openai::types::responses as rs_types;
     use futures_util::stream;
     use std::pin::pin;
+
+    fn empty_phase_map() -> crate::client::AssistantPhaseMap {
+        std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new()))
+    }
 
     fn rid() -> RequestId {
         RequestId::from("resp-test")
@@ -626,6 +737,40 @@ mod tests {
         })
     }
 
+    fn message_item(id: &str, text: &str) -> rs::OutputItem {
+        rs::OutputItem::Message(rs_types::OutputMessage {
+            id: id.into(),
+            role: rs_types::AssistantRole::Assistant,
+            status: rs_types::OutputStatus::Completed,
+            content: vec![rs_types::OutputMessageContent::OutputText(
+                rs_types::OutputTextContent {
+                    text: text.into(),
+                    annotations: vec![],
+                    logprobs: None,
+                },
+            )],
+        })
+    }
+
+    fn item_added(index: u32, item: rs::OutputItem) -> rs::ResponseStreamEvent {
+        rs::ResponseStreamEvent::ResponseOutputItemAdded(rs_types::ResponseOutputItemAddedEvent {
+            sequence_number: index as u64,
+            output_index: index,
+            item,
+        })
+    }
+
+    fn text_delta_for(item_id: &str, output_index: u32, delta: &str) -> rs::ResponseStreamEvent {
+        rs::ResponseStreamEvent::ResponseOutputTextDelta(rs_types::ResponseTextDeltaEvent {
+            sequence_number: 0,
+            item_id: item_id.into(),
+            output_index,
+            content_index: 0,
+            delta: delta.into(),
+            logprobs: None,
+        })
+    }
+
     async fn collect(s: impl Stream<Item = SamplingEvent>) -> Vec<SamplingEvent> {
         let mut out = Vec::new();
         let mut s = pin!(s);
@@ -633,6 +778,71 @@ mod tests {
             out.push(ev);
         }
         out
+    }
+
+    /// C2: phase=commentary text routes to Reasoning; final_answer to Text.
+    #[tokio::test]
+    async fn commentary_phase_routes_to_reasoning_then_final_to_text() {
+        use xai_grok_sampling_types::AssistantPhase;
+
+        let phase_map: crate::client::AssistantPhaseMap =
+            std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::from([
+                ("msg_c".to_string(), AssistantPhase::Commentary),
+                ("msg_f".to_string(), AssistantPhase::FinalAnswer),
+            ])));
+
+        let raw = stream::iter(vec![
+            Ok(item_added(0, message_item("msg_c", ""))),
+            Ok(text_delta_for("msg_c", 0, "thinking aloud")),
+            Ok(item_added(1, message_item("msg_f", ""))),
+            Ok(text_delta_for("msg_f", 1, "final answer")),
+            Ok(completed_event()),
+        ])
+        .boxed();
+
+        let events = collect(stream_responses(
+            raw,
+            None,
+            rid(),
+            Duration::from_secs(60),
+            None,
+            phase_map,
+        ))
+        .await;
+
+        let channels: Vec<(SamplingChannel, String)> = events
+            .iter()
+            .filter_map(|e| match e {
+                SamplingEvent::ChannelToken {
+                    channel, text, ..
+                } => Some((channel.clone(), text.clone())),
+                _ => None,
+            })
+            .collect();
+
+        assert!(
+            channels.iter().any(|(c, t)| {
+                *c == SamplingChannel::Reasoning && t.contains("thinking aloud")
+            }),
+            "commentary must emit Reasoning channel tokens; got {channels:?}"
+        );
+        assert!(
+            channels
+                .iter()
+                .any(|(c, t)| { *c == SamplingChannel::Text && t.contains("final answer") }),
+            "final_answer must emit Text channel tokens; got {channels:?}"
+        );
+        // Ordering: first commentary reasoning, then final text.
+        let first_reasoning = channels
+            .iter()
+            .position(|(c, _)| *c == SamplingChannel::Reasoning);
+        let first_text = channels
+            .iter()
+            .position(|(c, _)| *c == SamplingChannel::Text);
+        assert!(
+            first_reasoning.is_some() && first_text.is_some() && first_reasoning < first_text,
+            "expected Reasoning before Text, got {channels:?}"
+        );
     }
 
     #[tokio::test]
@@ -645,7 +855,7 @@ mod tests {
             rid(),
             Duration::from_secs(60),
             None,
-        ))
+            empty_phase_map()))
         .await;
 
         match events.last().unwrap() {
@@ -666,7 +876,7 @@ mod tests {
             rid(),
             Duration::from_secs(60),
             None,
-        ))
+            empty_phase_map()))
         .await;
 
         let text_tokens: Vec<&str> = events
@@ -703,7 +913,7 @@ mod tests {
             rid(),
             Duration::from_secs(60),
             None,
-        ))
+            empty_phase_map()))
         .await;
 
         match events.last().unwrap() {
@@ -729,7 +939,7 @@ mod tests {
             rid(),
             Duration::from_secs(60),
             None,
-        ))
+            empty_phase_map()))
         .await;
 
         assert!(
@@ -755,7 +965,7 @@ mod tests {
             rid(),
             Duration::from_millis(100),
             None,
-        ))
+            empty_phase_map()))
         .await;
 
         match events.last().unwrap() {
@@ -779,7 +989,7 @@ mod tests {
             rid(),
             Duration::from_secs(60),
             None,
-        ))
+            empty_phase_map()))
         .await;
 
         assert!(matches!(events[0], SamplingEvent::StreamStarted { .. }));
@@ -865,7 +1075,7 @@ mod tests {
             rid(),
             Duration::from_secs(60),
             None,
-        ))
+            empty_phase_map()))
         .await;
         let deltas = tool_call_deltas(&evs);
 
@@ -896,7 +1106,7 @@ mod tests {
             rid(),
             Duration::from_secs(60),
             None,
-        ))
+            empty_phase_map()))
         .await;
         assert_eq!(tool_call_deltas(&evs).len(), 0);
     }
@@ -917,7 +1127,7 @@ mod tests {
             rid(),
             Duration::from_secs(60),
             None,
-        ))
+            empty_phase_map()))
         .await;
         let deltas = tool_call_deltas(&evs);
 
@@ -946,7 +1156,7 @@ mod tests {
             rid(),
             Duration::from_secs(60),
             Some(collector),
-        ))
+            empty_phase_map()))
         .await;
 
         match events.last().unwrap() {
@@ -977,7 +1187,7 @@ mod tests {
             rid(),
             Duration::from_secs(60),
             Some(collector),
-        ))
+            empty_phase_map()))
         .await;
         match events.last().unwrap() {
             SamplingEvent::Failed { error, .. } => {
@@ -1009,7 +1219,7 @@ mod tests {
             rid(),
             Duration::from_secs(60),
             Some(collector),
-        ))
+            empty_phase_map()))
         .await;
         match events.last().unwrap() {
             SamplingEvent::Completed { response, .. } => {
@@ -1028,7 +1238,7 @@ mod tests {
             rid(),
             Duration::from_secs(60),
             None,
-        ))
+            empty_phase_map()))
         .await;
         match events.last().unwrap() {
             SamplingEvent::Completed { response, .. } => {
@@ -1045,7 +1255,7 @@ mod tests {
             rid(),
             Duration::from_secs(60),
             Some(crate::doom_loop::DoomLoopSignalCollector::default()),
-        ))
+            empty_phase_map()))
         .await;
         match events.last().unwrap() {
             SamplingEvent::Completed { response, .. } => {

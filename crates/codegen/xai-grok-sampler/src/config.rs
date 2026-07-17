@@ -163,8 +163,21 @@ impl Default for SamplerConfig {
 }
 
 /// Cheap sync read of the current bearer for [`SamplerConfig::bearer_resolver`].
+///
+/// **A1 / AUD-006:** multi-provider resolvers must only register a recovery
+/// stamp when the token is placed on the outgoing HTTP request
+/// ([`Self::current_bearer`]). Logging/attribution must use
+/// [`Self::peek_bearer`], which does **not** enqueue a recovery stamp.
 pub trait BearerResolver: Send + Sync + std::fmt::Debug {
+    /// Bearer for the outgoing request. Multi-provider paths record an
+    /// attempt stamp here for generation-aware 401 recovery.
     fn current_bearer(&self) -> Option<String>;
+
+    /// Token for logging / attribution only. Default: same as
+    /// [`Self::current_bearer`]. Multi-provider overrides to avoid stamp pollution.
+    fn peek_bearer(&self) -> Option<String> {
+        self.current_bearer()
+    }
 }
 
 pub type SharedBearerResolver = std::sync::Arc<dyn BearerResolver>;

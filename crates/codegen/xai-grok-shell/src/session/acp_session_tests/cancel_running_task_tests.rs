@@ -112,6 +112,7 @@ async fn persist_ack_waits_for_disk_flush_before_success() {
                 model_auth_facts: std::cell::RefCell::new(None),
                 attribution_callback: None,
                 auth_manager: None,
+                multi_provider_auth: parking_lot::Mutex::new(None),
                 state: TokioMutex::new(State {
                     running_task: None,
                     pending_inputs: VecDeque::new(),
@@ -564,6 +565,7 @@ async fn first_turn_memory_injection_disabled_does_not_persist_to_chat_history()
                 model_auth_facts: std::cell::RefCell::new(None),
                 attribution_callback: None,
                 auth_manager: None,
+                multi_provider_auth: parking_lot::Mutex::new(None),
                 state: TokioMutex::new(State {
                     running_task: None,
                     pending_inputs: VecDeque::new(),
@@ -836,6 +838,7 @@ async fn cancel_running_task_teardown_clears_running_and_pending_work() {
                 model_auth_facts: std::cell::RefCell::new(None),
                 attribution_callback: None,
                 auth_manager: None,
+                multi_provider_auth: parking_lot::Mutex::new(None),
                 state,
                 notifications: NotificationSender {
                     gateway: GatewaySender::new(gateway_tx),
@@ -1880,6 +1883,7 @@ async fn cancel_propagates_to_sampler_handle_so_no_further_emission() {
                 model_auth_facts: std::cell::RefCell::new(None),
                 attribution_callback: None,
                 auth_manager: None,
+                multi_provider_auth: parking_lot::Mutex::new(None),
                 state,
                 notifications: NotificationSender {
                     gateway: GatewaySender::new(gateway_tx),

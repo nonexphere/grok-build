@@ -37,10 +37,12 @@ pub struct FileCredentialStore {
 }
 
 impl FileCredentialStore {
+    /// Create a store handle. Does **not** recover a pending journal here
+    /// (AUD-008): recovery runs under the write + file locks on first access
+    /// via [`Self::ensure_journal_recovered`] so concurrent constructors cannot
+    /// race recover and errors are not swallowed.
     pub fn new(home: PathBuf) -> Self {
         let paths = Arc::new(StorePaths::new(&home));
-        // Complete any crash-interrupted dual-file transaction (B6).
-        let _ = recover_pending_txn(&paths);
         Self {
             paths,
             write_lock: Arc::new(tokio::sync::Mutex::new(())),
@@ -49,6 +51,21 @@ impl FileCredentialStore {
 
     pub fn paths(&self) -> &StorePaths {
         &self.paths
+    }
+
+    /// Apply a pending dual-file journal under the store write lock + flock.
+    /// Fail-loud: corrupt journal is quarantined by [`recover_pending_txn`].
+    async fn ensure_journal_recovered(&self) -> Result<(), StoreError> {
+        if !self.paths.txn_journal().exists() {
+            return Ok(());
+        }
+        let _guard = self.write_lock.lock().await;
+        // Re-check after lock: another task may have finished recover.
+        if !self.paths.txn_journal().exists() {
+            return Ok(());
+        }
+        let (_accounts_lock, _secrets_lock) = acquire_both_locks(&self.paths).await?;
+        recover_pending_txn(&self.paths)
     }
 }
 
@@ -109,6 +126,7 @@ fn parse_credential_id(s: &str) -> Option<CredentialId> {
 #[async_trait]
 impl CredentialStore for FileCredentialStore {
     async fn list_providers(&self) -> Result<Vec<ProviderId>, StoreError> {
+        self.ensure_journal_recovered().await?;
         let accounts = load_accounts(&self.paths)?;
         let mut providers: BTreeMap<String, ProviderId> = BTreeMap::new();
         for m in &accounts.credentials {
@@ -123,6 +141,7 @@ impl CredentialStore for FileCredentialStore {
         &self,
         provider: &ProviderId,
     ) -> Result<Vec<CredentialMetadata>, StoreError> {
+        self.ensure_journal_recovered().await?;
         let accounts = load_accounts(&self.paths)?;
         Ok(accounts
             .credentials
@@ -136,6 +155,7 @@ impl CredentialStore for FileCredentialStore {
         provider: &ProviderId,
         alias: &str,
     ) -> Result<Option<CredentialKey>, StoreError> {
+        self.ensure_journal_recovered().await?;
         let accounts = load_accounts(&self.paths)?;
         Ok(accounts
             .credentials
@@ -145,6 +165,7 @@ impl CredentialStore for FileCredentialStore {
     }
 
     async fn default_account(&self, provider: &ProviderId) -> Result<Option<CredentialKey>, StoreError> {
+        self.ensure_journal_recovered().await?;
         let accounts = load_accounts(&self.paths)?;
         match accounts.defaults.get(provider.as_str()) {
             Some(id_str) => match parse_credential_id(id_str) {
@@ -167,8 +188,9 @@ impl CredentialStore for FileCredentialStore {
 
     async fn set_default_account(&self, key: &CredentialKey) -> Result<(), StoreError> {
         let _guard = self.write_lock.lock().await;
-        let _accounts_lock =
-            acquire_blocking(self.paths.accounts_lock().to_path_buf(), STORE_LOCK_TIMEOUT).await?;
+        // Both locks: journal recover may rewrite secrets + accounts.
+        let (_accounts_lock, _secrets_lock) = acquire_both_locks(&self.paths).await?;
+        recover_pending_txn(&self.paths)?;
 
         let mut accounts = load_accounts(&self.paths)?;
         if find_index(&accounts, key).is_none() {
@@ -182,11 +204,13 @@ impl CredentialStore for FileCredentialStore {
     }
 
     async fn load_metadata(&self, key: &CredentialKey) -> Result<Option<CredentialMetadata>, StoreError> {
+        self.ensure_journal_recovered().await?;
         let accounts = load_accounts(&self.paths)?;
         Ok(find_metadata(&accounts, key).cloned())
     }
 
     async fn load_secret(&self, key: &CredentialKey) -> Result<Option<CredentialSecret>, StoreError> {
+        self.ensure_journal_recovered().await?;
         let secrets = load_secrets(&self.paths)?;
         Ok(secrets
             .secrets
@@ -197,6 +221,7 @@ impl CredentialStore for FileCredentialStore {
     async fn create(&self, record: NewCredentialRecord) -> Result<CredentialMetadata, StoreError> {
         let _guard = self.write_lock.lock().await;
         let (_accounts_lock, _secrets_lock) = acquire_both_locks(&self.paths).await?;
+        recover_pending_txn(&self.paths)?;
 
         let mut accounts = load_accounts(&self.paths)?;
         let mut secrets = load_secrets(&self.paths)?;
@@ -238,17 +263,12 @@ impl CredentialStore for FileCredentialStore {
         update: CredentialUpdate,
     ) -> Result<CredentialMetadata, CompareAndSwapError> {
         let _guard = self.write_lock.lock().await;
-        let needs_secret = update.secret.is_some();
-        let _accounts_lock =
-            acquire_blocking(self.paths.accounts_lock().to_path_buf(), STORE_LOCK_TIMEOUT).await?;
-        let _secrets_lock = if needs_secret {
-            Some(
-                acquire_blocking(self.paths.secrets_lock().to_path_buf(), STORE_LOCK_TIMEOUT)
-                    .await?,
-            )
-        } else {
-            None
-        };
+        // Always hold both file locks: journal recover may rewrite secrets, and
+        // CAS with secret update is a dual-file commit (AUD-008).
+        let (_accounts_lock, _secrets_lock) = acquire_both_locks(&self.paths)
+            .await
+            .map_err(CompareAndSwapError::Store)?;
+        recover_pending_txn(&self.paths).map_err(CompareAndSwapError::Store)?;
 
         let mut accounts = load_accounts(&self.paths)?;
         let idx = find_index(&accounts, &update.key)
@@ -292,6 +312,7 @@ impl CredentialStore for FileCredentialStore {
     async fn delete(&self, key: &CredentialKey) -> Result<bool, StoreError> {
         let _guard = self.write_lock.lock().await;
         let (_accounts_lock, _secrets_lock) = acquire_both_locks(&self.paths).await?;
+        recover_pending_txn(&self.paths)?;
 
         let mut accounts = load_accounts(&self.paths)?;
         let Some(idx) = find_index(&accounts, key) else {

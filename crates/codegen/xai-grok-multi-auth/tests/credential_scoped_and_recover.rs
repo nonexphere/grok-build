@@ -190,3 +190,127 @@ async fn journal_recovers_dual_file_commit_after_crash_marker() {
     assert_eq!(reloaded.metadata.generation, 99);
     let _ = commit_accounts_and_secrets; // silence if unused
 }
+
+/// Corrupt journal is quarantined and surfaces as StoreError::Corrupt (AUD-008).
+#[tokio::test]
+async fn corrupt_journal_quarantines_and_fails_loud() {
+    use xai_grok_multi_auth::store::file::FileCredentialStore;
+    use xai_grok_multi_auth::store::metadata::recover_pending_txn;
+    use xai_grok_multi_auth::store::paths::StorePaths;
+    use std::fs;
+
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path().to_path_buf();
+    let paths = StorePaths::new(&home);
+    fs::create_dir_all(paths.auth_dir()).unwrap();
+    fs::write(paths.txn_journal(), b"{not-valid-json").unwrap();
+
+    let err = recover_pending_txn(&paths).expect_err("corrupt journal must fail loud");
+    assert!(
+        matches!(err, xai_grok_auth::StoreError::Corrupt(_)),
+        "expected Corrupt, got {err:?}"
+    );
+    assert!(
+        !paths.txn_journal().exists(),
+        "corrupt journal must be moved off the hot path"
+    );
+    let auth = paths.auth_dir();
+    let quarantined: Vec<_> = fs::read_dir(&auth)
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .filter(|e| {
+            e.file_name()
+                .to_string_lossy()
+                .contains("journal.quarantine")
+        })
+        .collect();
+    assert_eq!(quarantined.len(), 1, "expected one quarantine file");
+
+    // Store load path must also surface the error (no silent constructor recover).
+    // After quarantine, journal is gone so load of empty store is ok — re-seed
+    // a corrupt journal and hit load via FileCredentialStore.
+    fs::write(paths.txn_journal(), b"{still-bad").unwrap();
+    let store = FileCredentialStore::new(home);
+    let load_err = store
+        .list_providers()
+        .await
+        .expect_err("load must not swallow corrupt journal");
+    assert!(
+        matches!(load_err, xai_grok_auth::StoreError::Corrupt(_)),
+        "store access must fail-loud on corrupt journal: {load_err:?}"
+    );
+}
+
+/// Pending journal is applied on first store access (lazy under lock), not
+/// silently in `FileCredentialStore::new` (AUD-008).
+#[tokio::test]
+async fn store_load_recovers_pending_journal_lazily() {
+    use xai_grok_multi_auth::store::file::FileCredentialStore;
+    use xai_grok_multi_auth::store::metadata::{
+        load_accounts, load_secrets, CredentialTxnJournal, TXN_JOURNAL_SCHEMA_VERSION,
+    };
+    use xai_grok_multi_auth::store::paths::StorePaths;
+    use std::fs;
+
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path().to_path_buf();
+    let store = FileCredentialStore::new(home.clone());
+    let provider = ProviderId::new_unchecked("codex");
+    let meta = store
+        .create(NewCredentialRecord {
+            provider: provider.clone(),
+            requested_alias: Some("lazy".into()),
+            account: ProviderAccountInfo::default(),
+            secret: CredentialSecret {
+                access_token: SecretString::from_str("tok-a"),
+                refresh_token: Some(SecretString::from_str("ref-a")),
+                id_token: None,
+                fields: BTreeMap::new(),
+            },
+            expires_at: Some(Utc::now() + chrono::Duration::hours(1)),
+            backend: SecretBackendKind::File,
+        })
+        .await
+        .unwrap();
+
+    let paths = StorePaths::new(&home);
+    let mut accounts = load_accounts(&paths).unwrap();
+    let mut secrets = load_secrets(&paths).unwrap();
+    secrets.secrets.insert(
+        meta.key.credential_id.to_string(),
+        CredentialSecret {
+            access_token: SecretString::from_str("tok-lazy"),
+            refresh_token: Some(SecretString::from_str("ref-lazy")),
+            id_token: None,
+            fields: BTreeMap::new(),
+        },
+    );
+    for m in accounts.credentials.iter_mut() {
+        if m.key == meta.key {
+            m.generation = 42;
+        }
+    }
+    let journal = CredentialTxnJournal {
+        schema_version: TXN_JOURNAL_SCHEMA_VERSION,
+        accounts: accounts.clone(),
+        secrets: secrets.clone(),
+    };
+    fs::write(
+        paths.txn_journal(),
+        serde_json::to_vec_pretty(&journal).unwrap(),
+    )
+    .unwrap();
+    assert!(paths.txn_journal().exists());
+
+    // New store handle must not clear journal in constructor.
+    let store2 = FileCredentialStore::new(home);
+    assert!(
+        paths.txn_journal().exists(),
+        "constructor must not silently recover"
+    );
+
+    let reloaded = store2.load(&meta.key).await.unwrap().unwrap();
+    assert!(!paths.txn_journal().exists(), "load recovers under lock");
+    assert_eq!(reloaded.secret.access_token.expose(), "tok-lazy");
+    assert_eq!(reloaded.metadata.generation, 42);
+}

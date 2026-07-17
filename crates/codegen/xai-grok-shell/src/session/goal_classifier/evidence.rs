@@ -1154,7 +1154,10 @@ mod tests {
             model_id: None,
             model_fingerprint: None,
             reasoning_effort: None,
-        })
+        
+            phase: None,
+            message_id: None,
+})
     }
 
     /// Assistant item with a populated `tool_calls` slot but no
@@ -1171,7 +1174,10 @@ mod tests {
             model_id: None,
             model_fingerprint: None,
             reasoning_effort: None,
-        })
+        
+            phase: None,
+            message_id: None,
+})
     }
 
     fn user(text: &str) -> ConversationItem {

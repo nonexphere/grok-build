@@ -326,6 +326,14 @@ fn render_item_to_background(out: &mut String, item: &ConversationItem) {
             let _ = writeln!(out, "[Tool Result]: {preview}");
         }
         ConversationItem::System(_) => {}
+        ConversationItem::FunctionCall(tc) => {
+            let args_preview = if tc.arguments.len() > 100 {
+                format!("{}...", truncate_str(&tc.arguments, 100))
+            } else {
+                tc.arguments.as_ref().to_owned()
+            };
+            let _ = writeln!(out, "[Tool Call]: {} ({})", tc.name, args_preview);
+        }
         ConversationItem::BackendToolCall(b) => {
             let _ = writeln!(out, "[Backend Tool]: {}", b.text_summary());
         }
@@ -333,6 +341,9 @@ fn render_item_to_background(out: &mut String, item: &ConversationItem) {
         // they're rendered (when needed) inline with the surrounding
         // assistant turn elsewhere.
         ConversationItem::Reasoning(_) => {}
+        ConversationItem::OpaqueWire(o) => {
+            let _ = writeln!(out, "[Opaque Wire]: {}", o.type_name);
+        }
     }
 }
 

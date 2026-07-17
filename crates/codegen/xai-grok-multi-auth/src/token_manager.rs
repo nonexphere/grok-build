@@ -21,9 +21,9 @@ use thiserror::Error;
 use tokio::sync::Mutex;
 
 use xai_grok_auth::{
-    AuthProvider, CredentialBinding, CredentialKey, CredentialSecret, CredentialStore,
-    CredentialUpdate, ProviderError, ProviderRegistry, SecretString, SentCredentialStamp,
-    StoredCredential, TokenUseReason, UnauthorizedRecovery, ValidToken,
+    AuthProvider, CredentialBinding, CredentialKey, CredentialLockPurpose, CredentialSecret,
+    CredentialStore, CredentialUpdate, ProviderError, ProviderRegistry, SecretString,
+    SentCredentialStamp, StoredCredential, TokenUseReason, UnauthorizedRecovery, ValidToken,
 };
 
 use crate::fingerprint;
@@ -125,9 +125,15 @@ impl TokenManager {
             return Ok(valid_token_from(&credential, &current_fp));
         }
 
-        // Step 4: Acquire per-credential lock (single-flight).
+        // Step 4: In-process single-flight, then cross-process credential lock
+        // (file flock on FileCredentialStore) so two OS processes cannot both
+        // consume a rotating refresh token (AUD-007 / A2+R5).
         let lock = self.get_or_create_lock(&binding.key);
         let _guard = lock.lock().await;
+        let _xproc = self
+            .store
+            .acquire_lock(&binding.key, CredentialLockPurpose::Refresh)
+            .await?;
 
         // Step 5: Reload from store (double-check).
         let credential = self
@@ -136,7 +142,7 @@ impl TokenManager {
             .await?
             .ok_or(TokenManagerError::NotFound)?;
 
-        // Step 6: If already refreshed by another task, adopt.
+        // Step 6: If already refreshed by another task/process, adopt.
         if !needs_refresh(&credential, now, early_window) {
             return Ok(valid_token_from(&credential, &current_fp));
         }
@@ -228,12 +234,16 @@ impl TokenManager {
             return Ok(UnauthorizedRecovery::ReauthenticationRequired);
         }
 
-        // Same generation: need to refresh once.
-        // Acquire the lock to prevent duplicate refresh.
+        // Same generation: need to refresh once under in-process + cross-process
+        // locks (AUD-007).
         let lock = self.get_or_create_lock(&binding.key);
         let _guard = lock.lock().await;
+        let _xproc = self
+            .store
+            .acquire_lock(&binding.key, CredentialLockPurpose::Refresh)
+            .await?;
 
-        // Reload after acquiring lock.
+        // Reload after acquiring locks.
         let credential = self
             .store
             .load(&binding.key)
@@ -425,6 +435,8 @@ mod tests {
                 models: vec![],
                 etag: None,
                 fetched_at: Utc::now(),
+                source: xai_grok_auth::ModelCatalogSource::Unknown,
+                is_stale: false,
             })
         }
         fn resolve_endpoint(&self, _: ProviderEndpointRequest<'_>) -> Result<url::Url, ProviderError> {
@@ -539,6 +551,79 @@ mod tests {
             refresh_count.load(Ordering::SeqCst),
             1,
             "expected exactly 1 refresh, got {}",
+            refresh_count.load(Ordering::SeqCst)
+        );
+    }
+
+    /// Two independent TokenManagers on the same file home (separate in-process
+    /// lock maps) must still single-flight via cross-process credential flock.
+    #[tokio::test]
+    async fn two_managers_same_file_home_one_refresh_via_xproc_lock() {
+        use crate::store::file::FileCredentialStore;
+
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path().to_path_buf();
+        let refresh_count = Arc::new(AtomicU32::new(0));
+        let provider = Arc::new(CountingProvider {
+            id: ProviderId::new_unchecked("mock"),
+            refresh_count: refresh_count.clone(),
+        });
+        let mut registry = ProviderRegistry::new();
+        registry.register(provider).unwrap();
+        let registry = Arc::new(registry);
+
+        // Shared disk state; each manager gets its own FileCredentialStore Arc
+        // (as two processes would).
+        let store_a: Arc<dyn CredentialStore> =
+            Arc::new(FileCredentialStore::new(home.clone()));
+        let store_b: Arc<dyn CredentialStore> =
+            Arc::new(FileCredentialStore::new(home.clone()));
+
+        let provider_id = ProviderId::new_unchecked("mock");
+        let meta = store_a
+            .create(NewCredentialRecord {
+                provider: provider_id.clone(),
+                requested_alias: Some("xproc".into()),
+                account: ProviderAccountInfo::default(),
+                secret: CredentialSecret {
+                    access_token: SecretString::from_str("old-token"),
+                    refresh_token: Some(SecretString::from_str("refresh-token")),
+                    id_token: None,
+                    fields: BTreeMap::new(),
+                },
+                expires_at: Some(Utc::now() - chrono::Duration::hours(1)),
+                backend: xai_grok_auth::SecretBackendKind::File,
+            })
+            .await
+            .unwrap();
+
+        let fp = fingerprint::fingerprint_from_parts("mock", "https://auth.openai.com", "", "");
+        let binding = CredentialBinding {
+            key: meta.key.clone(),
+            expected_account: fp,
+        };
+
+        let tm_a = Arc::new(TokenManager::new(store_a, registry.clone()));
+        let tm_b = Arc::new(TokenManager::new(store_b, registry));
+
+        let mut handles = Vec::new();
+        for tm in [tm_a, tm_b] {
+            for _ in 0..8 {
+                let tm = tm.clone();
+                let binding = binding.clone();
+                handles.push(tokio::spawn(async move {
+                    tm.get_valid_token(&binding, TokenUseReason::Inference)
+                        .await
+                }));
+            }
+        }
+        for handle in handles {
+            handle.await.unwrap().unwrap();
+        }
+        assert_eq!(
+            refresh_count.load(Ordering::SeqCst),
+            1,
+            "cross-process flock must keep refresh single-flight across managers; got {}",
             refresh_count.load(Ordering::SeqCst)
         );
     }

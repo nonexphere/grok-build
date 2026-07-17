@@ -562,7 +562,7 @@ impl SessionActor {
             x_grok_session_id: Some(session_id_str),
             x_grok_agent_id: Some(xai_grok_telemetry::id::agent_id()),
             ..ConversationRequest::default()
-        };
+};
 
         // Invisibility-critical: build a fresh `SamplingClient` via
         // `prepare_chat_completion` and call `conversation_collect`

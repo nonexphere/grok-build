@@ -436,7 +436,7 @@ async fn run_one_attempt(
             drive_l2(l2, request_id, event_tx, cancel_token, captured, None).await
         }
         ApiBackend::Responses => {
-            let (raw, metadata, doom_loop) =
+            let (raw, metadata, doom_loop, phase_map) =
                 match client.conversation_stream_responses(request).await {
                     Ok(parts) => parts,
                     Err(e) => return AttemptOutcome::InitFailed { error: e },
@@ -447,7 +447,14 @@ async fn run_one_attempt(
                 collector.disarm_abort();
             }
             let (teed, captured) = tee_errors(raw);
-            let l2 = stream_responses(teed, metadata, request_id.clone(), idle_timeout, doom_loop);
+            let l2 = stream_responses(
+                teed,
+                metadata,
+                request_id.clone(),
+                idle_timeout,
+                doom_loop,
+                phase_map,
+            );
             drive_l2(l2, request_id, event_tx, cancel_token, captured, doom_check).await
         }
         ApiBackend::Messages => {

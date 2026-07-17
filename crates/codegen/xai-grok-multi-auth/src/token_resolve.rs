@@ -3,8 +3,13 @@
 //! Used by shell/sampler seams so OAuth tokens are never snapshotted into
 //! static model `api_key` fields (review B1 / add-provider skill §F/G).
 //!
-//! Each successful resolve records a [`SentCredentialStamp`] so a later 401
-//! can call [`recover_unauthorized`] with generation-aware one-retry semantics.
+//! Each successful resolve **returns** a [`SentCredentialStamp`]. Callers
+//! (e.g. `MultiProviderBearerResolver`) hold the stamp for the request that
+//! used the token and pass it to [`recover_unauthorized_with_stamp`] so a
+//! concurrent peer cannot overwrite generation-aware 401 recovery (A1).
+//!
+//! [`TokenManager`] is process-shared per grok home so in-process single-flight
+//! refresh works across concurrent resolves (A2).
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -23,18 +28,37 @@ use crate::token_manager::TokenManager;
 
 const OPENAI_ISSUER: &str = "https://auth.openai.com";
 
-/// Last stamp observed when a bearer was resolved for inference (process-local).
-static LAST_SENT_STAMPS: Lazy<DashMap<CredentialKey, SentCredentialStamp>> =
+/// Shared store + TokenManager per absolute grok home (single-flight refresh).
+static SHARED_MANAGERS: Lazy<DashMap<PathBuf, (Arc<dyn CredentialStore>, Arc<TokenManager>)>> =
     Lazy::new(DashMap::new);
 
 fn make_store_and_manager(
     home: &Path,
-) -> Result<(Arc<dyn CredentialStore>, TokenManager), String> {
-    let store: Arc<dyn CredentialStore> = Arc::new(FileCredentialStore::new(home.to_path_buf()));
-    let registry = Arc::new(registry::build_default_registry());
-    let token_manager =
-        TokenManager::with_issuer(store.clone(), registry, OPENAI_ISSUER.to_string());
-    Ok((store, token_manager))
+) -> Result<(Arc<dyn CredentialStore>, Arc<TokenManager>), String> {
+    let home_key = home
+        .canonicalize()
+        .unwrap_or_else(|_| home.to_path_buf());
+    // Atomic entry: avoid check-then-act race that could insert two managers
+    // for the same home and split in-process single-flight (AUD-007).
+    use dashmap::mapref::entry::Entry;
+    match SHARED_MANAGERS.entry(home_key) {
+        Entry::Occupied(o) => {
+            let (store, token_manager) = o.get();
+            Ok((store.clone(), token_manager.clone()))
+        }
+        Entry::Vacant(v) => {
+            let store: Arc<dyn CredentialStore> =
+                Arc::new(FileCredentialStore::new(home.to_path_buf()));
+            let registry = Arc::new(registry::build_default_registry());
+            let token_manager = Arc::new(TokenManager::with_issuer(
+                store.clone(),
+                registry,
+                OPENAI_ISSUER.to_string(),
+            ));
+            v.insert((store.clone(), token_manager.clone()));
+            Ok((store, token_manager))
+        }
+    }
 }
 
 async fn credential_binding(
@@ -90,14 +114,15 @@ pub async fn resolve_access_token_with_stamp(
         generation: token.generation,
         account_fingerprint: token.account_fingerprint.clone(),
     };
-    LAST_SENT_STAMPS.insert(binding.key, stamp.clone());
     Ok((token.access_token.expose().to_string(), stamp))
 }
 
 /// Generation-aware 401 recovery for a multi-provider credential.
 ///
-/// Uses the last stamp from [`resolve_access_token_with_stamp`] when present;
-/// otherwise loads the current generation (best-effort).
+/// Prefer [`recover_unauthorized_with_stamp`] with the stamp from the same
+/// request that received the 401. This entry point loads the current
+/// generation from the store (best-effort) when no request-scoped stamp is
+/// available.
 ///
 /// Returns `true` when the caller should retry the request once with a fresh
 /// bearer (either after refresh or after adopting a concurrent rotation).
@@ -106,6 +131,18 @@ pub async fn recover_unauthorized(
     provider: &ProviderId,
     credential_id: CredentialId,
 ) -> Result<bool, String> {
+    recover_unauthorized_with_stamp(home, provider, credential_id, None).await
+}
+
+/// Like [`recover_unauthorized`], but uses a **request-scoped** stamp from
+/// the resolve that produced the failed request (A1: no process-global
+/// last-wins map).
+pub async fn recover_unauthorized_with_stamp(
+    home: &Path,
+    provider: &ProviderId,
+    credential_id: CredentialId,
+    sent_stamp: Option<SentCredentialStamp>,
+) -> Result<bool, String> {
     if crate::kill_switch::codex_auth_disabled() && provider.as_str() == "codex" {
         return Err("Codex auth is disabled (GROK_DISABLE_CODEX_AUTH)".into());
     }
@@ -113,11 +150,11 @@ pub async fn recover_unauthorized(
     let (store, token_manager) = make_store_and_manager(home)?;
     let binding = credential_binding(&store, provider, credential_id).await?;
 
-    let stamp = if let Some(s) = LAST_SENT_STAMPS.get(&binding.key) {
-        s.clone()
+    let stamp = if let Some(s) = sent_stamp {
+        s
     } else {
-        // No prior resolve in this process — use current generation so
-        // recover still refreshes once rather than no-opping.
+        // No request-scoped stamp — use current generation so recover still
+        // refreshes once rather than no-opping.
         let cred = store
             .load(&binding.key)
             .await
@@ -137,8 +174,6 @@ pub async fn recover_unauthorized(
 
     match outcome {
         UnauthorizedRecovery::RetryAfterRefresh | UnauthorizedRecovery::RetryWithCurrentCredential => {
-            // Drop stamp so the next resolve records the post-recovery generation.
-            LAST_SENT_STAMPS.remove(&binding.key);
             Ok(true)
         }
         UnauthorizedRecovery::ReauthenticationRequired
@@ -167,9 +202,34 @@ pub fn recover_unauthorized_blocking(
     provider: &ProviderId,
     credential_id: CredentialId,
 ) -> Result<bool, String> {
+    recover_unauthorized_with_stamp_blocking(home, provider, credential_id, None)
+}
+
+/// Blocking recovery with a request-scoped stamp (A1).
+pub fn recover_unauthorized_with_stamp_blocking(
+    home: &Path,
+    provider: &ProviderId,
+    credential_id: CredentialId,
+    sent_stamp: Option<SentCredentialStamp>,
+) -> Result<bool, String> {
     let home = home.to_path_buf();
     let provider = provider.clone();
-    block_on_safe(async move { recover_unauthorized(&home, &provider, credential_id).await })
+    block_on_safe(async move {
+        recover_unauthorized_with_stamp(&home, &provider, credential_id, sent_stamp).await
+    })
+}
+
+/// Like [`resolve_access_token_blocking`], but returns the generation stamp.
+pub fn resolve_access_token_with_stamp_blocking(
+    home: &Path,
+    provider: &ProviderId,
+    credential_id: CredentialId,
+) -> Result<(String, SentCredentialStamp), String> {
+    let home = home.to_path_buf();
+    let provider = provider.clone();
+    block_on_safe(async move {
+        resolve_access_token_with_stamp(&home, &provider, credential_id).await
+    })
 }
 
 /// Run an async future from sync code without panicking on current-thread
@@ -227,8 +287,8 @@ pub fn grok_home() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from(".grok"))
 }
 
-/// Clear process-local stamps (tests).
+/// Drop shared managers (tests that rebind home paths).
 #[cfg(test)]
-pub fn clear_last_sent_stamps_for_test() {
-    LAST_SENT_STAMPS.clear();
+pub fn clear_shared_managers_for_test() {
+    SHARED_MANAGERS.clear();
 }

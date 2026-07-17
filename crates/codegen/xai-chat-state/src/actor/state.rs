@@ -64,6 +64,10 @@ pub fn estimate_item_tokens(item: &ConversationItem) -> u64 {
             (bytes as u64) / xai_token_estimation::BYTES_PER_TOKEN
         }
         ConversationItem::ToolResult(tr) => xai_token_estimation::estimate_tokens(&tr.content),
+        ConversationItem::FunctionCall(tc) => {
+            let bytes = tc.name.len() + tc.arguments.len();
+            (bytes as u64) / xai_token_estimation::BYTES_PER_TOKEN
+        }
         ConversationItem::BackendToolCall(b) => {
             xai_token_estimation::estimate_tokens(&b.text_summary())
         }
@@ -74,6 +78,9 @@ pub fn estimate_item_tokens(item: &ConversationItem) -> u64 {
             let text_bytes = xai_grok_sampling_types::reasoning_item_text(r).len();
             let enc_bytes = r.encrypted_content.as_deref().map(str::len).unwrap_or(0);
             ((text_bytes + enc_bytes) as u64) / xai_token_estimation::BYTES_PER_TOKEN
+        }
+        ConversationItem::OpaqueWire(o) => {
+            xai_token_estimation::estimate_tokens(&o.type_name)
         }
     }
 }

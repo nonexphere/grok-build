@@ -143,6 +143,7 @@ async fn test_e2e_idle_resume_refreshes_model_metadata() {
                     std::mem::forget(dir);
                     Some(mgr)
                 },
+                multi_provider_auth: parking_lot::Mutex::new(None),
                 state,
                 notifications: NotificationSender {
                     gateway: GatewaySender::new(gateway_tx),

@@ -56,6 +56,8 @@ fn fingerprint_prefix(items: &[ConversationItem]) -> u64 {
             ConversationItem::ToolResult(_) => 3,
             ConversationItem::BackendToolCall(_) => 4,
             ConversationItem::Reasoning(_) => 5,
+            ConversationItem::FunctionCall(_) => 6,
+            ConversationItem::OpaqueWire(_) => 7,
         };
         tag.hash(&mut h);
         it.text_content().hash(&mut h);
@@ -2203,6 +2205,7 @@ mod inline_auto_compact_flow_tests {
             model_auth_facts: std::cell::RefCell::new(None),
             attribution_callback: None,
             auth_manager: None,
+            multi_provider_auth: parking_lot::Mutex::new(None),
             state,
             notifications: NotificationSender {
                 gateway: GatewaySender::new(gateway_tx),

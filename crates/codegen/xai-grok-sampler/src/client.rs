@@ -96,6 +96,33 @@ impl GrokRequestHeaders<'_> {
 /// `ResponseUsage` unchanged so billing telemetry stays correct. When
 /// the API doesn't emit `context_details` (older deployments) `total_tokens`
 /// passes through unchanged.
+/// Shared map filled while decoding SSE: `message_id` → OpenResponses phase.
+/// Typed `OutputMessage` drops `phase`; stream materialize reads this side channel.
+pub type AssistantPhaseMap =
+    std::sync::Arc<std::sync::Mutex<std::collections::HashMap<String, xai_grok_sampling_types::AssistantPhase>>>;
+
+/// Capture `phase` from raw `response.output_item.*` SSE payloads before typed
+/// deserialize drops the field.
+pub fn capture_assistant_phase_from_sse_data(data: &str, phases: &AssistantPhaseMap) {
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(data) else {
+        return;
+    };
+    let event_type = value.get("type").and_then(|v| v.as_str()).unwrap_or("");
+    if event_type != "response.output_item.done" && event_type != "response.output_item.added" {
+        return;
+    }
+    let Some(item) = value.get("item") else {
+        return;
+    };
+    if let Some((id, phase)) =
+        xai_grok_sampling_types::extract_phase_from_output_item_json(item)
+    {
+        if let Ok(mut guard) = phases.lock() {
+            guard.insert(id, phase);
+        }
+    }
+}
+
 fn deserialize_response_event(data: &str) -> Result<rs::ResponseStreamEvent> {
     let mut event = match serde_json::from_str::<rs::ResponseStreamEvent>(data) {
         Ok(event) => event,
@@ -281,6 +308,10 @@ pub struct SamplingClient {
     default_headers: HeaderMap,
     base_url: String,
     defaults: ClientDefaults,
+    /// Optional multi-provider provider id (e.g. `"codex"`) extracted from
+    /// internal `x-goblin-provider-id` header (never sent on the wire).
+    /// Used for AUD-011 Codex classification without relying only on URL.
+    provider_id: Option<String>,
     /// Optional 401-attribution hook. The shell wires this to emit a
     /// structured event at every UNAUTHORIZED arm so 401s can be
     /// bucketed by stale-snapshot vs. live-token-rejected. `None` for
@@ -433,13 +464,22 @@ impl SamplingClient {
             }
         }
 
+        // Internal multi-provider provider id (AUD-011); never on the wire.
+        let provider_id = config
+            .extra_headers
+            .iter()
+            .find(|(k, _)| k.eq_ignore_ascii_case("x-goblin-provider-id"))
+            .map(|(_, v)| v.clone());
+
         // Apply all extra headers verbatim. This is the single
         // injection point for proxy-auth headers and any other URL- or
         // environment-specific headers the session decides to set.
         for (key, value) in &config.extra_headers {
             // Internal Goblin binding metadata must never hit the wire
             // (Codex/ChatGPT would see an undocumented header).
-            if key.eq_ignore_ascii_case("x-goblin-credential-id") {
+            if key.eq_ignore_ascii_case("x-goblin-credential-id")
+                || key.eq_ignore_ascii_case("x-goblin-provider-id")
+            {
                 continue;
             }
             let header_name = HeaderName::try_from(key.as_str())
@@ -540,6 +580,7 @@ impl SamplingClient {
             default_headers: headers,
             base_url: config.base_url,
             defaults,
+            provider_id,
             attribution_callback: config.attribution_callback,
             bearer_resolver: config.bearer_resolver,
             header_injector: config.header_injector,
@@ -549,6 +590,32 @@ impl SamplingClient {
     /// The configured API backend for this client.
     pub fn api_backend(&self) -> ApiBackend {
         self.defaults.api_backend.clone()
+    }
+
+    /// Configured base URL (for title routing / diagnostics).
+    pub fn base_url(&self) -> &str {
+        &self.base_url
+    }
+
+    /// Multi-provider provider id when known (`codex`, …).
+    pub fn provider_id(&self) -> Option<&str> {
+        self.provider_id.as_deref()
+    }
+
+    /// Whether this client targets the ChatGPT Codex Responses backend (AUD-011).
+    pub fn is_codex_backend(&self) -> bool {
+        let pin = self
+            .provider_id
+            .as_deref()
+            .is_some_and(|p| p.eq_ignore_ascii_case("codex"));
+        xai_grok_sampling_types::classify_codex_responses_backend(
+            &xai_grok_sampling_types::CodexBackendHints {
+                base_url: &self.base_url,
+                provider_id: self.provider_id.as_deref(),
+                multi_provider_codex_pin: pin,
+                capability_codex: false,
+            },
+        )
     }
 
     /// POST with default headers. Overrides auth from resolver if wired.
@@ -601,11 +668,12 @@ impl SamplingClient {
         self.http.post(url).headers(headers)
     }
 
-    /// Bearer prefix for 401 attribution. Prefers live resolver, falls back to default_headers.
+    /// Bearer prefix for 401 attribution. Uses [`BearerResolver::peek_bearer`]
+    /// so multi-provider recovery stamps are not polluted by log-only resolves.
     fn current_sent_bearer_prefix(&self) -> Option<String> {
         self.bearer_resolver
             .as_ref()
-            .and_then(|r| r.current_bearer())
+            .and_then(|r| r.peek_bearer())
             .or_else(|| self.extract_sent_bearer())
             .map(|mut s| {
                 s.truncate(crate::attribution::SENT_BEARER_PREFIX_LEN.min(s.len()));
@@ -1105,11 +1173,23 @@ impl SamplingClient {
 
         // ChatGPT Codex Responses rejects system/developer roles in `input`
         // (`400 System messages are not allowed`). Hoist them to `instructions`.
-        if xai_grok_sampling_types::is_codex_responses_backend(&self.base_url) {
+        if self.is_codex_backend() {
             xai_grok_sampling_types::hoist_system_messages_to_instructions(&mut request.inner);
         }
 
         Ok(())
+    }
+
+    /// Post-serialize patches shared by streaming and non-streaming Responses.
+    fn patch_responses_request_body(
+        &self,
+        request_body: &mut serde_json::Value,
+        phase_items: Option<&[xai_grok_sampling_types::ConversationItem]>,
+    ) {
+        xai_grok_sampling_types::patch_reasoning_text_types(request_body);
+        if let Some(items) = phase_items {
+            xai_grok_sampling_types::patch_assistant_phases_on_request_body(request_body, items);
+        }
     }
 
     /// Create a response using the Responses API (non-streaming).
@@ -1152,7 +1232,14 @@ impl SamplingClient {
         // discriminator that the Responses API requires on input. Patch
         // it in post-serialize. This is the last surviving piece of the
         // old raw_output machinery.
-        xai_grok_sampling_types::patch_reasoning_text_types(&mut request_body);
+        let phase_items = request.assistant_phase_items.take();
+        self.patch_responses_request_body(&mut request_body, phase_items.as_deref());
+        if let Some(key) = request.inner.prompt_cache_key.as_ref() {
+            tracing::info!(
+                prompt_cache_key = %xai_grok_sampling_types::prompt_cache_key_log_label(key),
+                "responses: prompt_cache_key on request (non-stream)"
+            );
+        }
         let http_request = grok_headers
             .apply(self.post(self.endpoint("responses")))
             .json(&request_body);
@@ -1250,11 +1337,14 @@ impl SamplingClient {
         BoxStream<'static, Result<rs::ResponseStreamEvent>>,
         Option<ResponseModelMetadata>,
         Option<crate::doom_loop::DoomLoopSignalCollector>,
+        AssistantPhaseMap,
     )> {
         self.apply_response_defaults(&mut request)?;
 
         // Enable streaming
         request.inner.stream = Some(true);
+        let phase_map: AssistantPhaseMap =
+            std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new()));
 
         let x_grok_conv_id = request.x_grok_conv_id.as_deref().unwrap_or_default();
         let x_grok_req_id = request.x_grok_req_id.as_deref().unwrap_or_default();
@@ -1297,7 +1387,14 @@ impl SamplingClient {
                 request_body["tools"] = serde_json::Value::Array(extra_raw_tools);
             }
         }
-        xai_grok_sampling_types::patch_reasoning_text_types(&mut request_body);
+        let phase_items = request.assistant_phase_items.take();
+        self.patch_responses_request_body(&mut request_body, phase_items.as_deref());
+        if let Some(key) = request.inner.prompt_cache_key.as_ref() {
+            tracing::info!(
+                prompt_cache_key = %xai_grok_sampling_types::prompt_cache_key_log_label(key),
+                "responses: prompt_cache_key on request (stream)"
+            );
+        }
         // Fresh per attempt so signals never leak across retries; `None`
         // (check disabled) sends no header and does no peek work per event.
         let doom_loop = self
@@ -1399,6 +1496,7 @@ impl SamplingClient {
         let event_stream = byte_stream.eventsource();
 
         let doom_loop_for_stream = doom_loop.clone();
+        let phase_map_for_stream = phase_map.clone();
 
         // The scan item is an `Option`: `Some(None)` skips an absorbed
         // doom-loop event without terminating the stream (`filter_map`
@@ -1421,6 +1519,9 @@ impl SamplingClient {
                             backend = "responses",
                             data = %data,
                         );
+
+                        // Capture OpenResponses `phase` before typed parse drops it.
+                        capture_assistant_phase_from_sse_data(data, &phase_map_for_stream);
 
                         // Intercept the non-standard doom-loop event before
                         // typed deserialization; async-openai's event enum
@@ -1450,7 +1551,7 @@ impl SamplingClient {
             .filter_map(std::future::ready)
             .boxed();
 
-        Ok((events, model_metadata, doom_loop))
+        Ok((events, model_metadata, doom_loop, phase_map))
     }
 
     // =========================================================================
@@ -1847,6 +1948,7 @@ impl SamplingClient {
         BoxStream<'static, Result<rs::ResponseStreamEvent>>,
         Option<ResponseModelMetadata>,
         Option<crate::doom_loop::DoomLoopSignalCollector>,
+        AssistantPhaseMap,
     )> {
         self.apply_conversation_defaults(&mut request)?;
 
@@ -1861,6 +1963,14 @@ impl SamplingClient {
         // (e.g., x_search). These are injected as raw JSON after serialization.
         let extra_tools = xai_grok_sampling_types::extra_raw_tools(&request.hosted_tools);
 
+        // Provider-managed prompt cache affinity: only for Codex Responses (AUD-005).
+        if self.is_codex_backend() {
+            xai_grok_sampling_types::ensure_prompt_cache_key_for_codex(&mut request);
+        } else {
+            // Never force a key onto non-Codex Responses backends.
+            request.prompt_cache_key = None;
+        }
+        let phase_items = request.items.clone();
         let responses_request: rs::CreateResponse = (&request).into();
 
         let mut wrapper = CreateResponseWrapper::new(responses_request);
@@ -1870,6 +1980,8 @@ impl SamplingClient {
         wrapper.x_grok_turn_idx = x_grok_turn_idx;
         wrapper.x_grok_agent_id = x_grok_agent_id;
         wrapper.extra_raw_tools = extra_tools;
+        // Phase list for post-serialize patch (typed EasyMessage drops phase).
+        wrapper.assistant_phase_items = Some(phase_items);
 
         if let Some(trace) = trace {
             wrapper.trace = Some(trace);
@@ -1894,6 +2006,12 @@ impl SamplingClient {
         let x_grok_turn_idx = request.x_grok_turn_idx.clone();
         let x_grok_agent_id = request.x_grok_agent_id.clone();
 
+        if self.is_codex_backend() {
+            xai_grok_sampling_types::ensure_prompt_cache_key_for_codex(&mut request);
+        } else {
+            request.prompt_cache_key = None;
+        }
+        let phase_items = request.items.clone();
         let responses_request: rs::CreateResponse = (&request).into();
 
         let mut wrapper = CreateResponseWrapper::new(responses_request);
@@ -1902,6 +2020,7 @@ impl SamplingClient {
         wrapper.x_grok_session_id = x_grok_session_id;
         wrapper.x_grok_turn_idx = x_grok_turn_idx;
         wrapper.x_grok_agent_id = x_grok_agent_id;
+        wrapper.assistant_phase_items = Some(phase_items);
 
         if let Some(trace) = trace {
             wrapper.trace = Some(trace);
@@ -1992,9 +2111,16 @@ impl SamplingClient {
                 crate::stream::collect_response(events).await
             }
             ApiBackend::Responses => {
-                let (raw, meta, doom_loop) = self.conversation_stream_responses(request).await?;
-                let events =
-                    crate::stream::stream_responses(raw, meta, request_id, idle_timeout, doom_loop);
+                let (raw, meta, doom_loop, phase_map) =
+                    self.conversation_stream_responses(request).await?;
+                let events = crate::stream::stream_responses(
+                    raw,
+                    meta,
+                    request_id,
+                    idle_timeout,
+                    doom_loop,
+                    phase_map,
+                );
                 crate::stream::collect_response(events).await
             }
             ApiBackend::Messages => {
@@ -2054,6 +2180,19 @@ mod tests {
             doom_loop_recovery: None,
             header_injector: None,
         }
+    }
+
+    #[test]
+    fn capture_assistant_phase_from_sse_data_reads_commentary() {
+        let phases: AssistantPhaseMap =
+            std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new()));
+        let data = r#"{"type":"response.output_item.done","output_index":0,"item":{"id":"msg_c1","type":"message","role":"assistant","phase":"commentary","content":[],"status":"completed"}}"#;
+        capture_assistant_phase_from_sse_data(data, &phases);
+        let guard = phases.lock().unwrap();
+        assert_eq!(
+            guard.get("msg_c1").copied(),
+            Some(xai_grok_sampling_types::AssistantPhase::Commentary)
+        );
     }
 
     /// Verify the serialized shape of StreamingChatRequest matches the
@@ -2324,6 +2463,74 @@ mod tests {
         fn current_bearer(&self) -> Option<String> {
             Some(self.0.to_string())
         }
+    }
+
+    /// Separates peek (log) vs current (send) so A1 stamp pollution is testable.
+    #[derive(Debug)]
+    struct PeekVsSendResolver {
+        peeks: std::sync::atomic::AtomicUsize,
+        sends: std::sync::atomic::AtomicUsize,
+    }
+
+    impl PeekVsSendResolver {
+        fn new() -> Self {
+            Self {
+                peeks: std::sync::atomic::AtomicUsize::new(0),
+                sends: std::sync::atomic::AtomicUsize::new(0),
+            }
+        }
+    }
+
+    impl crate::config::BearerResolver for PeekVsSendResolver {
+        fn current_bearer(&self) -> Option<String> {
+            self.sends
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Some("send-token".into())
+        }
+
+        fn peek_bearer(&self) -> Option<String> {
+            self.peeks
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Some("peek-token".into())
+        }
+    }
+
+    /// auth_info / attribution prefix must use peek_bearer, not current_bearer
+    /// (AUD-006: only HTTP send records multi-provider recovery stamps).
+    #[test]
+    fn auth_info_and_prefix_use_peek_bearer_not_send() {
+        let resolver = std::sync::Arc::new(PeekVsSendResolver::new());
+        let cfg = SamplerConfig {
+            api_key: Some("stale".into()),
+            api_backend: ApiBackend::Responses,
+            bearer_resolver: Some(resolver.clone()),
+            ..minimal_config()
+        };
+        let client = SamplingClient::new(cfg).expect("client");
+        let info = client.auth_info();
+        assert_eq!(info.auth_prefix.as_deref(), Some("peek-token"));
+        assert_eq!(
+            resolver.peeks.load(std::sync::atomic::Ordering::SeqCst),
+            1
+        );
+        assert_eq!(
+            resolver.sends.load(std::sync::atomic::Ordering::SeqCst),
+            0,
+            "auth_info must not call current_bearer (would pollute stamp FIFO)"
+        );
+
+        // Build a POST the same way create_response does — only then send.
+        let _ = client.post("https://example.test/v1/responses");
+        assert_eq!(
+            resolver.sends.load(std::sync::atomic::Ordering::SeqCst),
+            1,
+            "post must call current_bearer once for the wire token"
+        );
+        assert_eq!(
+            resolver.peeks.load(std::sync::atomic::Ordering::SeqCst),
+            1,
+            "post must not call peek_bearer"
+        );
     }
 
     impl crate::attribution::Auth401AttributionCallback for CountingCallback {

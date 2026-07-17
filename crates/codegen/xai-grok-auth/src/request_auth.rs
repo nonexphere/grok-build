@@ -94,12 +94,34 @@ pub struct ProviderModel {
     pub raw_metadata: serde_json::Value,
 }
 
+/// Provenance of a [`ModelCatalog`] payload (M7 / AUD-010).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ModelCatalogSource {
+    /// Not classified (legacy constructors).
+    #[default]
+    Unknown,
+    /// Fresh network fetch.
+    Network,
+    /// Served from disk within TTL.
+    FreshDisk,
+    /// Served from disk past TTL after a transient fetch error.
+    StaleDisk,
+    /// Built-in fallback when no cache exists.
+    Bundled,
+    /// Auth/identity failure — must not be treated as a healthy catalog.
+    AuthFailure,
+}
+
 /// A fetched catalog of provider models.
 #[derive(Debug)]
 pub struct ModelCatalog {
     pub models: Vec<ProviderModel>,
     pub etag: Option<String>,
     pub fetched_at: DateTime<Utc>,
+    /// Where this catalog came from (AUD-010). Defaults to [`ModelCatalogSource::Unknown`].
+    pub source: ModelCatalogSource,
+    /// True when served past freshness TTL (stale-disk path).
+    pub is_stale: bool,
 }
 
 /// Which kind of provider endpoint is being resolved.

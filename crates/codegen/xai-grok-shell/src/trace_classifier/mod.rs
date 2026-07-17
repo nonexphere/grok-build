@@ -1371,7 +1371,10 @@ mod tests {
             model_id: None,
             model_fingerprint: None,
             reasoning_effort: None,
-        })
+        
+            phase: None,
+            message_id: None,
+})
     }
 
     fn tc(id: &str, name: &str, args: &str) -> ToolCall {
@@ -1926,7 +1929,10 @@ mod tests {
                 model_id: None,
                 model_fingerprint: None,
                 reasoning_effort: None,
-            }));
+            
+                phase: None,
+                message_id: None,
+}));
         }
         hist.push(ConversationItem::User(UserItem {
             content: vec![ContentPart::Text {
@@ -2523,7 +2529,10 @@ mod tests {
                 model_id: None,
                 model_fingerprint: None,
                 reasoning_effort: None,
-            }));
+            
+                phase: None,
+                message_id: None,
+}));
         }
         hist.push(ConversationItem::User(UserItem {
             content: vec![ContentPart::Text {
