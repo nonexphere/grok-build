@@ -144,14 +144,20 @@ jobs:
       - name: Assemble platform packages
         run: node npm/scripts/assemble-platform-packages.mjs
 
-      - name: npm pack (all packages, no publish)
+      - name: npm pack (publish matrix only, no publish)
         run: |
+          set -euo pipefail
           mkdir -p npm/dist
-          for d in npm/grok-oss npm/grok-oss-*; do
-            [[ -f "$d/package.json" ]] || continue
+          # Match optionalDependencies / build-matrix (exclude empty win32-arm64 stub).
+          for d in npm/grok-oss \
+                   npm/grok-oss-linux-x64 npm/grok-oss-linux-arm64 \
+                   npm/grok-oss-darwin-x64 npm/grok-oss-darwin-arm64 \
+                   npm/grok-oss-win32-x64; do
+            [[ -f "$d/package.json" ]] || { echo "missing $d"; exit 1; }
             (cd "$d" && npm pack --pack-destination ../dist)
           done
           ls -la npm/dist
+          node npm/scripts/assert-package-identity.mjs
 
       - name: Upload npm tarballs
         uses: actions/upload-artifact@v4

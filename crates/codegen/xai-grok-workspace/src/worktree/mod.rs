@@ -620,14 +620,14 @@ pub fn resolve_label_collision(base_dir: &Path, label: &str) -> String {
 
 /// Resolve the grok home for worktree paths via the **same** resolver used for
 /// `worktrees.db` (`xai_fast_worktree::resolve_grok_home`), so checkout dirs and
-/// the metadata DB always live under the same `.grok` tree. That resolver
+/// the metadata DB always live under the same product home tree. That resolver
 /// canonicalizes its `$HOME` fallback to match `xai_grok_config::grok_home()`,
 /// so worktree paths also agree with trust/hooks and other grok-home paths.
 fn grok_home() -> std::path::PathBuf {
     xai_fast_worktree::resolve_grok_home().unwrap_or_else(|_| {
         dirs::home_dir()
             .unwrap_or_else(|| std::path::PathBuf::from("/tmp"))
-            .join(".grok")
+            .join(".grok-oss")
     })
 }
 

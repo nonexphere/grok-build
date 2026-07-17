@@ -38,10 +38,8 @@ pub async fn list_available_models(agent_config: &AgentConfig) -> Result<()> {
     cancel.cancel();
 
     // Goblin fork: also list Codex models when multi-provider credentials exist.
-    let home = std::env::var_os("GROK_HOME")
-        .map(std::path::PathBuf::from)
-        .or_else(|| dirs::home_dir().map(|h| h.join(".grok")))
-        .unwrap_or_else(|| std::path::PathBuf::from(".grok"));
+    // Must match multi-auth storage (`GROK_OSS_HOME` → `GROK_HOME` → `~/.grok-oss`).
+    let home = xai_grok_multi_auth::token_resolve::grok_home();
     match xai_grok_multi_auth::cli::list_codex_models(&home).await {
         Ok(report) if !report.accounts.is_empty() => {
             println!();
