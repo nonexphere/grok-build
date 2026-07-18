@@ -1094,6 +1094,8 @@ Quando o humano autorizar planejamento: consolidar épicos/contratos a partir de
 | TypeScript SDK + scripts | **SIM** | WS + SDK (inspiração Codex) |
 | Tools **internas** agent↔agent (peer messaging via runtime tools) | **NÃO no MVP → v2** | Codex deve **analisar** desenho; não implementar no v1 se puder adiar |
 | Goal Runtime redesign v1/v2 + flags | **FORA deste programa** (futuro) | Ver §13.5 |
+| Channel gateways (Telegram bridge, etc.) | **FORA** | Doc: [`CHANNEL_GATEWAYS_AND_REALTIME_VOICE.md`](./CHANNEL_GATEWAYS_AND_REALTIME_VOICE.md) |
+| Realtime voice full duplex | **FORA** | Mesmo doc; baseline `xai-grok-voice` é ditado, não o produto final |
 | Retrocompat ampla em tudo | **NÃO** | Só planejada para **goal** no futuro |
 
 **Tensão resolvida pelo humano:**  

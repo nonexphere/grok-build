@@ -153,3 +153,15 @@ usaremos o termo session invés de thread então
 |---------|--------|
 | Termo canônico | **session** |
 | thread | só mapping Codex / compat externo |
+
+---
+
+## Round 6 — gateways + voice (fora do core)
+
+```text
+Depois: sistema de gateways (Telegram bridge first); voz em tempo real
+full duplex no hardware. Arquivo separado; deixar de fora do plano
+App Server/MCP agora?
+```
+
+**Decisão de processo:** fora do MVP core; ver `docs/architecture/CHANNEL_GATEWAYS_AND_REALTIME_VOICE.md`.
