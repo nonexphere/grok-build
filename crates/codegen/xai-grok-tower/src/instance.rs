@@ -112,3 +112,38 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+mod two_instances_tests {
+    use super::*;
+    use crate::SessionRegistry;
+
+    #[test]
+    fn two_instances_have_disjoint_registries() {
+        let a: TowerInstanceId = "default".parse().unwrap();
+        let b: TowerInstanceId = "worktree-1".parse().unwrap();
+        let mut dir = InstanceDirectory::default();
+        dir.insert(TowerHandle::scaffold(a.clone())).unwrap();
+        dir.insert(TowerHandle::scaffold(b.clone())).unwrap();
+        let mut reg_a = SessionRegistry::new();
+        let mut reg_b = SessionRegistry::new();
+        let (ta, _) = reg_a.get_or_insert_with("s1", |_| Ok(())).unwrap();
+        let (tb, _) = reg_b.get_or_insert_with("s1", |_| Ok(())).unwrap();
+        // Same session id string may exist in both instances without shared token identity.
+        assert_eq!(ta.as_u64(), 1);
+        assert_eq!(tb.as_u64(), 1);
+        assert_ne!(dir.get(&a).unwrap().instance_id(), dir.get(&b).unwrap().instance_id());
+        // No cross-registry steal: removing from a does not affect b.
+        reg_a.remove("s1");
+        assert!(reg_a.get("s1").is_none());
+        assert!(reg_b.get("s1").is_some());
+    }
+
+    #[test]
+    fn instance_contention_duplicate_id_rejected() {
+        let id: TowerInstanceId = "default".parse().unwrap();
+        let mut dir = InstanceDirectory::default();
+        dir.insert(TowerHandle::scaffold(id.clone())).unwrap();
+        assert!(dir.insert(TowerHandle::scaffold(id)).is_err());
+    }
+}

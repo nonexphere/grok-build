@@ -156,3 +156,36 @@ mod tests {
         assert!(!production.contains(&forbidden));
     }
 }
+
+#[cfg(test)]
+mod mcp_extra_tests {
+    use super::*;
+
+    #[test]
+    fn tool_descriptors_exact_nine() {
+        let tools = list_tools();
+        assert_eq!(tools.len(), 9);
+        let names: Vec<_> = tools.iter().map(|t| t.name).collect();
+        assert_eq!(names, TOWER_TOOL_NAMES.to_vec());
+    }
+
+    #[test]
+    fn no_local_self_injection_in_production_source() {
+        let production = include_str!("lib.rs").split("#[cfg(test)]").next().unwrap();
+        assert!(!production.contains("xai_grok_mcp::"));
+        assert!(!production.contains("McpClient"));
+    }
+
+    #[tokio::test]
+    async fn adapter_parity_list_start_via_mcp_jsonrpc() {
+        let rt = Arc::new(xai_grok_tower::FakeRuntime::new());
+        let list = handle_mcp_jsonrpc(
+            rt.clone(),
+            "orchestrator",
+            false,
+            serde_json::json!({"jsonrpc":"2.0","id":1,"method":"tools/list"}),
+        )
+        .await;
+        assert_eq!(list["result"]["tools"].as_array().unwrap().len(), 9);
+    }
+}

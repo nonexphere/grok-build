@@ -51,3 +51,25 @@ mod security_tests {
         assert_eq!(remote_bind_label("0.0.0.0", false), "remote-tls-required");
     }
 }
+
+pub fn remote_bind_warning_exact(host: &str) -> Option<&'static str> {
+    match remote_bind_label(host, true) {
+        "experimental/unsafe-cleartext-remote" => {
+            Some("WARNING: non-loopback cleartext bind is experimental/unsafe")
+        }
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod remote_bind_tests {
+    use super::*;
+
+    #[test]
+    fn remote_bind_warning_exact_only_for_non_loopback() {
+        assert!(remote_bind_warning_exact("127.0.0.1").is_none());
+        assert!(remote_bind_warning_exact("localhost").is_none());
+        let w = remote_bind_warning_exact("0.0.0.0").unwrap();
+        assert!(w.contains("experimental/unsafe"));
+    }
+}

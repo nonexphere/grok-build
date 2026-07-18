@@ -7,9 +7,11 @@ pub mod budgets;
 pub mod fake;
 pub mod instance;
 pub mod lease;
+pub mod lifecycle;
 pub mod metadata;
 pub mod projection;
 pub mod registry;
+pub mod telemetry;
 pub mod workspace;
 pub use budgets::{
     admit_resident, admit_turn, ResourceBudgets, ResourceUsage,
@@ -17,6 +19,8 @@ pub use budgets::{
 pub use fake::FakeRuntime;
 pub use instance::{InstanceDirectory, TowerHandle, TowerInstanceId, TowerInstanceIdError};
 pub use lease::{ControllerLease, LeaseTable};
+pub use lifecycle::{DrainController, DrainState};
+pub use telemetry::LifecycleMetrics;
 pub use metadata::{Residency, SessionMetadata};
 pub use projection::{
     contains_secret_canary, project_runtime_event, project_unknown_diagnostic, redact_text,

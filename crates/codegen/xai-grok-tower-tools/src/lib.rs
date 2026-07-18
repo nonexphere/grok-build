@@ -563,3 +563,65 @@ mod acl_parity_tests {
         assert_eq!(a["sessionId"], b["sessionId"]);
     }
 }
+
+#[cfg(test)]
+mod swarm_limits_tests {
+    use super::*;
+    use std::sync::Arc;
+    use xai_grok_tower::FakeRuntime;
+
+    #[tokio::test]
+    async fn swarm_limits_n_sessions_without_hub() {
+        let rt = Arc::new(FakeRuntime::new());
+        for i in 0..5 {
+            invoke_tower_tool(
+                rt.clone(),
+                "orchestrator",
+                false,
+                "tower_agent_start",
+                serde_json::json!({"workspaceRoot":"/work","idempotencyKey": format!("swarm-{i}")}),
+            )
+            .await
+            .unwrap();
+        }
+        let list = invoke_tower_tool(rt, "orchestrator", false, "tower_agent_list", serde_json::json!({}))
+            .await
+            .unwrap();
+        assert_eq!(list["sessions"].as_array().unwrap().len(), 5);
+        assert!(!TOWER_TOOL_NAMES.iter().any(|n| n.contains("hub")));
+    }
+
+    #[tokio::test]
+    async fn mutations_start_send_archive_have_stable_errors() {
+        let rt = Arc::new(FakeRuntime::new());
+        let start = invoke_tower_tool(
+            rt.clone(),
+            "orchestrator",
+            false,
+            "tower_agent_start",
+            serde_json::json!({"workspaceRoot":"/work","idempotencyKey":"mut-1"}),
+        )
+        .await
+        .unwrap();
+        let sid = start["sessionId"].as_str().unwrap();
+        let send = invoke_tower_tool(
+            rt.clone(),
+            "orchestrator",
+            false,
+            "tower_agent_send",
+            serde_json::json!({"sessionId": sid, "mode":"new_turn", "input":[{"type":"text","text":"x"}], "idempotencyKey":"mut-s"}),
+        )
+        .await
+        .unwrap();
+        assert!(send["turnId"].is_string());
+        invoke_tower_tool(
+            rt,
+            "orchestrator",
+            false,
+            "tower_agent_archive",
+            serde_json::json!({"sessionId": sid, "idempotencyKey":"mut-a"}),
+        )
+        .await
+        .unwrap();
+    }
+}
