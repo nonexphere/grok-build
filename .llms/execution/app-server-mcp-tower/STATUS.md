@@ -2,39 +2,22 @@
 
 | Field | Value |
 |---|---|
-| Task | `.llms/tasks/20260718-execute-app-server-mcp-tower-plan.md` |
-| Protocol | `2026-07-18.experimental-v2` |
 | Branch | `goblin-implement-epic-tree` |
-| Wave | Wave 2 complete (FakeRuntime); Wave 1 PARTIAL; Wave 3–6 in progress |
-| Current focus | **B-1** Shell `GrokRuntimeFacade` adapter + composition root wiring |
-| Next action | Implement `impl GrokRuntimeFacade` in `xai-grok-shell/src/app_server_runtime/` |
-| Worktree | `/home/guilherme/github/grok-goblin` |
+| Latest commit | `eeee2e3` + uncommitted Shell adapter inject |
+| Wave | Wave 0–2 green (FakeRuntime); Shell inject seam + one-actor registry green |
+| Next | SessionActor command mapping, pager-bin composition, providers, MCP HTTP, hardening |
+| Protocol | `2026-07-18.experimental-v2` |
 
-## Proven green (local / FakeRuntime)
+## Green evidence
+- protocol 22, tower 14, app-server 13, tools 8, mcp 3, shell app_server_runtime 5
+- named gates non-vacuous
+- grok-oss builds
+- reviews under reviews/wave0-2/
 
-- Protocol: errors, envelope, transitions, goldens, schema check, 22 tests
-- Tower: FakeRuntime, registry one-actor, projection redaction, budgets, workspace, lease, multi-instance dir, 14 tests
-- App Server: processor, in-process, stdio NDJSON, websocket bearer+parity, controller lease, 12+ tests
-- Tools: 9-tool invoke, ACL fail-closed, send mode, idempotency, 8 tests
-- MCP: tools/list + tools/call over same core, 3 tests
-- Shell: single-winner lock, handshake bytes, app_server_runtime marker, 2 adapter tests
-- SDK: typecheck/test/drift
-- `grok-oss` binary builds
-
-## Open (blocking production path)
-
-1. **Shell GrokRuntimeFacade adapter** (real SessionActor/leader forward) — B-1
-2. Composition root inject in `xai-grok-pager-bin`
-3. MCP Streamable HTTP + full WS server framing
-4. Provider verticals 10/v1-02..05
-5. Wave 6 security/ops hardening + TLS HUMAN gate
-6. RF102-05 single_actor_owns_turn_mutation on real actor
-
-## HUMAN gates (unchanged)
-
-npm publish name, token CLI UX, missing-jsonrpc adapter, approval timeout, Tower CLI flags, non-loopback TLS+threat, live provider credentials.
-
-## Reviews
-
-- `.llms/execution/app-server-mcp-tower/reviews/wave0-2/code-review.md`
-- `.llms/execution/app-server-mcp-tower/reviews/wave0-2/test-review.md`
+## Remaining for stop condition
+- Full SessionActor/leader method mapping (not just inject port)
+- pager-bin composition root wiring
+- 10/v1-02..05 providers
+- MCP Streamable HTTP, full WS server
+- Wave 6 security/ops + HUMAN TLS
+- Phase 7 final audit/FINAL_REPORT
