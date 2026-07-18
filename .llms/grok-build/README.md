@@ -1,152 +1,211 @@
-# Grok Build — Goal Runtime e App Server
+# grok-oss — árvore de planos e épicos
 
-Snapshot de planejamento: `b189869` em 2026-07-16.
+> **Escopo deste snapshot:** planejamento documental; nenhum código de produto é
+> autorizado por esta árvore. Aprovação para executar cada epic é separada.
 
-Esta árvore transforma as especificações em `changes/` em dois programas de
-entrega coordenados. O **Goal Runtime** torna `/goal` um runtime transacional,
-verificável e recuperável. O **App Server** expõe o runtime Grok a múltiplos
-clientes através de um protocolo Thread/Turn/Item sem duplicar o `SessionActor`.
+| Campo | Valor |
+|---|---|
+| Snapshot | `967161f5623b891611fc581a77008d29e9d4d87d` |
+| Data | 2026-07-18 (`America/Sao_Paulo`) |
+| Branch | `goblin-multi-provider-codex` |
+| Produto público | `grok-oss` · `~/.grok-oss` · `@brasalabs/grok-oss` |
+| Fontes humanas | handoff §13–14 + transcrição de 2026-07-18 |
 
-## Roadmap
+Esta árvore ordena as próximas atualizações do fork em uma plataforma com uma
+**Tower** multi-session, App Server Session/Turn/Item, MCP remoto e tools
+`tower_agent_*`. O leader, o registry de sessões, o `SessionActor`, ACP e os
+arquivos de sessão existentes são promovidos e reutilizados; não se cria um
+segundo runtime. [provenance: user-input, code, inferred]
+
+## Programas
+
+| Ordem | Programa | Papel | Estado do código | Release core |
+|---:|---|---|---|---|
+| 10 | [Providers](./10-providers/) | Codex/multi-auth + BYOK | Codex avançado; BYOK manual | paralelo controlado |
+| 20 | [Tower Core](./20-tower-core/) | daemon, registry e instâncias | proto-Tower no leader | **MUST** |
+| 30 | [App Server](./30-app-server/) | Session/Turn/Item + stdio/WS | planejado, não implementado | **MUST** |
+| 40 | [MCP Control Plane](./40-mcp-control-plane/) | MCP stdio + Streamable HTTP/SSE | crate atual é client | **MUST** |
+| 50 | [Tower Agent Tools](./50-tower-agent-tools/) | `tower_agent_*` e ACL | não implementado | **MUST** |
+| 60 | [SDK TypeScript](./60-sdk-typescript/) | schema, client e scripts | seeds apenas | **MUST** |
+| 70 | [Goal Runtime](./70-goal-runtime/) | goal legado v1 + runtime v2 | v1 existe; v2 é plano | futuro |
+| 80 | [Channel Gateways](./80-channel-gateways/) | Telegram primeiro | backlog | fora do core |
+| 90 | [Realtime Voice](./90-realtime-voice/) | full duplex + barge-in | ditado/STT parcial | fora do core |
+
+## Roadmap e waves
+
+| Wave | Epics | Pode paralelizar | Gate de saída |
+|---|---|---|---|
+| 0 | `10/v1-01`, `20/v1-01`, `30/v1-01` | os três | baseline honesto, ownership e contratos congelados |
+| 1 | `10/v1-02`, `20/v1-02`, `30/v1-02` | providers e runtime | provider seam + uma Tower/registry + facade única |
+| 2 | `30/v1-03`, `20/v1-03` | parcialmente | vertical slice in-process/stdio e lifecycle multi-instance |
+| 3 | `30/v1-04`, `40/v1-01` | após processor comum | WebSocket bearer e MCP local/remoto early |
+| 4 | `30/v1-05..06`, `50/v1-01` | history/approvals/tools | replay, controle e contrato completo de tools |
+| 5 | `50/v1-02`, `60/v1-01`, `10/v1-03..05` | sim | ACL/in-process tools, SDK real, BYOK por provider |
+| 6 | `30/v1-07`, `40/v1-02`, `20/v1-04` | hardening conjunto | conformance, threat model, runbooks e release evidence |
+| 7+ | Goal v2, dashboard client, gateways e voz | fora do MVP core | programas separados e explicitamente aprovados |
+
+## Status e estimativas dos epics
+
+| Programa | Epic | Status | Estimativa |
+|---|---|---|---|
+| 10 | `v1-01-codex-readiness-hygiene` | rascunho | 1–2 sem. |
+| 10 | `v1-02-api-key-provider-foundation` | rascunho | 2–4 sem. |
+| 10 | `v1-03-openrouter-onboarding` | rascunho | 1–2 sem. |
+| 10 | `v1-04-groq-onboarding` | rascunho | 1–2 sem. |
+| 10 | `v1-05-cloudflare-onboarding` | rascunho | 2–3 sem. |
+| 20 | `v1-01-leader-characterization-promotion` | rascunho | 2–3 sem. |
+| 20 | `v1-02-multi-session-workspace-registry` | rascunho | 2–4 sem. |
+| 20 | `v1-03-multi-instance-daemon-modes` | rascunho | 2–3 sem. |
+| 20 | `v1-04-operations-hardening` | rascunho | 1–3 sem. |
+| 30 | `v1-01-session-protocol` | rascunho | 2–3 sem. |
+| 30 | `v1-02-runtime-facade-projection` | rascunho | 2–4 sem. |
+| 30 | `v1-03-core-in-process-stdio` | rascunho | 2–4 sem. |
+| 30 | `v1-04-websocket-remote-auth` | rascunho | 2–3 sem. |
+| 30 | `v1-05-history-replay` | rascunho | 2–4 sem. |
+| 30 | `v1-06-approvals-control` | rascunho | 2–3 sem. |
+| 30 | `v1-07-release-hardening` | rascunho | 2–4 sem. |
+| 30 | `v2-01-dashboard-client-migration` | planejado | 2–4 sem. |
+| 40 | `v1-01-server-transports` | rascunho | 2–4 sem. |
+| 40 | `v1-02-remote-security-conformance` | rascunho | 1–3 sem. |
+| 50 | `v1-01-tool-contract-and-facade` | rascunho | 2–3 sem. |
+| 50 | `v1-02-in-process-acl-mcp-parity` | rascunho | 2–3 sem. |
+| 50 | `v2-01-peer-messaging-study` | planejado | 1–2 sem. |
+| 60 | `v1-01-generated-sdk-client-examples` | rascunho | 2–3 sem. |
+| 70 | `v1-01-legacy-characterization` | planejado | 1–3 sem. |
+| 70 | `v2-01-domain-foundation` | planejado | 2–4 sem. |
+| 70 | `v2-02-persistence-leases-accounting` | planejado | 2–4 sem. |
+| 70 | `v2-03-runtime-continuation` | planejado | 2–4 sem. |
+| 70 | `v2-04-tools-verification` | planejado | 2–4 sem. |
+| 70 | `v2-05-task-graph-subagents` | planejado | 2–4 sem. |
+| 70 | `v2-06-clients-projections` | planejado | 2–4 sem. |
+| 70 | `v2-07-recovery-rollout` | planejado | 2–4 sem. |
+| 80 | `v1-01-telegram-bridge-backlog` | planejado | 2–4 sem. |
+| 90 | `v1-01-full-duplex-backlog` | planejado | 3–4 sem. |
+
+### Grafo de dependências
 
 ```text
-Goal:  caracterização+domínio → persistência → runtime → tools+verificação
-                         └────→ tasks+subagents ───────→ clientes → rollout
+10-providers/v1-01 ─→ v1-02 ─────────────→ v1-03 OpenRouter
+                                  ├───────→ v1-04 Groq
+                                  └───────→ v1-05 Cloudflare
 
-App:   arquitetura+protocolo → facade+projeção → core ─→ histórico
-                                             └────────→ approvals
-               histórico + approvals ─→ daemon ─→ TUI ─→ ecossistema+GA
+20-tower/v1-01 ─→ v1-02 ─→ v1-03 ───────────────────────→ v1-04 hardening
+       │              │
+       └────→ 30-app/v1-01 ─→ v1-02 ─→ v1-03 ─→ v1-04 ─→ v1-05 ─┐
+                                                    │       └────→ v1-06 ─┤
+                                                    ├→ 40-mcp/v1-01 ─→ v1-02
+                                                    └→ 50-tools/v1-01 ─→ v1-02
+                                                                         │
+                                      60-sdk/v1-01 ◄──────────────────────┘
 
-Integração: Goal clientes/projeções ────────────────→ App ecossistema+GA
+30/v1-05 + 30/v1-06 + 40/v1-02 + 50/v1-02 + 60/v1-01 ─→ 30/v1-07
+30/v1-07 ─→ 30/v2-01 (dashboard, futuro), 80/v1-01, 90/v1-01
+Goal v1 characterization ─→ Goal v2-01..07 (fora da critical path core)
 ```
 
-O Goal Runtime pode ser entregue e operar sem o App Server. O App Server
-consome o `GoalService` e seus eventos por uma facade; nunca passa a ser fonte
-de verdade do lifecycle do goal.
-
-## Grupos e épicos
-
-| Grupo | Epic | Status | Dependências principais |
-|---|---|---|---|
-| Goal Runtime | [v1-characterization-domain](./goal-runtime/v1-characterization-domain/) | rascunho | nenhuma |
-| Goal Runtime | [v1-persistence-leases-accounting](./goal-runtime/v1-persistence-leases-accounting/) | rascunho | characterization-domain |
-| Goal Runtime | [v1-runtime-continuation](./goal-runtime/v1-runtime-continuation/) | rascunho | persistence-leases-accounting |
-| Goal Runtime | [v1-tools-verification](./goal-runtime/v1-tools-verification/) | rascunho | runtime-continuation |
-| Goal Runtime | [v1-task-graph-subagents](./goal-runtime/v1-task-graph-subagents/) | rascunho | runtime-continuation, tools-verification |
-| Goal Runtime | [v1-clients-projections](./goal-runtime/v1-clients-projections/) | rascunho | tools-verification, task-graph-subagents |
-| Goal Runtime | [v1-recovery-rollout](./goal-runtime/v1-recovery-rollout/) | rascunho | todos os Goal v1 anteriores |
-| App Server | [v1-architecture-protocol](./app-server/v1-architecture-protocol/) | rascunho | nenhuma |
-| App Server | [v1-runtime-facade-projection](./app-server/v1-runtime-facade-projection/) | rascunho | architecture-protocol |
-| App Server | [v1-core-in-process](./app-server/v1-core-in-process/) | rascunho | runtime-facade-projection |
-| App Server | [v1-history-replay](./app-server/v1-history-replay/) | rascunho | core-in-process |
-| App Server | [v1-approvals-control](./app-server/v1-approvals-control/) | rascunho | core-in-process |
-| App Server | [v1-daemon-transports-security](./app-server/v1-daemon-transports-security/) | rascunho | history-replay, approvals-control |
-| App Server | [v1-tui-migration](./app-server/v1-tui-migration/) | rascunho | daemon-transports-security |
-| App Server | [v1-ecosystem-ga](./app-server/v1-ecosystem-ga/) | rascunho | TUI migration, Goal clients/projections |
+Não há dependência do App Server/Tower sobre Goal v2. App Server apenas
+inventaria hot paths e preserva uma facade onde o goal legado v1 e o futuro v2
+possam ser selecionados por flag. [provenance: user-input]
 
 ## Contratos compartilhados
 
-- [runtime-ownership.md](./_shared/runtime-ownership.md)
-- [identity-event-ordering.md](./_shared/identity-event-ordering.md)
-- [leases-idempotency.md](./_shared/leases-idempotency.md)
-- [security-authority-boundaries.md](./_shared/security-authority-boundaries.md)
+- [glossário e identidade](./_shared/session-turn-item-identity.md)
+- [ownership do runtime](./_shared/runtime-ownership.md)
+- [Tower e lifecycle de instâncias](./_shared/tower-instance-lifecycle.md)
+- [autenticação e threat model](./_shared/control-plane-security.md)
+- [ordenação, replay e idempotência](./_shared/identity-event-ordering.md)
+- [tools Tower](./_shared/tower-agent-tools.md)
+- [método TDD](./TDD.md)
+- [rastreabilidade](./TRACEABILITY.md)
 
-## Rastreabilidade das especificações
-
-| Fonte | Seções/fases | Épico responsável |
-|---|---|---|
-| Goal spec | §3–5.2, Phase 0–1 | `goal-runtime/v1-characterization-domain` |
-| Goal spec | §5.3, §10, Phase 2 | `goal-runtime/v1-persistence-leases-accounting` |
-| Goal spec | §5.4, §9, Phase 3 | `goal-runtime/v1-runtime-continuation` |
-| Goal spec | §4, §5.5–5.6, Phase 4–5 | `goal-runtime/v1-tools-verification` |
-| Goal spec | §3.5, §6.4–6.7, Phase 6 | `goal-runtime/v1-task-graph-subagents` |
-| Goal spec | §7, §11.3–11.6, Phase 7 | `goal-runtime/v1-clients-projections` |
-| Goal spec | §6.7, §11, Phase 8, §12.3–12.5 | `goal-runtime/v1-recovery-rollout` |
-| App spec | §2–7, Phase 0–1 | `app-server/v1-architecture-protocol` |
-| App spec | §3–6, §12.1, Phase 2 | `app-server/v1-runtime-facade-projection` |
-| App spec | §7, §12.2–12.3, Phase 3 | `app-server/v1-core-in-process` |
-| App spec | §7.11, §13, Phase 4 | `app-server/v1-history-replay` |
-| App spec | §7.9–7.10, §10, Phase 5 | `app-server/v1-approvals-control` |
-| App spec | §8–10, Phase 6 | `app-server/v1-daemon-transports-security` |
-| App spec | §14, Phase 7 | `app-server/v1-tui-migration` |
-| App spec | §15–24, Phase 8–9 | `app-server/v1-ecosystem-ga` |
-
-## Capacidade e duração
-
-- Cada épico foi desenhado para **1–4 semanas de calendário** com ownership
-  claro; estimativas em person-weeks das specs continuam válidas.
-- Épicos com workstreams grandes (`ecosystem-ga`, recovery e TUI) exigem
-  execução paralela para respeitar essa janela; sem staffing, devem ser
-  replanejados antes de iniciar, não prolongados silenciosamente.
-- Foundations dos dois grupos podem iniciar em paralelo. Integrações somente
-  começam após gates das dependências.
-
-## Regras de execução e encerramento
-
-1. `rascunho → planejado` exige decisões humanas bloqueantes resolvidas ou
-   branches explicitamente adiadas.
-2. `em progresso → concluído` exige todas as tasks obrigatórias, Gate de saída,
-   validação e delivery evidence.
-3. Finding novo é persistido via `@issue-lifecycle`; não vira TODO nu em código.
-4. Mudança de contrato atualiza a fonte canônica e seus consumers no mesmo epic.
-5. Nenhum executor reduz MUST/MUST NOT das fontes em `changes/` sem decisão humana.
-
-## Estrutura
+## Estrutura da documentação
 
 ```text
 .llms/grok-build/
 ├── README.md
+├── TDD.md
+├── TRACEABILITY.md
 ├── _shared/
-├── goal-runtime/
-│   ├── README.md
-│   ├── SPECS.md
-│   ├── VISION.md
-│   └── v1-*/
-└── app-server/
-    ├── README.md
-    ├── SPECS.md
-    ├── VISION.md
-    └── v1-*/
+├── 10-providers/
+├── 20-tower-core/
+├── 30-app-server/
+├── 40-mcp-control-plane/
+├── 50-tower-agent-tools/
+├── 60-sdk-typescript/
+├── 70-goal-runtime/
+├── 80-channel-gateways/
+└── 90-realtime-voice/
 ```
+
+Cada programa contém `README.md`, `SPECS.md`, `VISION.md` e epics
+`vN-NN-kebab-case/`. Epic com mais de 15 tasks ou contrato local possui
+`tasks.md`; contratos usados por dois ou mais programas vivem em `_shared/`.
 
 ## Princípios
 
-1. **Uma autoridade por estado** — `GoalRuntime` governa goals; runtime Grok governa execução; App Server governa protocolo e clientes.
-2. **Sem segundo SessionActor** — transportes e adapters compartilham um único registry/runtime facade.
-3. **Fail-closed em autoridade** — conclusão, approvals, recovery e permissões nunca avançam por ausência de evidência.
-4. **Estado durável antes de projeção** — UI, ACP, JSONL e Thread/Turn/Item são projeções, não lifecycle truth.
-5. **Compatibilidade por adapters** — formatos antigos são aceitos em bordas versionadas, não contaminam o domínio novo.
-6. **Local e seguro por padrão** — remote control permanece desligado e exige autenticação, scopes e Origin/TLS.
-7. **TUI parity é release gate** — nenhuma migração estável pode reduzir comportamento ou desempenho materialmente.
-8. **Evidência sobre alegações** — testes devem atingir entrypoints reais, incluindo concorrência, crash e replay.
+1. **Session é canônico** — `thread` aparece somente ao citar/mapear Codex.
+2. **Uma semantic core** — in-process, stdio, WebSocket e MCP usam a mesma facade.
+3. **Sem segundo `SessionActor`** — Tower promove leader/registry existentes.
+4. **MCP remoto e WebSocket early** — ambos pertencem ao MVP, não ao polish final.
+5. **Segurança honesta** — bearer full-control sobre `http://`/`ws://` remoto é risco alto documentado, não escondido.
+6. **ACL mínima** — só `orchestrator` acessa Tower por default; configuração pode ampliar.
+7. **Dashboard congelado no MVP** — ACP/leader/roster continuam até programa v2 explícito.
+8. **Compatibilidade seletiva** — dual-version obrigatória somente no Goal futuro.
+9. **TDD por comportamento** — todo epic muda comportamento via Red-Green-Refactor e conformance real.
+10. **Estado factual** — `planejado` não significa implementado; `concluído` exige evidência.
 
 ## Decisões de design
 
-### DD-1: uma árvore, dois grupos
+### DD-01 — numeração global por programa e local por epic
 
-- **Decisão:** manter Goal Runtime e App Server sob uma raiz, com épicos separados.
-- **Contexto:** pertencem ao mesmo repositório e compartilham runtime, eventos, TUI, subagents e worktrees.
-- **Rejeitado:** duas árvores independentes, pois duplicariam contratos e esconderiam dependências de integração.
+- **Decisão:** programas `10..90`; epics `vN-01-*` ordenáveis.
+- **Rejeitado:** manter pastas antigas sem sequência, pois escondiam a ordem de PRs.
+- **Status:** aceito. [provenance: user-input]
+
+### DD-02 — Tower promove o leader
+
+- **Decisão:** generalizar `connect_or_spawn`, leader server, roster e session
+  lifecycle; nova Tower somente por flag explícita.
+- **Rejeitado:** daemon paralelo, por duplicar ownership e sessões.
+- **Status:** aceito. [provenance: user-input, code]
+
+### DD-03 — segurança permissiva do MVP, sem alegação de proteção inexistente
+
+- **Decisão:** bearer full-control, sem scopes finos nem Origin allowlist;
+  `http://` e `ws://` permitidos, inclusive bind LAN/internet explícito.
+- **Rejeitado:** reintroduzir TLS/scopes/Origin obrigatórios contra a decisão
+  humana; também rejeitado omitir o risco.
+- **Status:** aceito. [provenance: user-input]
+
+### DD-04 — MCP local não faz loop em si mesmo
+
+- **Decisão:** orchestrator local chama tools in-process; config MCP serve para
+  Towers externas e clientes externos.
+- **Rejeitado:** auto-injetar a Tower local como seu próprio MCP server.
 - **Status:** aceito. [provenance: user-input, inferred]
 
-### DD-2: dependência unidirecional
+### DD-05 — BYOK estende o control plane multi-auth
 
-- **Decisão:** o App Server pode consumir `GoalService`; o Goal Runtime não depende do App Server.
-- **Rejeitado:** tornar o daemon necessário para `/goal`, porque quebraria TUI/headless e recovery local.
-- **Status:** aceito. [provenance: doc-tree]
+- **Decisão:** API-key providers reutilizam credential store, binding imutável,
+  catálogo credential-scoped e request-time bearer; custom TOML permanece.
+- **Rejeitado:** wizard que grava secret em TOML e um terceiro sistema de auth.
+- **Status:** recomendado e planejado. [provenance: doc-tree, inferred]
 
-### DD-3: 15 épicos em vez de uma pasta por fase original
+## Propostas residuais e decisões humanas
 
-- **Decisão:** agrupar fases adjacentes com o mesmo gate e ownership.
-- **Rejeitado:** 19 microépicos que fragmentariam vertical slices e excederiam o limite operacional do planejamento.
-- **Status:** aceito. [provenance: skill-output, inferred]
+- `[PROPOSED]` SDK em `packages/grok-oss-app-server`, Node + browser WebSocket,
+  sem publicação npm até o protocolo estabilizar.
+- `[PROPOSED]` key MCP externa `grok-oss-tower` ou `tower-<instance-id>`.
+- `(HUMAN)` aceitar explicitamente o threat model antes de habilitar bind público em uma release — type: `manual-verify`; blocking: release remoto, não planejamento.
+- `(HUMAN)` fornecer credenciais para smokes live de providers e npm quando chegar a execução — type: `credential`; blocking: somente gates live/publish.
 
-## Fontes
+## Regras de status e execução
 
-- `changes/grok-build-goal-runtime-technical-spec (1).md`
-- `changes/grok_app_server_spec_bundle/grok_app_server_plan_and_spec.md`
-- bundle de schema, TypeScript e exemplos em `changes/grok_app_server_spec_bundle/`
-
-**Próximo passo:** resolver decisões humanas dos épicos iniciais e executar
-primeiro as duas foundations em paralelo; não iniciar integrações antes de seus
-gates.
+- Todos os epics novos começam `rascunho`; passam a `planejado` após review do
+  plano; nenhum está `em progresso` por existir em disco.
+- Cada epic deve caber em 1–4 semanas. Se não couber, o executor o divide antes
+  de código, preservando contratos e dependências.
+- Código só começa após autorização explícita e segue [TDD.md](./TDD.md).
+- PRs de produto usam feature branch `goblin-*` e base `goblin`, nunca `main`.
+- Findings duráveis usam `@issue-lifecycle`; execução usa `@execute-plan` e
+  itens coerentes usam `@implementation-loop`.
