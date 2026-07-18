@@ -6,8 +6,8 @@
 
 ## Exact unmet requirement (blocking)
 
-1. **Production `GrokRuntimeFacade` must map every method onto the existing leader/`SessionActor` command path** (not default-inject `FakeRuntime`). Composition root currently builds:
-   `ShellRuntimeAdapter::inject(Arc::new(FakeRuntime::new()))`.
+1. **Production `GrokRuntimeFacade` must map **mutations** (start_turn/steer/interrupt/…) onto the existing leader/`SessionActor` command path.** List/read now use real Jsonl session storage via `SessionStorageHybridRuntime`; mutations still inject `FakeRuntime`.
+   Composition: `ShellRuntimeAdapter::inject(Arc::new(SessionStorageHybridRuntime::new(FakeRuntime)))`.
 2. **HUMAN/external residual (release-only):** TLS + threat acceptance for non-loopback production; live provider credentials for OR/GQ/CF smoke PASS; optional npm publish name; missing-`jsonrpc` Codex adapter policy; full PC8 live pack.
 
 ## What is proven GREEN (FakeRuntime / local control plane)
