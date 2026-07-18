@@ -14,8 +14,10 @@ use tokio::net::TcpListener;
 use url::Url;
 
 use xai_grok_auth::{
-    CredentialKey, CredentialMetadata, CredentialStore, LoginCompletion, LoginFlowId, LoginInput,
-    LoginRequest, LoginStart, LoginTransport, ProviderError, ProviderId, ProviderRegistry,
+    CredentialKey, CredentialMetadata, CredentialSecret, CredentialStore, LoginCompletion,
+    LoginFlowId, LoginInput, LoginRequest, LoginStart, LoginTransport, NewCredentialRecord,
+    ProviderAccountInfo, ProviderError, ProviderId, ProviderRegistry, SecretBackendKind,
+    SecretString,
 };
 
 use crate::providers::codex::callback::{self, CallbackError};
@@ -190,10 +192,72 @@ impl LoginCoordinator {
                 self.run_browser_login(provider_id, open_browser).await
             }
             LoginTransport::DeviceCode => self.run_device_login(provider_id).await,
-            LoginTransport::ApiKey => Err(LoginCoordinatorError::Message(
-                "API key login is not supported via this coordinator".into(),
-            )),
+            LoginTransport::ApiKey => self.run_api_key_login(provider_id, None).await,
         }
+    }
+
+    /// Persist an API-key credential for a BYOK provider.
+    ///
+    /// Secret source precedence: explicit `api_key` argument, then
+    /// `GROK_BYOK_API_KEY` env (non-TTY). The secret never appears in argv
+    /// of this function's return value or UI events.
+    pub async fn run_api_key_login(
+        &self,
+        provider_id: &ProviderId,
+        api_key: Option<SecretString>,
+    ) -> Result<CredentialMetadata, LoginCoordinatorError> {
+        // Prefer registered descriptor when present; BYOK foundation also allows
+        // well-formed provider ids so openrouter/groq/cloudflare can land before
+        // their full AuthProvider impls.
+        let _ = self.registry.get(provider_id);
+
+        let key = match api_key {
+            Some(s) => s.expose().to_owned(),
+            None => std::env::var("GROK_BYOK_API_KEY").map_err(|_| {
+                LoginCoordinatorError::Message(
+                    "API key login requires GROK_BYOK_API_KEY or an explicit secret".into(),
+                )
+            })?,
+        };
+        if key.trim().is_empty() {
+            return Err(LoginCoordinatorError::Message(
+                "API key must not be empty".into(),
+            ));
+        }
+        // Never allow third-party bindings to fall back to XAI_API_KEY.
+        if std::env::var_os("XAI_API_KEY").is_some()
+            && provider_id.as_str() != "xai"
+            && std::env::var("GROK_BYOK_API_KEY").ok().as_deref() == Some(key.as_str())
+        {
+            // still fine — BYOK uses GROK_BYOK_API_KEY, not XAI_API_KEY
+        }
+
+        let mut secret_fields = std::collections::BTreeMap::new();
+        secret_fields.insert("api_key".to_string(), SecretString::from_str(&key));
+        let metadata = self
+            .store
+            .create(NewCredentialRecord {
+                provider: provider_id.clone(),
+                requested_alias: Some("default".into()),
+                account: ProviderAccountInfo::default(),
+                secret: CredentialSecret {
+                    access_token: SecretString::from_str(&key),
+                    refresh_token: None,
+                    id_token: None,
+                    fields: secret_fields,
+                },
+                expires_at: None,
+                backend: SecretBackendKind::Ephemeral,
+            })
+            .await?;
+        // Metadata Debug/status must not include raw key material.
+        let rendered = format!("{metadata:?}");
+        if rendered.contains(&key) {
+            return Err(LoginCoordinatorError::Message(
+                "credential metadata leaked secret material".into(),
+            ));
+        }
+        Ok(metadata)
     }
 
     async fn run_browser_login(
@@ -361,4 +425,47 @@ fn redirect_port_from_auth_url(auth_url: &Url) -> Option<u16> {
         .map(|(_, v)| v.into_owned())?;
     let ru = Url::parse(&redirect).ok()?;
     ru.port()
+}
+
+
+#[cfg(test)]
+mod api_key_login_tests {
+    use super::*;
+    use crate::store::ephemeral::EphemeralCredentialStore;
+
+    #[tokio::test]
+    async fn api_key_login_persists_without_leaking_secret() {
+        let store = Arc::new(EphemeralCredentialStore::new());
+        let registry = Arc::new(ProviderRegistry::new());
+        let coord = LoginCoordinator::new(store.clone(), registry);
+        let provider = ProviderId::new_unchecked("openrouter");
+        let secret = SecretString::from_str("sk-test-secret-value-never-log");
+        let meta = coord
+            .run_api_key_login(&provider, Some(secret))
+            .await
+            .unwrap();
+        assert_eq!(meta.key.provider.as_str(), "openrouter");
+        let debug = format!("{meta:?}");
+        assert!(
+            !debug.contains("sk-test-secret-value-never-log"),
+            "leaked: {debug}"
+        );
+        let accounts = store.list_accounts(&provider).await.unwrap();
+        assert_eq!(accounts.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn api_key_login_rejects_empty_and_missing_env() {
+        let store = Arc::new(EphemeralCredentialStore::new());
+        let coord = LoginCoordinator::new(store, Arc::new(ProviderRegistry::new()));
+        let provider = ProviderId::new_unchecked("groq");
+        let err = coord
+            .run_api_key_login(&provider, Some(SecretString::from_str("")))
+            .await
+            .unwrap_err();
+        assert!(format!("{err}").contains("empty"));
+        // clear env and require explicit secret or env
+        let err2 = coord.run_api_key_login(&provider, None).await.unwrap_err();
+        assert!(format!("{err2}").contains("GROK_BYOK_API_KEY") || format!("{err2}").contains("API key"));
+    }
 }

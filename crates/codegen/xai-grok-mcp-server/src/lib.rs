@@ -1,6 +1,8 @@
 //! MCP server adapter over the shared tower tool semantic core.
 //! The existing `xai-grok-mcp` remains the external-server MCP client only.
 
+pub mod transport;
+
 use std::sync::Arc;
 
 use serde_json::{json, Value};
