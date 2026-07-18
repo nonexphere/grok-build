@@ -119,3 +119,22 @@ mod auth_failures_tests {
         assert!(!s.contains("access_token"));
     }
 }
+
+pub fn enforce_body_limit(bytes: usize, max: usize) -> Result<(), &'static str> {
+    if bytes > max {
+        Err("message_too_large")
+    } else {
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod limits_tests {
+    use super::*;
+
+    #[test]
+    fn limits_reject_oversized_body_explicitly() {
+        assert!(enforce_body_limit(100, 1_048_576).is_ok());
+        assert_eq!(enforce_body_limit(2_000_000, 1_048_576).unwrap_err(), "message_too_large");
+    }
+}

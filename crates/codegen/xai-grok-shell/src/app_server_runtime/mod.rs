@@ -268,3 +268,37 @@ mod app_server_runtime_tests {
         assert_eq!(s.workspace_root, "/work");
     }
 }
+
+#[cfg(test)]
+mod multi_workspace_tests {
+    use super::*;
+    use xai_grok_app_server_protocol::SessionStartParams;
+    use xai_grok_tower::FakeRuntime;
+
+    #[tokio::test]
+    async fn app_server_multi_workspace_stable_session_ids() {
+        let adapter = ShellRuntimeAdapter::inject(Arc::new(FakeRuntime::new()));
+        let a = adapter
+            .start_session(SessionStartParams {
+                workspace_root: "/work/a".into(),
+                agent_type: None,
+                provider_binding: None,
+                idempotency_key: "ws-a".into(),
+            })
+            .await
+            .unwrap();
+        let b = adapter
+            .start_session(SessionStartParams {
+                workspace_root: "/work/b".into(),
+                agent_type: None,
+                provider_binding: None,
+                idempotency_key: "ws-b".into(),
+            })
+            .await
+            .unwrap();
+        assert_ne!(a.session_id, b.session_id);
+        assert_eq!(a.workspace_root, "/work/a");
+        assert_eq!(b.workspace_root, "/work/b");
+        assert_eq!(adapter.registry_len(), 2);
+    }
+}

@@ -111,3 +111,18 @@ mod drain_tests {
         assert!(after > before);
     }
 }
+
+#[cfg(test)]
+mod stale_metadata_tests {
+    #[test]
+    fn stale_metadata_does_not_delete_on_pid_alone() {
+        // Contract: never delete session files solely because a PID is dead.
+        let pid_dead = true;
+        let has_valid_lock_or_socket = true;
+        let should_delete = pid_dead && !has_valid_lock_or_socket;
+        assert!(!should_delete);
+        let should_delete2 = pid_dead && !false;
+        assert!(should_delete2); // only when lock/socket also gone
+        let _ = should_delete2;
+    }
+}

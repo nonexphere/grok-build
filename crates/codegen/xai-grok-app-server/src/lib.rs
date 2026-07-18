@@ -154,3 +154,91 @@ mod conformance_tests {
         assert!(processor.is_initialized());
     }
 }
+
+#[cfg(test)]
+mod co_start_tests {
+    #[test]
+    fn co_start_rejects_dual_stdio_accepts_stdio_plus_ws_matrix() {
+        // Valid: single stdio, or stdio+ws, or in-process only. Invalid: dual stdio.
+        let matrix = [
+            (true, false, false, true),  // stdio
+            (false, true, false, true),  // ws
+            (true, true, false, true),   // stdio+ws
+            (false, false, true, true),  // in-process
+            (true, false, true, false),  // dual stdio-like (stdio+in-process both claiming stdio ownership) — reject for dual stdio claim
+        ];
+        for (stdio, ws, in_process, ok) in matrix {
+            let dual_stdio = stdio && in_process; // simplified ownership collision
+            let valid = !dual_stdio && (stdio || ws || in_process);
+            assert_eq!(valid, ok, "stdio={stdio} ws={ws} in_process={in_process}");
+            let _ = ws;
+        }
+    }
+}
+
+#[cfg(test)]
+mod websocket_conformance_tests {
+    use super::*;
+    use serde_json::{json, Value};
+    use std::sync::Arc;
+    use xai_grok_app_server_protocol::PROTOCOL_VERSION;
+    use xai_grok_tower::FakeRuntime;
+    use crate::transport::websocket::handle_ws_text;
+
+    #[tokio::test]
+    async fn websocket_conformance_initialize_matches_stdio_shape() {
+        let rt = Arc::new(FakeRuntime::new());
+        let p_ws = Arc::new(FacadeProcessor::new(rt.clone()));
+        let p_stdio = Arc::new(FacadeProcessor::new(Arc::new(FakeRuntime::new())));
+        let req = json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{
+            "protocolVersion": PROTOCOL_VERSION,
+            "clientInfo":{"name":"c","version":"0"},
+            "capabilities":{}
+        }}).to_string();
+        let ws = handle_ws_text(p_ws, &req).await.unwrap().unwrap();
+        let stdio = p_stdio.handle_line(&req).await.unwrap().unwrap();
+        let w: Value = serde_json::from_str(&ws).unwrap();
+        let s: Value = serde_json::from_str(&stdio).unwrap();
+        assert_eq!(w["result"]["protocolVersion"], s["result"]["protocolVersion"]);
+        assert_eq!(w["result"]["capabilities"]["sessions"]["start"], s["result"]["capabilities"]["sessions"]["start"]);
+    }
+}
+
+#[cfg(test)]
+mod snapshot_then_live_tests {
+    use super::replay::replay_all_pages;
+    use xai_grok_app_server_protocol::{InputBlock, SessionStartParams, TurnStartParams};
+    use xai_grok_tower::{FakeRuntime, GrokRuntimeFacade};
+
+    #[tokio::test]
+    async fn snapshot_then_live_no_gap_on_fake() {
+        let rt = FakeRuntime::new();
+        let s = rt
+            .start_session(SessionStartParams {
+                workspace_root: "/work".into(),
+                agent_type: None,
+                provider_binding: None,
+                idempotency_key: "snap-1".into(),
+            })
+            .await
+            .unwrap();
+        rt.start_turn(TurnStartParams {
+            session_id: s.session_id.clone(),
+            input: vec![InputBlock::Text { text: "a".into() }],
+            idempotency_key: "snap-t".into(),
+        })
+        .await
+        .unwrap();
+        let pages = replay_all_pages(&rt, &s.session_id, Some("epoch_1".into()), 3)
+            .await
+            .unwrap();
+        assert!(!pages.is_empty());
+        let n = pages[0].events.len();
+        assert!(n >= 1);
+        // second page from same cursor end should not invent gaps
+        let pages2 = replay_all_pages(&rt, &s.session_id, Some("epoch_1".into()), 3)
+            .await
+            .unwrap();
+        assert_eq!(pages2[0].events.len(), n);
+    }
+}

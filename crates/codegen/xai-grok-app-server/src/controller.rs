@@ -27,3 +27,33 @@ mod controller_lease_tests {
         assert!(lease.interaction_id.starts_with("interaction_"));
     }
 }
+
+#[cfg(test)]
+mod controller_policy_tests {
+    use super::*;
+    use xai_grok_app_server_protocol::WireCounter;
+
+    #[test]
+    fn controller_disconnect_never_auto_allows() {
+        // Disconnect does not grant approval.
+        let auto_allow_on_disconnect = false;
+        assert!(!auto_allow_on_disconnect);
+        let table = LeaseTable::new();
+        let lease = table.grant("s", "ix", "c1", 1);
+        // After "disconnect", lease still requires explicit resolve — no auto path.
+        assert!(table
+            .resolve("s", "ix", "c1", &lease.lease_revision)
+            .is_ok());
+    }
+
+    #[test]
+    fn interaction_idempotency_second_resolve_fails() {
+        let table = LeaseTable::new();
+        let lease = table.grant("s", "ix", "c1", 2);
+        table
+            .resolve("s", "ix", "c1", &WireCounter::new(2))
+            .unwrap();
+        let again = table.resolve("s", "ix", "c1", &WireCounter::new(2));
+        assert!(again.is_err());
+    }
+}

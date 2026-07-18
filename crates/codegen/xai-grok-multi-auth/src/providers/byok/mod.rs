@@ -125,3 +125,22 @@ mod byok_tests {
         assert_ne!(a, b);
     }
 }
+
+/// Third-party BYOK must never fall back to XAI_API_KEY.
+pub fn reject_xai_api_key_fallback(provider_id: &str, used_env: &str) -> Result<(), String> {
+    if provider_id != "xai" && used_env == "XAI_API_KEY" {
+        return Err("third-party BYOK must not use XAI_API_KEY".into());
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod xai_fallback_tests {
+    use super::*;
+    #[test]
+    fn prohibit_xai_api_key_fallback_for_third_party() {
+        assert!(reject_xai_api_key_fallback("openrouter", "XAI_API_KEY").is_err());
+        assert!(reject_xai_api_key_fallback("openrouter", "GROK_BYOK_API_KEY").is_ok());
+        assert!(reject_xai_api_key_fallback("xai", "XAI_API_KEY").is_ok());
+    }
+}

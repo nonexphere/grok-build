@@ -625,3 +625,36 @@ mod swarm_limits_tests {
         .unwrap();
     }
 }
+
+#[cfg(test)]
+mod history_parity_tests {
+    use super::*;
+    use std::sync::Arc;
+    use xai_grok_tower::FakeRuntime;
+
+    #[tokio::test]
+    async fn history_parity_epoch_and_redaction_flag() {
+        let rt = Arc::new(FakeRuntime::new());
+        let start = invoke_tower_tool(
+            rt.clone(),
+            "orchestrator",
+            false,
+            "tower_agent_start",
+            serde_json::json!({"workspaceRoot":"/work","idempotencyKey":"hist-1"}),
+        )
+        .await
+        .unwrap();
+        let sid = start["sessionId"].as_str().unwrap();
+        let hist = invoke_tower_tool(
+            rt,
+            "orchestrator",
+            false,
+            "tower_agent_history",
+            serde_json::json!({"sessionId": sid, "mode":"last","maxBytes":4096}),
+        )
+        .await
+        .unwrap();
+        assert_eq!(hist["historyEpoch"], "epoch_1");
+        assert_eq!(hist["redacted"], true);
+    }
+}
