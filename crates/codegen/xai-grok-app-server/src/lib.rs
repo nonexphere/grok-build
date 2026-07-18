@@ -4,6 +4,7 @@
 
 pub mod controller;
 pub mod processor;
+pub mod replay;
 pub mod security;
 pub mod transport;
 

@@ -1,7 +1,7 @@
 # Tasks — v1-05 history, projection and replay
 
-- [ ] `AS105-01` [D-AP.4] In a new App Server projection module, index canonical session files without becoming execution truth; run `./scripts/run-rust-test-gate.sh projection_rebuild cargo test -p xai-grok-app-server projection_rebuild`; accept delete/rebuild produces identical IDs/order.
-- [ ] `AS105-02` [D-SP.14,D-AP.5] Persist/derive historyEpoch, eventSeq and entity revisions; run `./scripts/run-rust-test-gate.sh cursor_semantics cargo test -p xai-grok-app-server cursor_semantics`; accept stale/foreign/epoch-mismatched cursor fixtures fail explicitly.
+- [x] `AS105-01` [D-AP.4] In a new App Server projection module, index canonical session files without becoming execution truth; run `./scripts/run-rust-test-gate.sh projection_rebuild cargo test -p xai-grok-app-server projection_rebuild`; accept delete/rebuild produces identical IDs/order.
+- [x] `AS105-02` [D-SP.14,D-AP.5] Persist/derive historyEpoch, eventSeq and entity revisions; run `./scripts/run-rust-test-gate.sh cursor_semantics cargo test -p xai-grok-app-server cursor_semantics`; accept stale/foreign/epoch-mismatched cursor fixtures fail explicitly.
 - [ ] `AS105-03` [D-SP.15] Implement attach-boundary-replay-live subscription; run `./scripts/run-rust-test-gate.sh snapshot_then_live cargo test -p xai-grok-app-server snapshot_then_live`; accept no gaps/duplicates under concurrent event production.
 - [ ] `AS105-04` [D-SP.18] Implement retention/byte/queue boundaries; run `./scripts/run-rust-test-gate.sh replay_backpressure cargo test -p xai-grok-app-server replay_backpressure`; accept terminal events retained and explicit resync beyond limits.
 - [ ] `AS105-05` [D-RF.3,D-RF.4] Normalize all major runtime fixtures; run `./scripts/run-rust-test-gate.sh projection_goldens cargo test -p xai-grok-app-server projection_goldens`; accept stable Items and redaction across rebuild.
