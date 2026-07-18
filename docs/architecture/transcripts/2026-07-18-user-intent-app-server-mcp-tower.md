@@ -116,3 +116,27 @@ M5 - Se já vai existir a tool interna de acesso ao tower, não é preciso
 | M1 | hub ≡ Tower (control plane); sem tool `hub` separada |
 | M5 | In-process `tower_agent_*` para Tower local; MCP client config só para Towers **externas**; MCP **server** da Tower local continua para o mundo externo |
 | Recomendação | Concordar com M5; evitar auto-MCP loop na própria Tower |
+
+---
+
+## Round 4 — T1–T4 (chat/áudio)
+
+```text
+T1 - Cap configurável por máquina; por enquanto NÃO implementar enforcement
+     (deixar livre). Interessante logar uso de recurso por sessão e picos
+     para estudar depois e calibrar caps.
+T2 - Inspirar no Codex App Server; forks; iniciar sessão inativa; relacionar
+     thread↔sessão; ESTUDAR glossário Thread vs Session no Grok vs Codex.
+T3 - No início NÃO mexer no dashboard; deixar como está; reavaliar depois.
+     (pedir explicação dashboard ↔ ACP)
+T4 - A (connect default / spawn se não houver; nova tower só com flag)
+```
+
+### Interpretação round 4
+
+| ID | Interpretação |
+|----|----------------|
+| T1 | No hard cap MVP; optional telemetry; caps later via config |
+| T2 | Glossary + mapping study; fork + dormant resume; unified lifecycle direction |
+| T3 | Dashboard freeze in MVP; §13.14 explains ACP/roster/leader |
+| T4 | Option A confirmed |

@@ -1273,13 +1273,17 @@ Isto **substitui** a pergunta “1 tower por machine vs por cwd”:
 | M4 | **OK** | pagination + limits + redaction **SIM** |
 | M5 | **OK intenção** | Tool interna local; MCP config **só** towers **externas**; nome key `[PROPOSED]` |
 | M6 | **OK** | N Towers/machine; 1 Tower → any workspace sessions |
+| T1 | **OK** | Sem cap enforced no MVP; livre; telemetria de uso/picos desejável; caps configuráveis depois |
+| T2 | **OK direção** | Glossário Thread↔Session MUST; fork + dormant; unificar lifecycle; estudo Codex |
+| T3 | **OK** | Dashboard intocado no MVP; ver §13.14 |
+| T4 | **OK** | **A** — connect default tower / spawn / nova só com flag |
 
 ---
 
 ## 14. Perguntas que ainda faltam (atualizado)
 
-**Resolvido:** R1–R5, M1–M6 (M5 naming fino still proposed).  
-**Em aberto detalhado:** T1–T4 abaixo; depois K*, O*, Q0.*
+**Resolvido:** R1–R5, M1–M6, **T1–T4**.  
+**Em aberto (podem ser `[PROPOSED]` no plano):** K1–K3, O1–O2, Q0.2/Q0.4/Q0.6, Q7.6.
 
 ### 14.3 Sessões / swarm / dashboard — **T1–T4 em detalhe**
 
@@ -1287,101 +1291,131 @@ Responda em áudio/chat com o **ID** (ex. “T1: 32” / “T3: paralelo no MVP�
 
 ---
 
-#### **T1 — Cap de sessões concorrentes por Tower**
+#### **T1 — Cap de sessões** — **RESPONDIDO**
 
-**O que é:** quantas sessões/threads **vivas** uma única Tower (um processo) pode manter ao mesmo tempo.
-
-**Por que importa:** memória, CPU, FDs, fairness; sem cap, um swarm pode derrubar a máquina.
-
-**Opções típicas:**
-
-| Opção | Exemplo | Tradeoff |
-|-------|---------|----------|
-| A | Soft cap configurável, default **8** ou **16** | Seguro, configurável |
-| B | Soft cap alto (ex. **64**) | Mais swarm, mais risco |
-| C | **Sem** cap no MVP | Máxima flexibilidade; pior operabilidade |
-| D | Cap por **workspace** + cap global | Mais complexo |
-
-**Pergunta:** qual default e se é hard-fail vs “recusar start com erro claro”?
-
-**Resposta:**
+| Decisão | Valor |
+|---------|--------|
+| Cap rígido no MVP | **Não implementar** por enquanto — deixar **livre** |
+| Configurável por máquina | **SIM** (quando houver estudo de custo); default “unlimited” / sem enforcement |
+| Observabilidade | **Desejável:** logs de uso de recurso **por sessão** (atual + **picos**) — CPU/mem/FDs ou proxy metrics — para **depois** calibrar caps |
+| Ação Codex | Não gastar épico em quota system; opcional spike “session resource telemetry” como task não-bloqueante |
 
 ```text
-T1:
+T1: free no MVP; caps configuráveis depois com base em medição; log de uso/picos desejável
 ```
 
 ---
 
-#### **T2 — O que `tower_agent_start` cria?**
+#### **T2 — Thread vs Session / start** — **RESPONDIDO (direção + estudo)**
 
-Hoje o harness tem **sessões Grok** (arquivos em `~/.grok-oss/sessions/…`, dashboard, ACP). O plano App Server fala em **Thread** (identidade de protocolo Codex-like).
+| Decisão | Valor |
+|---------|--------|
+| Glossário | **MUST no plano:** definir **Thread** (Codex app-server) vs **Session** (Grok) vs Turn/Item — e o mapping 1:1 ou não |
+| Inspiração | Codex app-server, mas **não copy cego** |
+| Capacidades desejadas | **Fork** de conversa; **iniciar/reativar sessão inativa (dormant)**; start relacionado a trade/sessão de trabalho |
+| Unificação | Preferência de direção: **relacionar** thread↔sessão (não dois lifecycles órfãos); **Codex decide** mapping exato após estudo do código |
+| cwd | Implícito M6: start com workspace path |
 
-**Pergunta:** no MVP, `start` cria o quê?
+**Estudo obrigatório (Codex / planejador) — glossário:**
 
-| Opção | Significado |
-|-------|-------------|
-| **A — Unificado** | 1 start → 1 **Thread** app-server **=** 1 **sessão** Grok (mesma identidade, projectável nos dois mundos) **[recomendado]** |
-| **B — Só Thread** | Protocolo novo; sessão legada só se “importar” depois |
-| **C — Só sessão legada** | App Server só espelha; Thread é alias fino |
-| **D — Dois objetos** | Thread e Session separados no MVP (evitar — duplica lifecycle) |
-
-**Também diga:** `start` aceita `cwd`/workspace path? (pelo M6, **deveria** sim).
-
-**Resposta:**
+| Termo | Onde vive hoje | Notas |
+|-------|----------------|-------|
+| **Session (Grok)** | `~/.grok-oss/sessions/<cwd>/<id>/`, `SessionActor`, dashboard roster | Persistência real, history, tools |
+| **Thread (Codex app-server)** | Spec em `changes/grok_app_server_spec_bundle/` | Unidade de protocolo multi-client |
+| **Turn / Item** | Spec App Server | Unidade de trabalho / fragmentos stream |
+| **Subagent session** | depth≤1 sob parent | Não é peer Tower |
+| **Dormant** | Roster: on-disk, not resident | Candidato a “start inactive” / resume |
 
 ```text
-T2:
-cwd no start? (sim/não):
+T2: estudar Thread vs Session; fork + resume inactive; unificar conceitualmente; glossário no plano
 ```
 
 ---
 
-#### **T3 — Dashboard TUI vs App Server no MVP**
+#### **T3 — Dashboard no MVP** — **RESPONDIDO**
 
-Hoje: dashboard / multi-sessão via **leader + ACP + pager**.  
-Amanhã: App Server (WS/JSON-RPC) + MCP.
-
-**Pergunta:** no **MVP deste programa**, o dashboard:
-
-| Opção | Significado |
-|-------|-------------|
-| **A — Paralelo** | Dashboard continua no path **leader/ACP** atual; App Server/MCP é **outra porta** para scripts/remotos. TUI “nativa app-server” **depois**. **[menor risco]** |
-| **B — Client early** | Dashboard/TUI já fala App Server no MVP (migração grande; mais risco) |
-| **C — Híbrido** | Dashboard lista sessões via facade compartilhada, mas UI ainda ACP para o resto |
-
-Isto **não** impede multi-sessão no MVP (já existe); só define se reescrevemos a TUI agora.
-
-**Resposta:**
+| Decisão | Valor |
+|---------|--------|
+| MVP | **Não mexer** no dashboard — deixar como está |
+| Depois | Reavaliar migração para App Server client |
+| Explicação | Ver **§13.14** (dashboard ↔ ACP) |
 
 ```text
-T3:
+T3: leave dashboard as-is in MVP; explain relation to ACP in §13.14
 ```
 
 ---
 
-#### **T4 — Segundo `grok-oss` na máquina: connect vs nova Tower**
+#### **T4 — Connect default** — **RESPONDIDO = A**
 
-Com M6 você quer **várias Towers** se a pessoa quiser, e também o UX de “já tem uma rodando, conecta”.
-
-**Pergunta:** comportamento default ao rodar `grok-oss` / TUI de novo:
-
-| Opção | Comportamento |
-|-------|----------------|
-| **A — Connect default** | Se existe Tower **default** (env/socket conhecido), **conecta**; senão **spawn**. Nova Tower só com flag explícita (`--tower new` / `--listen …` / `--isolated`). **[recomendado; parece o leader atual]** |
-| **B — Sempre novo processo** | Cada invoke = Tower nova (ruim pra multi-UI no mesmo hub) |
-| **C — Prompt interativo** | “Conectar na Tower X / criar nova?” |
-| **D — Por workspace** | Default tower **por cwd** (conflita um pouco com “sessão em qualquer workspace” **dentro** da tower, mas pode coexistir como *discovery key*) |
-
-**Também:** como o user **escolhe** entre Towers se há várias? (porta, nome, `GROK_OSS_TOWER_URL`, lista local?)
-
-**Resposta:**
+| Decisão | Valor |
+|---------|--------|
+| Default | **A:** connect na Tower default se existir; senão spawn; **nova** Tower só com flag explícita |
+| Multi-tower | Continua M6 (flags/`--listen`/URL para instância não-default) |
 
 ```text
-T4 default:
-T4 como escolher entre várias:
+T4: A
 ```
 
 ---
+
+### 13.14 Dashboard TUI ↔ ACP (explicação factual — T3)
+
+> Para o humano e para o Codex: **o que é o dashboard hoje** e como se liga ao ACP.  
+> Evidência: `xai-grok-pager` views/dashboard, `xai-grok-shell` roster + session handlers, user-guide sessions.
+
+#### O que é o dashboard
+
+- UI fullscreen do **pager** (`ActiveView::AgentDashboard`): lista **agents/sessões top-level** (e subagents), com peek, attach, dispatch de novo agent, filtros.
+- Abre via `/dashboard` (alias `/sessions`) — ver `~/.grok/docs/user-guide/17-sessions.md`.
+- Feature flag: `GROK_AGENT_DASHBOARD=0` ou `[dashboard].enabled`.
+- **Não** é o App Server; **não** é MCP. É view da TUI.
+
+#### Onde entram os dados
+
+```text
+┌─────────────┐     ACP / leader IPC      ┌──────────────────┐
+│  TUI pager  │ ◄──────────────────────► │  Leader / MvpAgent│
+│  dashboard  │  ext methods + notify    │  SessionActors    │
+└─────────────┘                          └──────────────────┘
+        │                                          │
+        │ rows from app.agents + roster            │ disk sessions
+        ▼                                          ▼
+  render list                          ~/.grok-oss/sessions/...
+```
+
+1. **ACP (Agent Client Protocol)**  
+   Canal entre **cliente** (TUI/pager, IDE, stdio) e **agent runtime** (shell/`MvpAgent`).  
+   Métodos “normais” de sessão (prompt, updates de stream, permissões) + **ext methods** `x.ai/…`.
+
+2. **Roster multi-sessão (FleetView)** — pensado para dashboard multi-client no **leader**:
+   - request `x.ai/sessions/list` → lista `RosterEntry` (resident + dormant recentes)
+   - notify `x.ai/sessions/changed` → upserts/removes para dashboards abertos ficarem em sync  
+   Código: `shell/src/agent/roster.rs`, `handlers/session.rs`.
+
+3. **Outros ext methods de sessão**  
+   `x.ai/session/list`, `session/info`, `session/close`, `session_summaries/*` — metadados e load.
+
+4. **Leader**  
+   Um processo “dono” das sessões resident; vários clients TUI conectam (`connect_or_spawn`).  
+   Dashboard em cada client enxerga o **fleet** via roster ACP, não via App Server JSON-RPC.
+
+5. **Session files**  
+   Verdade em disco: `updates.jsonl`, `chat_history.jsonl`, etc. (home produto `~/.grok-oss`).
+
+#### Relação com App Server / Tower (MVP)
+
+| Peça | MVP (decisão T3) |
+|------|------------------|
+| Dashboard | **Intocado** — continua ACP + leader + pager |
+| App Server WS + MCP | **Novo** path para scripts/remoto/orchestrator tools |
+| Futuro | Opcional: dashboard vira client App Server (TUI migration epic — **não** MVP) |
+
+**Não confundir:**
+- **Dashboard** = UI multi-sessão na TUI  
+- **Tower** = daemon/control plane (produto novo nome; promove leader)  
+- **ACP** = protocolo client↔agent **atual**  
+- **App Server** = protocolo Thread/Turn/Item **novo** (Codex-like)
 
 ### 14.4 SDK TypeScript
 
