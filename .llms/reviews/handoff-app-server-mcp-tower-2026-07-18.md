@@ -1060,6 +1060,16 @@ Quando o humano autorizar planejamento: consolidar épicos/contratos a partir de
 
 **Como ler:** onde §13 conflita com defaults da §5–§6, **§13 vence**.
 
+### 13.0 Glossário de produto (travado)
+
+| Termo | Uso |
+|-------|-----|
+| **Session** | Unidade canônica de conversa/trabalho (persistida + runtime). **Não** chamar de thread na API/docs Grok OSS. |
+| **Turn** | Uma rodada de trabalho dentro de uma session |
+| **Item** | Unidade streamável dentro de um turn |
+| **Tower** | Daemon/control plane multi-session |
+| **Thread** | Apenas ao citar **Codex** ou adapter de compat — sempre mapear → Session |
+
 ### 13.1 Brand e conceito Tower
 
 | Decisão | Valor |
@@ -1274,7 +1284,7 @@ Isto **substitui** a pergunta “1 tower por machine vs por cwd”:
 | M5 | **OK intenção** | Tool interna local; MCP config **só** towers **externas**; nome key `[PROPOSED]` |
 | M6 | **OK** | N Towers/machine; 1 Tower → any workspace sessions |
 | T1 | **OK** | Sem cap enforced no MVP; livre; telemetria de uso/picos desejável; caps configuráveis depois |
-| T2 | **OK direção** | Glossário Thread↔Session MUST; fork + dormant; unificar lifecycle; estudo Codex |
+| T2 | **OK** | Termo canônico **session** (não thread); Thread Codex = alias de wire/compat; fork + dormant |
 | T3 | **OK** | Dashboard intocado no MVP; ver §13.14 |
 | T4 | **OK** | **A** — connect default tower / spawn / nova só com flag |
 
@@ -1306,28 +1316,31 @@ T1: free no MVP; caps configuráveis depois com base em medição; log de uso/pi
 
 ---
 
-#### **T2 — Thread vs Session / start** — **RESPONDIDO (direção + estudo)**
+#### **T2 — Session (canônico) / start** — **RESPONDIDO**
 
 | Decisão | Valor |
 |---------|--------|
-| Glossário | **MUST no plano:** definir **Thread** (Codex app-server) vs **Session** (Grok) vs Turn/Item — e o mapping 1:1 ou não |
-| Inspiração | Codex app-server, mas **não copy cego** |
-| Capacidades desejadas | **Fork** de conversa; **iniciar/reativar sessão inativa (dormant)**; start relacionado a trade/sessão de trabalho |
-| Unificação | Preferência de direção: **relacionar** thread↔sessão (não dois lifecycles órfãos); **Codex decide** mapping exato após estudo do código |
-| cwd | Implícito M6: start com workspace path |
+| **Termo de produto/protocolo Grok OSS** | **`session`** — **não** usar `thread` como nome primário |
+| Inspiração | Codex app-server (lifecycle Thread/Turn/Item), mas **renomeamos** Thread → **Session** no nosso glossário e APIs públicas onde controlamos o nome |
+| Mapping Codex | `Thread` (Codex wire/docs) ⇔ **`Session`** (Grok OSS). Adapters de compat podem falar “thread” na borda Codex; **core, MCP `tower_agent_*`, SDK TS, docs** falam **session** |
+| Capacidades desejadas | **Fork**; **iniciar/reativar session inativa (dormant)**; start com workspace |
+| Unificação | 1 lifecycle: session app-server = session Grok persistida (sem segundo objeto “thread” paralelo) |
+| cwd | M6: start com workspace path |
 
-**Estudo obrigatório (Codex / planejador) — glossário:**
+**Glossário canônico (travado):**
 
-| Termo | Onde vive hoje | Notas |
-|-------|----------------|-------|
-| **Session (Grok)** | `~/.grok-oss/sessions/<cwd>/<id>/`, `SessionActor`, dashboard roster | Persistência real, history, tools |
-| **Thread (Codex app-server)** | Spec em `changes/grok_app_server_spec_bundle/` | Unidade de protocolo multi-client |
-| **Turn / Item** | Spec App Server | Unidade de trabalho / fragmentos stream |
-| **Subagent session** | depth≤1 sob parent | Não é peer Tower |
-| **Dormant** | Roster: on-disk, not resident | Candidato a “start inactive” / resume |
+| Termo Grok OSS | Equiv. Codex (referência) | Onde vive |
+|----------------|---------------------------|-----------|
+| **Session** | Thread | `~/.grok-oss/sessions/…`, `SessionActor`, roster, `tower_agent_*`, App Server API |
+| **Turn** | Turn | Unidade de trabalho user→agent |
+| **Item** | Item | Fragmentos stream (message, tool, …) |
+| **Subagent session** | (subagent) | depth≤1; **não** peer Tower |
+| **Dormant session** | archived/inactive thread-ish | on-disk, not resident — resume/start inactive |
+
+**Implicação para specs existentes:** o bundle em `changes/grok_app_server_spec_bundle/` e épicos que dizem Thread/Turn/Item devem ser **adaptados na consolidação do plano** para Session/Turn/Item (ou manter Thread só em seção “Codex mapping”). Métodos tipo `thread/start` → preferir `session/start` (ou dual-name no wire só se compat Codex for goal explícito — default: **session/**).
 
 ```text
-T2: estudar Thread vs Session; fork + resume inactive; unificar conceitualmente; glossário no plano
+T2: CANONICAL TERM = session (not thread); Codex Thread is external alias only
 ```
 
 ---
@@ -1415,7 +1428,7 @@ T4: A
 - **Dashboard** = UI multi-sessão na TUI  
 - **Tower** = daemon/control plane (produto novo nome; promove leader)  
 - **ACP** = protocolo client↔agent **atual**  
-- **App Server** = protocolo Thread/Turn/Item **novo** (Codex-like)
+- **App Server** = protocolo **Session**/Turn/Item **novo** (inspirado no Codex Thread/Turn/Item; **termo nosso = session**)
 
 ### 14.4 SDK TypeScript
 

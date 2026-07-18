@@ -140,3 +140,16 @@ T4 - A (connect default / spawn se não houver; nova tower só com flag)
 | T2 | Glossary + mapping study; fork + dormant resume; unified lifecycle direction |
 | T3 | Dashboard freeze in MVP; §13.14 explains ACP/roster/leader |
 | T4 | Option A confirmed |
+
+---
+
+## Round 5 — glossário
+
+```text
+usaremos o termo session invés de thread então
+```
+
+| Decisão | Valor |
+|---------|--------|
+| Termo canônico | **session** |
+| thread | só mapping Codex / compat externo |
