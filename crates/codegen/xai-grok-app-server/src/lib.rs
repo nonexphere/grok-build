@@ -4,6 +4,7 @@
 
 pub mod controller;
 pub mod processor;
+pub mod security;
 pub mod transport;
 
 pub use processor::FacadeProcessor;

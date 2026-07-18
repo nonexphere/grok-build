@@ -33,6 +33,9 @@ xai-grok-pager-minimal = { path = "../xai-grok-pager-minimal" }
 
 # Agent runtime + leader/stdio/headless entry points.
 xai-grok-shell = { workspace = true }
+xai-grok-tower = { path = "../xai-grok-tower" }
+xai-grok-app-server = { path = "../xai-grok-app-server" }
+xai-grok-app-server-protocol = { path = "../xai-grok-app-server-protocol" }
 xai-grok-auth = { workspace = true }
 xai-grok-multi-auth = { workspace = true }
 xai-grok-update = { path = "../xai-grok-update" }

@@ -67,7 +67,27 @@ pub async fn handle_ws_text(
     processor: Arc<FacadeProcessor>,
     text: &str,
 ) -> Result<Option<String>, ProcessorError> {
+    validate_ws_text_frame(text)?;
     processor.handle_line(text).await
+}
+
+/// Reject binary framing stand-ins, batches, and oversized text frames (1 MiB).
+pub fn validate_ws_text_frame(text: &str) -> Result<(), ProcessorError> {
+    const MAX: usize = 1_048_576;
+    if text.len() > MAX {
+        return Err(ProcessorError {
+            code: -32021,
+            message: "Message exceeds the size limit.".into(),
+        });
+    }
+    let trimmed = text.trim_start();
+    if trimmed.starts_with('[') {
+        return Err(ProcessorError {
+            code: -32600,
+            message: "JSON-RPC batches are unsupported".into(),
+        });
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -117,5 +137,16 @@ mod websocket_tests {
         let resp = handle_ws_text(processor, &init).await.unwrap().unwrap();
         let v: serde_json::Value = serde_json::from_str(&resp).unwrap();
         assert_eq!(v["result"]["protocolVersion"], PROTOCOL_VERSION);
+    }
+
+    #[test]
+    fn websocket_transport_rejects_batch_and_oversized_frames() {
+        assert!(validate_ws_text_frame(r#"{"jsonrpc":"2.0"}"#).is_ok());
+        assert_eq!(
+            validate_ws_text_frame("[1,2]").unwrap_err().code,
+            -32600
+        );
+        let big = "x".repeat(1_048_577);
+        assert_eq!(validate_ws_text_frame(&big).unwrap_err().code, -32021);
     }
 }

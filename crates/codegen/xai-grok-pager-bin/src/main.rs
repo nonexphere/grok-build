@@ -5,6 +5,7 @@
     unreachable_code,
     dead_code
 )]
+mod app_server_composition;
 #[cfg(all(feature = "jemalloc", unix))]
 #[global_allocator]
 static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
