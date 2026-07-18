@@ -3,21 +3,23 @@
 | Field | Value |
 |---|---|
 | Branch | `goblin-implement-epic-tree` |
-| Latest commit | `eeee2e3` + uncommitted Shell adapter inject |
-| Wave | Wave 0–2 green (FakeRuntime); Shell inject seam + one-actor registry green |
-| Next | SessionActor command mapping, pager-bin composition, providers, MCP HTTP, hardening |
+| Commits | `eeee2e3` … latest composition/security |
 | Protocol | `2026-07-18.experimental-v2` |
+| Wave progress | 0 complete; 1–2 FakeRuntime + inject complete; 3–6 partial |
+| Next | SessionActor command mapping; provider verticals; full TLS/HUMAN gates |
 
-## Green evidence
-- protocol 22, tower 14, app-server 13, tools 8, mcp 3, shell app_server_runtime 5
-- named gates non-vacuous
-- grok-oss builds
-- reviews under reviews/wave0-2/
+## Green packages (post-clean re-run)
+- protocol 22, tower 14, app-server 16, tools 8, mcp 5
+- pager-bin composition_root ok (3 bins)
+- multi-auth api_key_login 2
 
-## Remaining for stop condition
-- Full SessionActor/leader method mapping (not just inject port)
-- pager-bin composition root wiring
-- 10/v1-02..05 providers
-- MCP Streamable HTTP, full WS server
-- Wave 6 security/ops + HUMAN TLS
-- Phase 7 final audit/FINAL_REPORT
+## Still open for program stop condition
+1. Full SessionActor/leader method mapping (adapter still injects FakeRuntime by default)
+2. Provider openrouter/groq/cloudflare verticals
+3. Full WS TCP server + MCP HTTP server (helpers only)
+4. Wave 6 full threat matrix / ops runbooks
+5. Phase 7 FINAL_REPORT after all epics
+6. HUMAN: TLS production remote, npm publish, live provider creds
+
+## Disk note
+`cargo clean` required after ENOSPC during shell rebuild; 43G freed.
