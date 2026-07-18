@@ -1,0 +1,51 @@
+=== SDK typecheck/test/drift ===
+
+> @brasalabs/grok-oss-app-server@0.0.0-experimental typecheck
+> tsc --noEmit
+
+typecheck:0
+
+> @brasalabs/grok-oss-app-server@0.0.0-experimental test
+> tsx --test test/*.test.ts
+
+TAP version 13
+# Subtest: initialize sends initialized notification only after success
+ok 1 - initialize sends initialized notification only after success
+  ---
+  duration_ms: 2.986578
+  type: 'test'
+  ...
+# Subtest: domain errors retain code and retryability
+ok 2 - domain errors retain code and retryability
+  ---
+  duration_ms: 0.612268
+  type: 'test'
+  ...
+# Subtest: WebSocket transport forbids credentials or query parameters in URL
+ok 3 - WebSocket transport forbids credentials or query parameters in URL
+  ---
+  duration_ms: 0.230591
+  type: 'test'
+  ...
+# Subtest: subscriptions for the same session route independently by subscriptionId
+ok 4 - subscriptions for the same session route independently by subscriptionId
+  ---
+  duration_ms: 22.709275
+  type: 'test'
+  ...
+1..4
+# tests 4
+# suites 0
+# pass 4
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 232.331815
+test:0
+
+> @brasalabs/grok-oss-app-server@0.0.0-experimental check:drift
+> node scripts/check-schema-drift.mjs
+
+Rust → generated schema snapshot → operational schema → TypeScript structural drift check passed
+drift:0

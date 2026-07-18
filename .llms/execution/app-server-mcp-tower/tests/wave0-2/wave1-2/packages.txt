@@ -1,0 +1,89 @@
+warning: /home/guilherme/github/grok-goblin/crates/codegen/xai-grok-pager-bin/Cargo.toml: file `/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-pager-bin/src/main.rs` found to be present in multiple build targets:
+  * `bin` target `goblin`
+  * `bin` target `grok-oss`
+  * `bin` target `xai-grok-pager`
+   Compiling xai-grok-app-server-protocol v0.1.0 (/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-app-server-protocol)
+   Compiling hyper v1.8.1
+   Compiling tower v0.5.2
+   Compiling tower-http v0.6.8
+   Compiling hyper-util v0.1.20
+   Compiling reqwest v0.12.24
+   Compiling xai-grok-tower v0.1.0 (/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-tower)
+   Compiling xai-grok-tower-tools v0.1.0 (/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-tower-tools)
+   Compiling xai-grok-app-server v0.1.0 (/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-app-server)
+   Compiling jsonschema v0.30.0
+   Compiling xai-grok-mcp-server v0.1.0 (/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-mcp-server)
+warning: unused imports: `TOWER_TOOL_NAMES` and `is_authorized`
+ --> crates/codegen/xai-grok-mcp-server/src/lib.rs:9:24
+  |
+9 |     invoke_tower_tool, is_authorized, TowerToolDescriptor, TOWER_TOOL_DESCRIPTORS, TOWER_TOOL_NAMES,
+  |                        ^^^^^^^^^^^^^                                               ^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `xai-grok-mcp-server` (lib) generated 1 warning (run `cargo fix --lib -p xai-grok-mcp-server` to apply 1 suggestion)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 10.68s
+     Running unittests src/lib.rs (target/debug/deps/xai_grok_app_server-51684551cefc3841)
+
+running 8 tests
+test processor::processor_tests::composition_processor_depends_on_facade_trait_not_shell ... ok
+test conformance_tests::runtime_facade_end_to_end_via_processor ... ok
+test processor::processor_tests::processor_rejects_methods_before_initialize ... ok
+test transport::in_process::in_process_tests::in_process_initialize_session_turn_item_stream ... ok
+test transport::stdio::stdio_tests::stdio_ndjson_one_json_object_per_line_vertical_slice ... ok
+test conformance_tests::conformance_in_process_and_stdio_normalized_outputs_match ... ok
+test processor::processor_tests::processor_initialize_session_turn_vertical_slice ... ok
+test conformance_tests::backpressure_subscribe_is_bounded_page ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running unittests src/lib.rs (target/debug/deps/xai_grok_app_server_protocol-ed82611ac59b2805)
+
+running 22 tests
+test envelope::initialize_envelope_tests::initialize_envelope_rejects_missing_jsonrpc_and_batches ... ok
+test errors::errors_tests::errors_initialize_gate_maps_pre_init_classes ... ok
+test errors::errors_tests::errors_defaults_match_contract_backpressure_policy ... ok
+test envelope::initialize_envelope_tests::initialize_envelope_accepts_notification_and_failure_shapes ... ok
+test errors::errors_tests::errors_catalog_covers_jsonrpc_and_domain_codes ... ok
+test envelope::initialize_envelope_tests::initialize_envelope_accepts_strict_request_shape ... ok
+test events::events_tests::events_invalid_epoch_and_interaction_request_shapes ... ok
+test methods::methods_tests::methods_session_and_turn_params_roundtrip_happy_and_reject_unknown ... ok
+test methods::methods_tests::methods_results_and_method_document_tags_are_stable ... ok
+test tests::initialize_roundtrip_preserves_wire_shape ... ok
+test events::events_tests::events_snapshot_replay_live_ordering_shapes_roundtrip ... ok
+test tests::provider_binding_is_structured_and_contains_no_secret_material ... ok
+test transitions::entity_transition_tests::entity_all_mvp_item_body_kinds_roundtrip ... ok
+test tests::all_four_jsonl_goldens_are_valid_json_objects ... ok
+test transitions::entity_transition_tests::entity_session_turn_item_transitions_and_roundtrip ... ok
+test tests::wire_counters_serialize_as_lossless_decimal_strings ... ok
+test tests::item_roundtrip_preserves_tagged_body ... ok
+test tests::checked_in_generated_schema_matches_rust_types_byte_for_byte ... ok
+test tests::generated_protocol_schema_compiles ... ok
+test tests::all_nine_tower_tool_input_and_output_examples_validate ... ok
+test tests::checked_in_schemas_compile_and_cover_nine_tool_pairs ... ok
+test tests::golden_params_and_events_validate_against_named_checked_in_definitions ... ok
+
+test result: ok. 22 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.54s
+
+     Running unittests src/lib.rs (target/debug/deps/xai_grok_mcp_server-e5e2f09f563a5257)
+
+running 3 tests
+test tests::mcp_lists_exactly_nine_tools ... ok
+test tests::no_self_mcp_hub_name ... FAILED
+test tests::mcp_stdio_tools_call_shares_semantic_core_with_in_process ... ok
+
+failures:
+
+---- tests::no_self_mcp_hub_name stdout ----
+
+thread 'tests::no_self_mcp_hub_name' (287285) panicked at crates/codegen/xai-grok-mcp-server/src/lib.rs:146:9:
+assertion failed: !src.contains("tower_agent_hub")
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    tests::no_self_mcp_hub_name
+
+test result: FAILED. 2 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p xai-grok-mcp-server --lib`

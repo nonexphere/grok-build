@@ -598,4 +598,44 @@ mod tests {
 
         handle.join().unwrap();
     }
+
+    /// Characterization: many contenders racing `try_acquire` produce exactly one
+    /// winner; every loser observes the lock as held by that single leader.
+    /// This is the core `connect_or_spawn` single-spawn invariant.
+    #[test]
+    fn connect_or_spawn_has_single_winner() {
+        let temp = TempDir::new().unwrap();
+        let lock_path = temp.path().join("leader.lock");
+        let sock_path = temp.path().join("leader.sock");
+
+        let barrier = std::sync::Arc::new(std::sync::Barrier::new(8));
+        let winners = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let mut handles = Vec::new();
+        for _ in 0..8 {
+            let barrier = barrier.clone();
+            let winners = winners.clone();
+            let lock_path = lock_path.clone();
+            let sock_path = sock_path.clone();
+            handles.push(std::thread::spawn(move || {
+                let mut lock = LeaderLock::from_paths(lock_path, sock_path);
+                barrier.wait();
+                if lock.try_acquire().unwrap() {
+                    winners.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    // Hold the lock long enough for losers to observe contention.
+                    std::thread::sleep(Duration::from_millis(50));
+                    true
+                } else {
+                    false
+                }
+            }));
+        }
+        let outcomes: Vec<bool> = handles.into_iter().map(|h| h.join().unwrap()).collect();
+        assert_eq!(
+            winners.load(std::sync::atomic::Ordering::SeqCst),
+            1,
+            "exactly one connect_or_spawn contender must win the leader lock"
+        );
+        assert_eq!(outcomes.iter().filter(|won| **won).count(), 1);
+        assert_eq!(outcomes.iter().filter(|won| !**won).count(), 7);
+    }
 }

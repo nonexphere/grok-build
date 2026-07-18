@@ -11,5 +11,8 @@ serde_json = { workspace = true }
 xai-grok-app-server-protocol = { path = "../xai-grok-app-server-protocol" }
 xai-grok-tower = { path = "../xai-grok-tower" }
 
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt"] }
+
 [lints]
 workspace = true

@@ -7,8 +7,13 @@ description = "Experimental grok-oss App Server processor boundary"
 
 [dependencies]
 async-trait = { workspace = true }
+serde = { workspace = true }
 serde_json = { workspace = true }
 xai-grok-app-server-protocol = { path = "../xai-grok-app-server-protocol" }
+xai-grok-tower = { path = "../xai-grok-tower" }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread"] }
 
 [features]
 default = ["in-process", "stdio"]

@@ -8,10 +8,20 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{fmt, str::FromStr};
 
+pub mod envelope;
+pub mod errors;
 pub mod events;
 pub mod methods;
+pub mod transitions;
+pub use envelope::*;
+pub use errors::{
+    classify_pre_init, gate_error, lookup as lookup_error, lookup_numeric as lookup_error_numeric,
+    DomainErrorData, ErrorSpec, InitializeGateClass, ALL as ERROR_CATALOG,
+};
+pub use errors::defaults as protocol_defaults;
 pub use events::*;
 pub use methods::*;
+pub use transitions::*;
 
 pub const PROTOCOL_VERSION: &str = "2026-07-18.experimental-v2";
 

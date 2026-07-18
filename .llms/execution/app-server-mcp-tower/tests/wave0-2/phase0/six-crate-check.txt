@@ -1,0 +1,12 @@
+=== six crate check ===
+warning: /home/guilherme/github/grok-goblin/crates/codegen/xai-grok-pager-bin/Cargo.toml: file `/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-pager-bin/src/main.rs` found to be present in multiple build targets:
+  * `bin` target `goblin`
+  * `bin` target `grok-oss`
+  * `bin` target `xai-grok-pager`
+    Checking xai-grok-app-server-protocol v0.1.0 (/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-app-server-protocol)
+    Checking xai-grok-tower v0.1.0 (/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-tower)
+    Checking xai-grok-app-server-client v0.1.0 (/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-app-server-client)
+    Checking xai-grok-app-server v0.1.0 (/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-app-server)
+    Checking xai-grok-tower-tools v0.1.0 (/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-tower-tools)
+    Checking xai-grok-mcp-server v0.1.0 (/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-mcp-server)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 2.51s

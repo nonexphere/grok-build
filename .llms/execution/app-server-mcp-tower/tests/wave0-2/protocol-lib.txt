@@ -1,0 +1,34 @@
+warning: /home/guilherme/github/grok-goblin/crates/codegen/xai-grok-pager-bin/Cargo.toml: file `/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-pager-bin/src/main.rs` found to be present in multiple build targets:
+  * `bin` target `goblin`
+  * `bin` target `grok-oss`
+  * `bin` target `xai-grok-pager`
+   Compiling xai-grok-app-server-protocol v0.1.0 (/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-app-server-protocol)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.38s
+     Running unittests src/lib.rs (target/debug/deps/xai_grok_app_server_protocol-3dadc6003191b4a7)
+
+running 22 tests
+test envelope::initialize_envelope_tests::initialize_envelope_accepts_strict_request_shape ... ok
+test errors::errors_tests::errors_defaults_match_contract_backpressure_policy ... ok
+test envelope::initialize_envelope_tests::initialize_envelope_rejects_missing_jsonrpc_and_batches ... ok
+test envelope::initialize_envelope_tests::initialize_envelope_accepts_notification_and_failure_shapes ... ok
+test errors::errors_tests::errors_initialize_gate_maps_pre_init_classes ... ok
+test errors::errors_tests::errors_catalog_covers_jsonrpc_and_domain_codes ... ok
+test events::events_tests::events_invalid_epoch_and_interaction_request_shapes ... ok
+test methods::methods_tests::methods_session_and_turn_params_roundtrip_happy_and_reject_unknown ... ok
+test events::events_tests::events_snapshot_replay_live_ordering_shapes_roundtrip ... ok
+test methods::methods_tests::methods_results_and_method_document_tags_are_stable ... ok
+test tests::wire_counters_serialize_as_lossless_decimal_strings ... ok
+test tests::item_roundtrip_preserves_tagged_body ... ok
+test tests::initialize_roundtrip_preserves_wire_shape ... ok
+test tests::provider_binding_is_structured_and_contains_no_secret_material ... ok
+test transitions::entity_transition_tests::entity_session_turn_item_transitions_and_roundtrip ... ok
+test transitions::entity_transition_tests::entity_all_mvp_item_body_kinds_roundtrip ... ok
+test tests::all_four_jsonl_goldens_are_valid_json_objects ... ok
+test tests::checked_in_generated_schema_matches_rust_types_byte_for_byte ... ok
+test tests::generated_protocol_schema_compiles ... ok
+test tests::checked_in_schemas_compile_and_cover_nine_tool_pairs ... ok
+test tests::all_nine_tower_tool_input_and_output_examples_validate ... ok
+test tests::golden_params_and_events_validate_against_named_checked_in_definitions ... ok
+
+test result: ok. 22 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.78s
+

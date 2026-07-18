@@ -1,0 +1,56 @@
+=== six package tests ===
+warning: /home/guilherme/github/grok-goblin/crates/codegen/xai-grok-pager-bin/Cargo.toml: file `/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-pager-bin/src/main.rs` found to be present in multiple build targets:
+  * `bin` target `goblin`
+  * `bin` target `grok-oss`
+  * `bin` target `xai-grok-pager`
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.39s
+     Running unittests src/lib.rs (target/debug/deps/xai_grok_app_server-93917eaf3ff0132e)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/xai_grok_app_server_client-bb8579df810c7c28)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/xai_grok_app_server_protocol-56dd20843e0d28b7)
+
+running 10 tests
+test tests::all_four_jsonl_goldens_are_valid_json_objects ... ok
+test tests::checked_in_generated_schema_matches_rust_types_byte_for_byte ... ok
+test tests::item_roundtrip_preserves_tagged_body ... ok
+test tests::provider_binding_is_structured_and_contains_no_secret_material ... ok
+test tests::wire_counters_serialize_as_lossless_decimal_strings ... ok
+test tests::initialize_roundtrip_preserves_wire_shape ... ok
+test tests::generated_protocol_schema_compiles ... ok
+test tests::all_nine_tower_tool_input_and_output_examples_validate ... ok
+test tests::checked_in_schemas_compile_and_cover_nine_tool_pairs ... ok
+test tests::golden_params_and_events_validate_against_named_checked_in_definitions ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.58s
+
+     Running unittests src/lib.rs (target/debug/deps/xai_grok_mcp_server-4b533c4b5230bd1e)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/xai_grok_tower-29fadfdc47ac14c2)
+
+running 1 test
+test instance::tests::tower_instance_id_enforces_wire_format ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/xai_grok_tower_tools-225bb8488c440ccc)
+
+running 3 tests
+test tests::acl_is_fail_closed_by_default ... ok
+test tests::contract_has_exactly_nine_unique_tools ... ok
+test tests::every_descriptor_resolves_exact_input_and_output_definition ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

@@ -501,6 +501,52 @@ mod tests {
         }
     }
 
+    /// Byte-level characterization fixture for the Registered handshake used by
+    /// discovery/`connect_or_spawn`. Do not change field names without a version
+    /// bump — clients depend on these bytes remaining stable.
+    #[test]
+    fn leader_handshake_registered_bytes_remain_stable() {
+        let msg = ServerMessage::Registered {
+            client_id: 1,
+            ready: true,
+            leader_protocol_version: Some(LEADER_PROTOCOL_VERSION),
+            leader_binary_version: Some("0.0.0-test".into()),
+            leader_capabilities: Some(LeaderCapabilities {
+                control_v1: true,
+                runtime_cpu_profile: false,
+                profile_formats: vec![ProfileArtifactFormat::Svg],
+                workspace_exposure: true,
+                relaunch_v1: true,
+            }),
+        };
+        let json = serde_json::to_string(&msg).unwrap();
+        // Stable type tag and camelCase-free snake_case leader wire names.
+        assert!(json.contains(r#""type":"registered""#), "{json}");
+        assert!(json.contains(r#""client_id":1"#), "{json}");
+        assert!(json.contains(r#""ready":true"#), "{json}");
+        assert!(
+            json.contains(&format!(r#""leader_protocol_version":{LEADER_PROTOCOL_VERSION}"#)),
+            "{json}"
+        );
+        let decoded: ServerMessage = serde_json::from_str(&json).unwrap();
+        assert!(matches!(
+            decoded,
+            ServerMessage::Registered {
+                client_id: 1,
+                ready: true,
+                leader_protocol_version: Some(LEADER_PROTOCOL_VERSION),
+                leader_binary_version: Some(ref v),
+                leader_capabilities: Some(LeaderCapabilities {
+                    control_v1: true,
+                    runtime_cpu_profile: false,
+                    profile_formats: ref formats,
+                    workspace_exposure: true,
+                    relaunch_v1: true,
+                }),
+            } if v == "0.0.0-test" && formats == &vec![ProfileArtifactFormat::Svg]
+        ));
+    }
+
     #[test]
     fn registered_serde_compatibility_without_optional_metadata() {
         let json = r#"{"type":"registered","client_id":7}"#;

@@ -1,7 +1,27 @@
 //! Tower contracts. This scaffold deliberately does not create a second session runtime.
+//!
+//! Composition root (`xai-grok-pager-bin`) injects a Shell-backed
+//! [`GrokRuntimeFacade`]. This crate never imports Shell.
 
+pub mod budgets;
+pub mod fake;
 pub mod instance;
-pub use instance::{TowerHandle, TowerInstanceId, TowerInstanceIdError};
+pub mod lease;
+pub mod metadata;
+pub mod projection;
+pub mod registry;
+pub mod workspace;
+pub use budgets::{
+    admit_resident, admit_turn, ResourceBudgets, ResourceUsage,
+};
+pub use fake::FakeRuntime;
+pub use instance::{InstanceDirectory, TowerHandle, TowerInstanceId, TowerInstanceIdError};
+pub use lease::{ControllerLease, LeaseTable};
+pub use metadata::{Residency, SessionMetadata};
+pub use projection::{
+    contains_secret_canary, project_runtime_event, project_unknown_diagnostic, redact_text,
+};
+pub use registry::{ActorToken, ResidentSession, SessionRegistry};
 
 use async_trait::async_trait;
 use xai_grok_app_server_protocol::{
@@ -59,4 +79,50 @@ pub enum RuntimeEvent {
     },
     ItemCompleted(Item),
     InteractionRequested(InteractionRequest),
+}
+
+#[cfg(test)]
+mod leader_characterization_tests {
+    use super::*;
+
+    /// Documents the Wave-0 ownership claim: Tower owns only facade/registry
+    /// seams; it does not define a SessionActor type or import Shell.
+    #[test]
+    fn leader_characterization_tower_has_no_second_actor_type() {
+        // Production sources under this crate must not define a SessionActor type.
+        // (Comments may mention SessionActor as the Shell-owned authority.)
+        let production_sources = [
+            include_str!("lib.rs")
+                .split("#[cfg(test)]")
+                .next()
+                .expect("production lib"),
+            include_str!("registry.rs")
+                .split("#[cfg(test)]")
+                .next()
+                .expect("production registry"),
+            include_str!("instance.rs")
+                .split("#[cfg(test)]")
+                .next()
+                .expect("production instance"),
+        ];
+        for src in production_sources {
+            assert!(
+                !src.contains("struct SessionActor") && !src.contains("enum SessionActor"),
+                "Tower must not define SessionActor"
+            );
+        }
+        let cargo = include_str!("../Cargo.toml");
+        assert!(
+            !cargo.contains("xai-grok-shell"),
+            "Tower must not depend on Shell; composition root injects the adapter"
+        );
+        // Registry tokens are opaque and do not embed runtime state machines.
+        let mut registry = SessionRegistry::new();
+        let (token, created) = registry
+            .get_or_insert_with("s1", |_| Ok(()))
+            .expect("insert");
+        assert!(created);
+        assert_eq!(token.as_u64(), 1);
+        assert_eq!(registry.get("s1"), Some(token));
+    }
 }

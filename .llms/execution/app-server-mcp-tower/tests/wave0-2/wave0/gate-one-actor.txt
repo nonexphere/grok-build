@@ -1,0 +1,13 @@
+warning: /home/guilherme/github/grok-goblin/crates/codegen/xai-grok-pager-bin/Cargo.toml: file `/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-pager-bin/src/main.rs` found to be present in multiple build targets:
+  * `bin` target `goblin`
+  * `bin` target `grok-oss`
+  * `bin` target `xai-grok-pager`
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.30s
+     Running unittests src/lib.rs (target/debug/deps/xai_grok_tower-13e9570f9e57a546)
+
+running 2 tests
+test registry::one_actor_tests::one_actor_per_session_id_serializes_residency ... ok
+test registry::one_actor_tests::one_actor_concurrent_get_or_insert_collapses_to_single_token ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+

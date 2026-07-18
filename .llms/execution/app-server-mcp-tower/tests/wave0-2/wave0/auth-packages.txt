@@ -1,0 +1,225 @@
+warning: /home/guilherme/github/grok-goblin/crates/codegen/xai-grok-pager-bin/Cargo.toml: file `/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-pager-bin/src/main.rs` found to be present in multiple build targets:
+  * `bin` target `goblin`
+  * `bin` target `grok-oss`
+  * `bin` target `xai-grok-pager`
+   Compiling xai-grok-auth v0.1.0 (/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-auth)
+   Compiling xai-grok-multi-auth v0.1.0 (/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-multi-auth)
+warning: unused import: `AuthProvider`
+ --> crates/codegen/xai-grok-multi-auth/src/registry.rs:5:21
+  |
+5 | use xai_grok_auth::{AuthProvider, ProviderRegistry};
+  |                     ^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `AuthProvider`
+ --> crates/codegen/xai-grok-multi-auth/src/cli.rs:9:5
+  |
+9 |     AuthProvider, CredentialStore, ModelListRequest, ProviderId, ProviderModel, ProviderRegistry,
+  |     ^^^^^^^^^^^^
+
+warning: unused import: `AuthProvider`
+  --> crates/codegen/xai-grok-multi-auth/src/request_auth.rs:10:5
+   |
+10 |     AuthProvider, CredentialBinding, CredentialKey, CredentialStore, ModelBinding,
+   |     ^^^^^^^^^^^^
+
+warning: unused import: `AuthProvider`
+  --> crates/codegen/xai-grok-multi-auth/src/token_manager.rs:24:5
+   |
+24 |     AuthProvider, CredentialBinding, CredentialKey, CredentialLockPurpose, CredentialSecret,
+   |     ^^^^^^^^^^^^
+
+warning: unused variable: `key`
+   --> crates/codegen/xai-grok-multi-auth/src/token_manager.rs:507:14
+    |
+507 |         let (key, metadata, secret) = make_credential(&provider_id, true);
+    |              ^^^ help: if this is intentional, prefix it with an underscore: `_key`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `key`
+   --> crates/codegen/xai-grok-multi-auth/src/token_manager.rs:645:14
+    |
+645 |         let (key, metadata, secret) = make_credential(&provider_id, false);
+    |              ^^^ help: if this is intentional, prefix it with an underscore: `_key`
+
+warning: `xai-grok-multi-auth` (lib test) generated 6 warnings (run `cargo fix --lib -p xai-grok-multi-auth --tests` to apply 3 suggestions)
+warning: `xai-grok-multi-auth` (lib) generated 4 warnings (4 duplicates)
+warning: `xai-grok-multi-auth` (lib) generated 4 warnings (4 duplicates)
+warning: unused import: `chrono::Utc`
+ --> crates/codegen/xai-grok-multi-auth/tests/login_e2e.rs:9:5
+  |
+9 | use chrono::Utc;
+  |     ^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused imports: `AtomicU32` and `Ordering`
+ --> crates/codegen/xai-grok-multi-auth/tests/multi_auth.rs:7:25
+  |
+7 | use std::sync::atomic::{AtomicU32, Ordering};
+  |                         ^^^^^^^^^  ^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `std::sync::Arc`
+ --> crates/codegen/xai-grok-multi-auth/tests/multi_auth.rs:8:5
+  |
+8 | use std::sync::Arc;
+  |     ^^^^^^^^^^^^^^
+
+warning: unused import: `xai_grok_multi_auth::fingerprint`
+  --> crates/codegen/xai-grok-multi-auth/tests/multi_auth.rs:12:5
+   |
+12 | use xai_grok_multi_auth::fingerprint;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `AccountsFile` and `SecretsFile`
+   --> crates/codegen/xai-grok-multi-auth/tests/credential_scoped_and_recover.rs:130:9
+    |
+130 |         AccountsFile, SecretsFile, CredentialTxnJournal, TXN_JOURNAL_SCHEMA_VERSION,
+    |         ^^^^^^^^^^^^  ^^^^^^^^^^^
+    |
+    = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `xai-grok-multi-auth` (test "credential_scoped_and_recover") generated 1 warning (run `cargo fix --test "credential_scoped_and_recover" -p xai-grok-multi-auth` to apply 1 suggestion)
+warning: `xai-grok-multi-auth` (test "multi_auth") generated 3 warnings (run `cargo fix --test "multi_auth" -p xai-grok-multi-auth` to apply 3 suggestions)
+warning: `xai-grok-multi-auth` (test "login_e2e") generated 1 warning (run `cargo fix --test "login_e2e" -p xai-grok-multi-auth` to apply 1 suggestion)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 5.08s
+     Running unittests src/lib.rs (target/debug/deps/xai_grok_auth-2b78b884b7cdf85a)
+
+running 12 tests
+test secret::tests::debug_redacts_value ... ok
+test provider::tests::capabilities_bitset_ops ... ok
+test secret::tests::display_redacts_value ... ok
+test secret::tests::expose_returns_inner ... ok
+test provider::tests::unknown_provider_get_fails ... ok
+test provider::tests::registry_list_returns_descriptors ... ok
+test provider::tests::duplicate_registration_fails ... ok
+test credential::tests::credential_secret_debug_redacts_tokens ... ok
+test types::tests::accepts_valid_provider_ids ... ok
+test provider::tests::arc_dyn_auth_provider_compiles_and_runs ... ok
+test types::tests::invalid_provider_id_error_carries_value ... ok
+test types::tests::rejects_invalid_provider_id ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/xai_grok_multi_auth-0ee9d616407f77ea)
+
+running 43 tests
+test cli::tests::parse_login_provider_variants ... ok
+test providers::codex::browser::tests::callback_state_mismatch_rejected ... ok
+test providers::codex::browser::tests::callback_error_rejected ... ok
+test kill_switch::tests::oauth_login_fail_closed_by_default ... ok
+test provider_model_key::tests::rejects_non_uuid_and_xai_keys ... ok
+test providers::codex::audit_remediation_tests::device_flow_debug_redacts_user_code_and_device_auth_id ... ok
+test provider_model_key::tests::round_trip_codex_key ... ok
+test provider_model_key::tests::resolve_wire_slug_single_multi_provider ... ok
+test providers::codex::model_cache::tests::cache_path_is_per_credential ... ok
+test providers::codex::model_cache::tests::is_auth_or_identity_error_classifies ... ok
+test providers::codex::browser::tests::callback_state_match_accepted ... ok
+test providers::codex::claims::tests::parses_nested_openai_auth_object ... ok
+test providers::codex::model_cache::tests::fresh_within_ttl_stale_after ... ok
+test provider_model_key::tests::resolve_wire_slug_two_multi_provider_is_ambiguous_not_first_wins ... ok
+test providers::codex::model_cache::tests::resolve_after_fetch_bundled_when_empty ... ok
+test providers::codex::model_cache::tests::resolve_after_fetch_saves_network ... ok
+test providers::codex::model_cache::tests::resolve_after_fetch_auth_error_does_not_serve_stale ... ok
+test providers::codex::pkce::tests::state_is_unique ... ok
+test providers::codex::model_cache::tests::resolve_after_fetch_uses_stale_on_transient_error ... ok
+test providers::codex::model_cache::tests::save_load_roundtrip_atomic ... ok
+test providers::codex::pkce::tests::pkce_challenge_is_s256_base64url ... ok
+test providers::codex::pkce::tests::pkce_challenge_matches_verifier ... ok
+test request_stamp::tests::same_ledger_sequential_resolves_recovery_uses_attempt_order ... ok
+test request_stamp::tests::explicit_attempt_id_survives_later_resolves ... ok
+test request_stamp::tests::concurrent_holders_keep_distinct_stamps ... ok
+test request_stamp::tests::peek_then_send_order_recovery_matches_send_attempt ... ok
+test request_stamp::tests::concurrent_out_of_order_401_uses_explicit_attempt_not_fifo ... ok
+test providers::codex::browser::tests::auth_url_contains_required_query_params ... ok
+test request_stamp::tests::take_clears_only_one_holder ... ok
+test session_pin::tests::session_pin_wins_over_matching_and_missing_hints ... ok
+test session_pin::tests::turn_policy_clears_pin_when_sampling_leaves_multi_provider ... ok
+test token_resolve::home_tests::multi_auth_home_prefers_grok_oss_home_then_default_segment ... ok
+test providers::codex::callback::tests::loopback_accepts_callback_and_returns_url ... ok
+test cli::tests::auth_status_json_no_secrets ... ok
+test providers::codex::token::tests::token_exchange_with_mockito_success ... ok
+test providers::codex::device::tests::device_usercode_and_poll_with_mockito ... ok
+test token_manager::tests::stale_401_generation_no_refresh ... ok
+test token_manager::tests::account_mismatch_on_401_requires_reauth_no_refresh ... ok
+test providers::codex::audit_remediation_tests::logout_remote_revoked_false_when_upstream_revoke_fails ... ok
+test request_auth::tests::request_auth_headers_authorization_and_account_id ... ok
+test token_manager::tests::same_generation_401_refreshes_persists_retry_after_refresh ... ok
+test token_manager::tests::refresh_single_flight_50_concurrent_one_refresh ... ok
+test token_manager::tests::two_managers_same_file_home_one_refresh_via_xproc_lock ... ok
+
+test result: ok. 43 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s
+
+     Running unittests src/bin/goblin_models.rs (target/debug/deps/goblin_codex_models-22653d8a189f0471)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/credential_scoped_and_recover.rs (target/debug/deps/credential_scoped_and_recover-01d07d60d19cd3d5)
+
+running 6 tests
+test codex_oauth_login_block_reason_when_unapproved ... ok
+test two_accounts_same_slug_get_distinct_catalog_keys ... ok
+test stale_generation_401_does_not_double_refresh ... ok
+test corrupt_journal_quarantines_and_fails_loud ... ok
+test journal_recovers_dual_file_commit_after_crash_marker ... ok
+test store_load_recovers_pending_journal_lazily ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/current_thread_no_panic.rs (target/debug/deps/current_thread_no_panic-87b4a631b12234d3)
+
+running 3 tests
+test short_slug_key_helpers_single_and_ambiguous ... ok
+test block_on_safe_without_runtime_works ... ok
+test block_on_safe_on_current_thread_runtime_does_not_panic ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/live_codex_models.rs (target/debug/deps/live_codex_models-c02630340f12f3db)
+
+running 1 test
+test live_list_codex_models_from_home ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/login_e2e.rs (target/debug/deps/login_e2e-706c770989a722d8)
+
+running 4 tests
+test loopback_callback_driver_accepts_get ... ok
+test browser_complete_login_persists_credential ... ok
+test auth_provider_device_pending_keeps_flow ... ok
+test device_multi_poll_pending_then_complete_persists ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests/multi_auth.rs (target/debug/deps/multi_auth-b67b111f1c58ef49)
+
+running 7 tests
+test secret_debug_redaction ... ok
+test kill_switch_disables_codex_registration ... ok
+test store_ephemeral_works_without_disk ... ok
+test store_unix_0600_on_secrets_file ... ok
+test store_cas_generation_conflict ... ok
+test store_create_load_two_providers_delete_one_other_remains ... ok
+test store_alias_and_default_account ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+   Doc-tests xai_grok_auth
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests xai_grok_multi_auth
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

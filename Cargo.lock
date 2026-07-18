@@ -13043,8 +13043,11 @@ name = "xai-grok-app-server"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "serde",
  "serde_json",
+ "tokio",
  "xai-grok-app-server-protocol",
+ "xai-grok-tower",
 ]
 
 [[package]]
@@ -13253,6 +13256,8 @@ name = "xai-grok-mcp-server"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "serde_json",
+ "tokio",
  "xai-grok-tower",
  "xai-grok-tower-tools",
 ]
@@ -14079,6 +14084,9 @@ name = "xai-grok-tower"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "serde_json",
+ "tempfile",
+ "tokio",
  "xai-grok-app-server-protocol",
 ]
 
@@ -14088,6 +14096,7 @@ version = "0.1.0"
 dependencies = [
  "serde",
  "serde_json",
+ "tokio",
  "xai-grok-app-server-protocol",
  "xai-grok-tower",
 ]

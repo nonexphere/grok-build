@@ -57,6 +57,32 @@ impl TowerHandle {
     }
 }
 
+/// Two Tower instances are isolated when their instance IDs differ and they
+/// do not share registry handles.
+#[derive(Debug, Default)]
+pub struct InstanceDirectory {
+    handles: std::collections::HashMap<TowerInstanceId, TowerHandle>,
+}
+
+impl InstanceDirectory {
+    pub fn insert(&mut self, handle: TowerHandle) -> Result<(), TowerInstanceIdError> {
+        let id = handle.instance_id().clone();
+        if self.handles.contains_key(&id) {
+            return Err(TowerInstanceIdError);
+        }
+        self.handles.insert(id, handle);
+        Ok(())
+    }
+
+    pub fn get(&self, id: &TowerInstanceId) -> Option<&TowerHandle> {
+        self.handles.get(id)
+    }
+
+    pub fn len(&self) -> usize {
+        self.handles.len()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -69,5 +95,20 @@ mod tests {
         for invalid in ["", "UPPER", "-leading", "contains space", "é"] {
             assert!(invalid.parse::<TowerInstanceId>().is_err(), "{invalid}");
         }
+    }
+
+    #[test]
+    fn multi_instance_directory_isolates_handles() {
+        let a: TowerInstanceId = "default".parse().unwrap();
+        let b: TowerInstanceId = "branch-a".parse().unwrap();
+        let mut dir = InstanceDirectory::default();
+        dir.insert(TowerHandle::scaffold(a.clone())).unwrap();
+        dir.insert(TowerHandle::scaffold(b.clone())).unwrap();
+        assert!(dir.insert(TowerHandle::scaffold(a.clone())).is_err());
+        assert_eq!(dir.len(), 2);
+        assert_ne!(
+            dir.get(&a).unwrap().instance_id().as_str(),
+            dir.get(&b).unwrap().instance_id().as_str()
+        );
     }
 }

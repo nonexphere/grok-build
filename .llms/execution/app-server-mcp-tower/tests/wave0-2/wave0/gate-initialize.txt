@@ -1,0 +1,16 @@
+warning: /home/guilherme/github/grok-goblin/crates/codegen/xai-grok-pager-bin/Cargo.toml: file `/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-pager-bin/src/main.rs` found to be present in multiple build targets:
+  * `bin` target `goblin`
+  * `bin` target `grok-oss`
+  * `bin` target `xai-grok-pager`
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.34s
+     Running unittests src/lib.rs (target/debug/deps/xai_grok_app_server_protocol-3dadc6003191b4a7)
+
+running 5 tests
+test envelope::initialize_envelope_tests::initialize_envelope_accepts_strict_request_shape ... ok
+test envelope::initialize_envelope_tests::initialize_envelope_accepts_notification_and_failure_shapes ... ok
+test errors::errors_tests::errors_initialize_gate_maps_pre_init_classes ... ok
+test envelope::initialize_envelope_tests::initialize_envelope_rejects_missing_jsonrpc_and_batches ... ok
+test tests::initialize_roundtrip_preserves_wire_shape ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 17 filtered out; finished in 0.00s
+

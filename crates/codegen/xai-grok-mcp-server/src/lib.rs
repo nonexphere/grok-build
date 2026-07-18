@@ -1,10 +1,156 @@
-//! MCP server adapter scaffold owned by `40-mcp-control-plane/v1-01..02`.
-//! The existing `xai-grok-mcp` remains the external-server MCP client.
+//! MCP server adapter over the shared tower tool semantic core.
+//! The existing `xai-grok-mcp` remains the external-server MCP client only.
 
-pub use xai_grok_tower_tools::{TowerToolDescriptor, TOWER_TOOL_DESCRIPTORS, TOWER_TOOL_NAMES};
+use std::sync::Arc;
+
+use serde_json::{json, Value};
+use xai_grok_tower::GrokRuntimeFacade;
+use xai_grok_tower_tools::{invoke_tower_tool, TowerToolDescriptor, TOWER_TOOL_DESCRIPTORS};
+
+pub use xai_grok_tower_tools::{
+    TowerToolDescriptor as McpToolDescriptor, TOWER_TOOL_DESCRIPTORS as MCP_TOOL_DESCRIPTORS,
+    TOWER_TOOL_NAMES as MCP_TOOL_NAMES, TOWER_TOOL_NAMES,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum McpTransport {
     Stdio,
     StreamableHttp,
+}
+
+/// List tools for MCP `tools/list`.
+pub fn list_tools() -> Vec<TowerToolDescriptor> {
+    TOWER_TOOL_DESCRIPTORS.to_vec()
+}
+
+/// Call a tool through the same semantic core as in-process adapters.
+pub async fn call_tool(
+    runtime: Arc<dyn GrokRuntimeFacade>,
+    agent_type: &str,
+    explicit_opt_in: bool,
+    name: &str,
+    arguments: Value,
+) -> Result<Value, String> {
+    invoke_tower_tool(runtime, agent_type, explicit_opt_in, name, arguments)
+        .await
+        .map_err(|e| format!("{}: {}", e.code, e.message))
+}
+
+/// Minimal MCP-looking JSON-RPC dispatcher for stdio/Streamable HTTP adapters.
+pub async fn handle_mcp_jsonrpc(
+    runtime: Arc<dyn GrokRuntimeFacade>,
+    agent_type: &str,
+    explicit_opt_in: bool,
+    request: Value,
+) -> Value {
+    let id = request.get("id").cloned().unwrap_or(Value::Null);
+    let method = request.get("method").and_then(Value::as_str).unwrap_or("");
+    match method {
+        "tools/list" => json!({
+            "jsonrpc":"2.0",
+            "id": id,
+            "result": {
+                "tools": TOWER_TOOL_DESCRIPTORS.iter().map(|d| json!({
+                    "name": d.name,
+                    "description": d.description,
+                    "inputSchema": {"$ref": d.input_schema_ref},
+                })).collect::<Vec<_>>()
+            }
+        }),
+        "tools/call" => {
+            let name = request["params"]["name"].as_str().unwrap_or("");
+            let args = request["params"]["arguments"].clone();
+            match call_tool(runtime, agent_type, explicit_opt_in, name, args).await {
+                Ok(result) => json!({"jsonrpc":"2.0","id":id,"result":{"content":[{"type":"text","text": result.to_string()}],"structuredContent": result}}),
+                Err(message) => json!({"jsonrpc":"2.0","id":id,"error":{"code":-32000,"message":message}}),
+            }
+        }
+        "initialize" => json!({
+            "jsonrpc":"2.0",
+            "id": id,
+            "result": {
+                "protocolVersion": "2024-11-05",
+                "capabilities": {"tools": {}},
+                "serverInfo": {"name":"grok-oss-mcp-server","version":"0.0.0-experimental"}
+            }
+        }),
+        other => json!({
+            "jsonrpc":"2.0",
+            "id": id,
+            "error": {"code": -32601, "message": format!("Method not found: {other}")}
+        }),
+    }
+}
+
+/// Process NDJSON MCP stdio batch (one request object per line).
+pub async fn process_mcp_stdio_batch(
+    runtime: Arc<dyn GrokRuntimeFacade>,
+    agent_type: &str,
+    explicit_opt_in: bool,
+    input: &str,
+) -> Vec<String> {
+    let mut out = Vec::new();
+    for line in input.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        if let Ok(req) = serde_json::from_str::<Value>(trimmed) {
+            let resp = handle_mcp_jsonrpc(runtime.clone(), agent_type, explicit_opt_in, req).await;
+            out.push(resp.to_string());
+        }
+    }
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use xai_grok_tower::FakeRuntime;
+
+    #[test]
+    fn mcp_lists_exactly_nine_tools() {
+        assert_eq!(list_tools().len(), 9);
+        assert_eq!(TOWER_TOOL_NAMES.len(), 9);
+    }
+
+    #[tokio::test]
+    async fn mcp_stdio_tools_call_shares_semantic_core_with_in_process() {
+        use xai_grok_tower_tools::is_authorized;
+        let rt = Arc::new(FakeRuntime::new());
+        assert!(!is_authorized("build", false));
+        let denied = call_tool(rt.clone(), "build", false, "tower_agent_list", json!({}))
+            .await
+            .unwrap_err();
+        assert!(denied.contains("forbidden"));
+
+        let batch = process_mcp_stdio_batch(
+            rt,
+            "orchestrator",
+            false,
+            &format!(
+                "{}\n{}\n",
+                json!({"jsonrpc":"2.0","id":1,"method":"tools/list"}),
+                json!({"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"tower_agent_start","arguments":{"workspaceRoot":"/work","idempotencyKey":"mcp1"}}})
+            ),
+        )
+        .await;
+        assert_eq!(batch.len(), 2);
+        let list: Value = serde_json::from_str(&batch[0]).unwrap();
+        assert_eq!(list["result"]["tools"].as_array().unwrap().len(), 9);
+        let start: Value = serde_json::from_str(&batch[1]).unwrap();
+        assert!(start["result"]["structuredContent"]["sessionId"].is_string());
+    }
+
+    #[test]
+    fn no_self_mcp_loop_tool_names() {
+        // Forbidden product name: a hub tool that re-enters MCP against self.
+        let forbidden = ["tower", "agent", "hub"].join("_");
+        assert!(!TOWER_TOOL_NAMES.contains(&forbidden.as_str()));
+        let production = include_str!("lib.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .unwrap();
+        assert!(!production.contains(&forbidden));
+    }
 }

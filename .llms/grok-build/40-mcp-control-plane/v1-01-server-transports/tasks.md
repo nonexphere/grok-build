@@ -1,6 +1,6 @@
 # Tasks — MCP server transports
 
-- [ ] `MCP101-01` [D-MCP.8,D-MCP.9] Keep `xai-grok-mcp-server` separate from client; run `cargo check -p xai-grok-mcp-server`; accept DAG law.
+- [x] `MCP101-01` [D-MCP.8,D-MCP.9] Keep `xai-grok-mcp-server` separate from client; run `cargo check -p xai-grok-mcp-server`; accept DAG law.
 - [ ] `MCP101-02` [D-MCP.1] Implement stdio adapter in `xai-grok-mcp-server/src/transport/stdio.rs`; run `./scripts/run-rust-test-gate.sh stdio cargo test -p xai-grok-mcp-server stdio`; accept protocol-only stdout and graceful EOF.
 - [ ] `MCP101-03` [D-MCP.1,D-MCP.2] Implement POST/GET/DELETE `/mcp` in `xai-grok-mcp-server/src/transport/http.rs`; run `./scripts/run-rust-test-gate.sh streamable_http cargo test -p xai-grok-mcp-server streamable_http`; accept bearer-header auth and safe SSE resume.
 - [ ] `MCP101-04` [D-MCP.3,D-MCP.6] Register descriptors from `xai-grok-tower-tools` in the MCP server adapter; run `./scripts/run-rust-test-gate.sh tool_descriptors cargo test -p xai-grok-mcp-server tool_descriptors`; accept exact nine names/descriptions/input schemas.

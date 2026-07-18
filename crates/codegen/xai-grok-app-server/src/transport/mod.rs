@@ -1,4 +1,8 @@
-//! Transport boundary scaffold owned by App Server epics v1-03/v1-04.
+//! Transport boundary owned by App Server epics v1-03/v1-04.
+
+pub mod in_process;
+pub mod stdio;
+pub mod websocket;
 
 use async_trait::async_trait;
 

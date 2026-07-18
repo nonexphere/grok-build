@@ -1,0 +1,24 @@
+warning: /home/guilherme/github/grok-goblin/crates/codegen/xai-grok-pager-bin/Cargo.toml: file `/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-pager-bin/src/main.rs` found to be present in multiple build targets:
+  * `bin` target `goblin`
+  * `bin` target `grok-oss`
+  * `bin` target `xai-grok-pager`
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.42s
+     Running unittests src/lib.rs (target/debug/deps/xai_grok_app_server-6d285a483787dae6)
+
+running 13 tests
+test controller::controller_lease_tests::controller_lease_revisioned_exactly_one_controller ... ok
+test conformance_tests::runtime_facade_end_to_end_via_processor ... ok
+test processor::processor_tests::composition_processor_depends_on_facade_trait_not_shell ... ok
+test processor::processor_tests::processor_rejects_methods_before_initialize ... ok
+test transport::websocket::websocket_tests::bearer_auth_rejects_prefix_and_length_mismatches_identically ... ok
+test transport::websocket::websocket_tests::websocket_auth_header_only_rejects_missing_and_url_tokens ... ok
+test controller::controller_lease_tests::interaction_identity_distinct_from_request_ids ... ok
+test transport::websocket::websocket_tests::websocket_reuses_processor_parity_with_stdio ... ok
+test transport::stdio::stdio_tests::stdio_ndjson_one_json_object_per_line_vertical_slice ... ok
+test conformance_tests::conformance_in_process_and_stdio_normalized_outputs_match ... ok
+test processor::processor_tests::processor_initialize_session_turn_vertical_slice ... ok
+test transport::in_process::in_process_tests::in_process_initialize_session_turn_item_stream ... ok
+test conformance_tests::backpressure_subscribe_is_bounded_page ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

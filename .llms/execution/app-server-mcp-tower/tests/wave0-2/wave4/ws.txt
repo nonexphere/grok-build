@@ -1,0 +1,13 @@
+warning: /home/guilherme/github/grok-goblin/crates/codegen/xai-grok-pager-bin/Cargo.toml: file `/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-pager-bin/src/main.rs` found to be present in multiple build targets:
+  * `bin` target `goblin`
+  * `bin` target `grok-oss`
+  * `bin` target `xai-grok-pager`
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.33s
+     Running unittests src/lib.rs (target/debug/deps/xai_grok_app_server-6d285a483787dae6)
+
+running 2 tests
+test transport::websocket::websocket_tests::websocket_auth_header_only_rejects_missing_and_url_tokens ... ok
+test transport::websocket::websocket_tests::websocket_reuses_processor_parity_with_stdio ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 8 filtered out; finished in 0.00s
+
