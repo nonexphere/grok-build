@@ -4,23 +4,20 @@
 //! [`ShellRuntimeAdapter`] (or another `GrokRuntimeFacade` impl) and injects it
 //! into Tower/App Server/tools. Tower never imports this module.
 //!
-//! Production path: methods forward to the existing leader/`SessionActor`
-//! ownership model. Until full command mapping lands, the adapter can be
-//! constructed with an injected [`GrokRuntimeFacade`] (typically the faithful
-//! `FakeRuntime` in tests, or a future `SessionActor`-backed port).
+//! Production path: methods must eventually forward to the existing
+//! leader/`SessionActor` ownership model. Until that command mapping lands,
+//! tests inject a faithful [`xai_grok_tower::FakeRuntime`]. Do **not** mix real
+//! JSONL list/read with FakeRuntime mutations (split authority).
 
 use std::sync::Arc;
 
 use async_trait::async_trait;
 use xai_grok_app_server_protocol::{
     InteractionResponseParams, Item, Session, SessionArchiveParams, SessionForkParams,
-    SessionReadParams, SessionReadResult, SessionResumeParams, SessionStartParams,
-    SessionStatus, SubscribeParams, Turn, TurnInterruptParams, TurnStartParams, TurnSteerParams,
-    WireCounter,
+    SessionReadParams, SessionReadResult, SessionResumeParams, SessionStartParams, SessionStatus,
+    SubscribeParams, Turn, TurnInterruptParams, TurnStartParams, TurnSteerParams, WireCounter,
 };
-use xai_grok_tower::{
-    GrokRuntimeFacade, ReplayPage, RuntimeError, SessionRegistry,
-};
+use xai_grok_tower::{GrokRuntimeFacade, ReplayPage, RuntimeError, SessionRegistry};
 
 /// Marker documenting ownership for characterization tests.
 pub struct ShellRuntimeAdapterMarker;
@@ -32,8 +29,7 @@ impl ShellRuntimeAdapterMarker {
 
 /// Shell-owned facade injection handle.
 ///
-/// This type is the only Shell-visible production surface for App Server.
-/// It records residency via [`SessionRegistry`] so one opaque actor token is
+/// Records residency via [`SessionRegistry`] so one opaque actor token is
 /// associated per Session ID while the inner port performs work.
 pub struct ShellRuntimeAdapter {
     inner: Arc<dyn GrokRuntimeFacade>,
@@ -101,7 +97,6 @@ impl GrokRuntimeFacade for ShellRuntimeAdapter {
     }
 
     async fn start_turn(&self, params: TurnStartParams) -> Result<Turn, RuntimeError> {
-        // Residency must already exist for mutations.
         if self
             .registry
             .lock()
@@ -109,8 +104,6 @@ impl GrokRuntimeFacade for ShellRuntimeAdapter {
             .get(&params.session_id)
             .is_none()
         {
-            // Allow inner to create path if session exists only on disk later;
-            // for injected ports, require prior start/resume registration.
             let _ = self
                 .registry
                 .lock()
@@ -158,5 +151,146 @@ pub fn project_active_session_row(
         provider_binding: None,
         created_at_ms,
         updated_at_ms: created_at_ms,
+    }
+}
+
+#[cfg(test)]
+mod app_server_runtime_tests {
+    use super::*;
+    use xai_grok_app_server_protocol::{InputBlock, SessionStartParams, TurnStartParams};
+    use xai_grok_tower::FakeRuntime;
+
+    #[test]
+    fn app_server_runtime_adapter_lives_in_shell_not_tower() {
+        assert_eq!(ShellRuntimeAdapterMarker::OWNER, "xai-grok-shell");
+        assert_eq!(ShellRuntimeAdapterMarker::INJECTED_AT, "xai-grok-pager-bin");
+        let tower_cargo = include_str!("../../../xai-grok-tower/Cargo.toml");
+        assert!(
+            !tower_cargo.contains("xai-grok-shell"),
+            "Tower must not depend on Shell"
+        );
+    }
+
+    #[test]
+    fn app_server_runtime_defines_no_session_actor_state_machine() {
+        let src = include_str!("mod.rs");
+        let production = src.split("#[cfg(test)]").next().unwrap();
+        assert!(!production.contains("struct SessionActor"));
+        assert!(!production.contains("enum SessionActor"));
+    }
+
+    #[tokio::test]
+    async fn app_server_runtime_registers_one_actor_token_per_session() {
+        let adapter = ShellRuntimeAdapter::inject(Arc::new(FakeRuntime::new()));
+        let s = adapter
+            .start_session(SessionStartParams {
+                workspace_root: "/work".into(),
+                agent_type: None,
+                provider_binding: None,
+                idempotency_key: "a1".into(),
+            })
+            .await
+            .unwrap();
+        let s2 = adapter
+            .start_session(SessionStartParams {
+                workspace_root: "/work".into(),
+                agent_type: None,
+                provider_binding: None,
+                idempotency_key: "a1".into(),
+            })
+            .await
+            .unwrap();
+        assert_eq!(s.session_id, s2.session_id);
+        assert_eq!(adapter.registry_len(), 1);
+        let _ = adapter
+            .start_turn(TurnStartParams {
+                session_id: s.session_id.clone(),
+                input: vec![InputBlock::Text {
+                    text: "hi".into(),
+                }],
+                idempotency_key: "t1".into(),
+            })
+            .await
+            .unwrap();
+        assert_eq!(adapter.registry_len(), 1);
+    }
+
+    #[tokio::test]
+    async fn single_actor_owns_turn_mutation() {
+        let adapter = Arc::new(ShellRuntimeAdapter::inject(Arc::new(FakeRuntime::new())));
+        let session = adapter
+            .start_session(SessionStartParams {
+                workspace_root: "/work".into(),
+                agent_type: None,
+                provider_binding: None,
+                idempotency_key: "race-s".into(),
+            })
+            .await
+            .unwrap();
+        let mut handles = Vec::new();
+        for i in 0..8 {
+            let adapter = adapter.clone();
+            let session_id = session.session_id.clone();
+            handles.push(tokio::spawn(async move {
+                adapter
+                    .start_turn(TurnStartParams {
+                        session_id,
+                        input: vec![InputBlock::Text {
+                            text: format!("m{i}"),
+                        }],
+                        idempotency_key: format!("race-t-{i}"),
+                    })
+                    .await
+            }));
+        }
+        let mut ok = 0;
+        for h in handles {
+            if h.await.unwrap().is_ok() {
+                ok += 1;
+            }
+        }
+        assert_eq!(ok, 8);
+        assert_eq!(adapter.registry_len(), 1);
+    }
+
+    #[test]
+    fn project_active_session_row_is_dormant_metadata_only() {
+        let s = project_active_session_row("sid", "/work", 1);
+        assert_eq!(s.status, SessionStatus::Dormant);
+        assert_eq!(s.workspace_root, "/work");
+    }
+}
+
+#[cfg(test)]
+mod multi_workspace_tests {
+    use super::*;
+    use xai_grok_app_server_protocol::SessionStartParams;
+    use xai_grok_tower::FakeRuntime;
+
+    #[tokio::test]
+    async fn app_server_multi_workspace_stable_session_ids() {
+        let adapter = ShellRuntimeAdapter::inject(Arc::new(FakeRuntime::new()));
+        let a = adapter
+            .start_session(SessionStartParams {
+                workspace_root: "/work/a".into(),
+                agent_type: None,
+                provider_binding: None,
+                idempotency_key: "ws-a".into(),
+            })
+            .await
+            .unwrap();
+        let b = adapter
+            .start_session(SessionStartParams {
+                workspace_root: "/work/b".into(),
+                agent_type: None,
+                provider_binding: None,
+                idempotency_key: "ws-b".into(),
+            })
+            .await
+            .unwrap();
+        assert_ne!(a.session_id, b.session_id);
+        assert_eq!(a.workspace_root, "/work/a");
+        assert_eq!(b.workspace_root, "/work/b");
+        assert_eq!(adapter.registry_len(), 2);
     }
 }
