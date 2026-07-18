@@ -1,43 +1,9 @@
-# Tasks — v1-03-core-in-process-stdio
+# Tasks — v1-03 processor, in-process and stdio vertical slice
 
-## Processor e connection state
-- [ ] Implementar initialize gate/version/capability negotiation — Follow @implementation-loop
-- [ ] Parse/validate request/notification/response/server-response
-- [ ] Mapear errors e preservar request IDs
-- [ ] Rejeitar pre-init/malformed/unsupported calls deterministicamente
-
-## Serialization e registry
-- [ ] Definir global/session/turn/read-only scopes por method
-- [ ] Implementar scoped serializer sem lock durante runtime await indevido
-- [ ] Implementar SessionRegistry com shared pending loads
-- [ ] Enforce um foreground Turn e idempotent start
-
-## Subscriptions e outbound
-- [ ] Implementar snapshot/live subscription state
-- [ ] Implementar priority lanes e bounded queues
-- [ ] Garantir lifecycle delivery e delta coalescing
-- [ ] Isolar/disconnect slow subscriber com explicit error
-
-## Core methods
-- [ ] session start/resume/read/list/subscribe
-- [ ] turn start/steer/interrupt
-- [ ] item/turn/session lifecycle notifications
-- [ ] typed in-process client e shutdown
-
-## Vertical slice
-- [ ] Scripted fake-runtime client completes coding Turn
-- [ ] Shell-adapter smoke reconstructs final transcript
-- [ ] Test reconnect boundary without persistence claims yet
-- [ ] Test cancellation, duplicate request e concurrent Sessions
-
-## Validação
-- [ ] Processor/property/concurrency tests
-- [ ] No unbounded queue/session/task growth
-- [ ] Focused crate checks and code review
-
-## Specs e docs
-- [ ] Method inventory/serialization table
-- [ ] Atualizar SPECS/README/status
-
-## Tarefas operacionais (humanas)
-Nenhuma tarefa operacional humana para este epic.
+- [ ] `AS103-01` [D-CR.4,D-SP.1] In `xai-grok-app-server/src/processor/`, implement initialize/dispatch state without runtime semantics duplication; run `cargo test -p xai-grok-app-server processor`; accept strict request/response/error fixtures.
+- [ ] `AS103-02` [D-TR.3] In `xai-grok-app-server/src/transport/in_process.rs`, implement typed client handle; run `cargo test -p xai-grok-app-server in_process`; accept initialize→session start→turn→Item stream through the shared processor.
+- [ ] `AS103-03` [D-TR.1,D-SP.19] In `transport/stdio.rs`, implement NDJSON, EOF drain and stderr diagnostics; run `cargo test -p xai-grok-app-server stdio`; accept stdout contains only one valid JSON object per line.
+- [ ] `AS103-04` [D-SP.8..18] Under `xai-grok-app-server/tests/conformance/`, run the same method/event/error fixtures against in-process and stdio; run `cargo test -p xai-grok-app-server conformance`; accept normalized outputs identical.
+- [ ] `AS103-05` [D-SP.18,D-SEC.10] Add bounded writer/replay tests; run `cargo test -p xai-grok-app-server backpressure`; accept slow client resync without blocking processor/runtime.
+- [ ] `AS103-06` [D-RF.7] Add composition assertion; run `cargo test -p xai-grok-app-server composition`; accept processor depends on facade trait and never constructs SessionActor.
+- [ ] `AS103-07` [D-TD.3,D-TD.6] Capture RED/GREEN and run `cargo test -p xai-grok-app-server-protocol -p xai-grok-tower -p xai-grok-app-server`; accept all non-network vertical-slice checks green.

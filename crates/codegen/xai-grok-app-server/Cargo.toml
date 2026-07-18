@@ -1,0 +1,21 @@
+[package]
+name = "xai-grok-app-server"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "Experimental grok-oss App Server processor boundary"
+
+[dependencies]
+async-trait = { workspace = true }
+serde_json = { workspace = true }
+xai-grok-app-server-protocol = { path = "../xai-grok-app-server-protocol" }
+
+[features]
+default = ["in-process", "stdio"]
+in-process = []
+stdio = []
+websocket = []
+remote-control = ["websocket"]
+
+[lints]
+workspace = true

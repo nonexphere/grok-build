@@ -1,6 +1,6 @@
 # Epic v1-01 — Caracterização e boundary do Goal legado
 
-Status: planejado
+Status: rascunho/backlog
 Prioridade: pós-lançamento core
 Estimativa: 1–3 semanas
 Depende de: nenhuma (consome o inventário de hot paths de `../../30-app-server/v1-07-release-hardening/` antes do gate final)

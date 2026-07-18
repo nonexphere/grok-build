@@ -1,6 +1,6 @@
 # Epic v1-01 — Telegram bridge (backlog)
 
-Status: planejado
+Status: rascunho/backlog
 Prioridade: pós-lançamento
 Estimativa: 2–4 semanas após design
 Depende de: `../../30-app-server/v1-07-release-hardening/`, `../../60-sdk-typescript/v1-01-generated-sdk-client-examples/`
@@ -39,4 +39,3 @@ Proveniência: [provenance: user-input, workspace, doc-tree, code, inferred]
 
 - **[HIGH][Confirmed] external chat auth/privacy:** programa isolado.
 - **[MEDIUM][Likely] approval UX:** decisão futura.
-

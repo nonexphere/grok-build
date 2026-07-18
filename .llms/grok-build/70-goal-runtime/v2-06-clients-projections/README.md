@@ -1,6 +1,6 @@
 # Epic v2-06 — Clients e projections v2
 
-Status: planejado
+Status: rascunho/backlog
 Prioridade: pós-lançamento core
 Estimativa: 2–4 semanas
 Depende de: `../v2-04-tools-verification/`, `../v2-05-task-graph-subagents/`

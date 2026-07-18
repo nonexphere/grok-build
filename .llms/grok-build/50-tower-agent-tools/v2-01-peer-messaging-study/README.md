@@ -1,6 +1,6 @@
 # Epic v2-01 — Estudo de peer messaging interno
 
-Status: planejado
+Status: rascunho/backlog
 Prioridade: pós-lançamento
 Estimativa: 1–2 semanas (spike/spec, sem implementação v1)
 Depende de: `../v1-02-in-process-acl-mcp-parity/`
@@ -47,4 +47,3 @@ subagents depth=1 ou duplicar Tower. Este epic não bloqueia o MVP.
 
 - **[HIGH][Likely] novo distributed messaging system:** manter spike/spec isolado.
 - **[MEDIUM][Possible] confusão com send:** exigir use cases distintos.
-

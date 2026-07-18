@@ -38,8 +38,8 @@ segundo runtime. [provenance: user-input, code, inferred]
 | 0 | `10/v1-01`, `20/v1-01`, `30/v1-01` | os três | baseline honesto, ownership e contratos congelados |
 | 1 | `10/v1-02`, `20/v1-02`, `30/v1-02` | providers e runtime | provider seam + uma Tower/registry + facade única |
 | 2 | `30/v1-03`, `20/v1-03` | parcialmente | vertical slice in-process/stdio e lifecycle multi-instance |
-| 3 | `30/v1-04`, `40/v1-01` | após processor comum | WebSocket bearer e MCP local/remoto early |
-| 4 | `30/v1-05..06`, `50/v1-01` | history/approvals/tools | replay, controle e contrato completo de tools |
+| 3 | `50/v1-01`, depois `30/v1-04` e `40/v1-01` | WS e MCP somente após facade/descriptors | facade de tools congelada, WebSocket bearer e MCP early |
+| 4 | `30/v1-05..06` | history/approvals | replay e controle sobre a facade comum |
 | 5 | `50/v1-02`, `60/v1-01`, `10/v1-03..05` | sim | ACL/in-process tools, SDK real, BYOK por provider |
 | 6 | `30/v1-07`, `40/v1-02`, `20/v1-04` | hardening conjunto | conformance, threat model, runbooks e release evidence |
 | 7+ | Goal v2, dashboard client, gateways e voz | fora do MVP core | programas separados e explicitamente aprovados |
@@ -64,23 +64,23 @@ segundo runtime. [provenance: user-input, code, inferred]
 | 30 | `v1-05-history-replay` | rascunho | 2–4 sem. |
 | 30 | `v1-06-approvals-control` | rascunho | 2–3 sem. |
 | 30 | `v1-07-release-hardening` | rascunho | 2–4 sem. |
-| 30 | `v2-01-dashboard-client-migration` | planejado | 2–4 sem. |
+| 30 | `v2-01-dashboard-client-migration` | rascunho/backlog | 2–4 sem. |
 | 40 | `v1-01-server-transports` | rascunho | 2–4 sem. |
 | 40 | `v1-02-remote-security-conformance` | rascunho | 1–3 sem. |
 | 50 | `v1-01-tool-contract-and-facade` | rascunho | 2–3 sem. |
 | 50 | `v1-02-in-process-acl-mcp-parity` | rascunho | 2–3 sem. |
-| 50 | `v2-01-peer-messaging-study` | planejado | 1–2 sem. |
+| 50 | `v2-01-peer-messaging-study` | rascunho/backlog | 1–2 sem. |
 | 60 | `v1-01-generated-sdk-client-examples` | rascunho | 2–3 sem. |
-| 70 | `v1-01-legacy-characterization` | planejado | 1–3 sem. |
-| 70 | `v2-01-domain-foundation` | planejado | 2–4 sem. |
-| 70 | `v2-02-persistence-leases-accounting` | planejado | 2–4 sem. |
-| 70 | `v2-03-runtime-continuation` | planejado | 2–4 sem. |
-| 70 | `v2-04-tools-verification` | planejado | 2–4 sem. |
-| 70 | `v2-05-task-graph-subagents` | planejado | 2–4 sem. |
-| 70 | `v2-06-clients-projections` | planejado | 2–4 sem. |
-| 70 | `v2-07-recovery-rollout` | planejado | 2–4 sem. |
-| 80 | `v1-01-telegram-bridge-backlog` | planejado | 2–4 sem. |
-| 90 | `v1-01-full-duplex-backlog` | planejado | 3–4 sem. |
+| 70 | `v1-01-legacy-characterization` | rascunho/backlog | 1–3 sem. |
+| 70 | `v2-01-domain-foundation` | rascunho/backlog | 2–4 sem. |
+| 70 | `v2-02-persistence-leases-accounting` | rascunho/backlog | 2–4 sem. |
+| 70 | `v2-03-runtime-continuation` | rascunho/backlog | 2–4 sem. |
+| 70 | `v2-04-tools-verification` | rascunho/backlog | 2–4 sem. |
+| 70 | `v2-05-task-graph-subagents` | rascunho/backlog | 2–4 sem. |
+| 70 | `v2-06-clients-projections` | rascunho/backlog | 2–4 sem. |
+| 70 | `v2-07-recovery-rollout` | rascunho/backlog | 2–4 sem. |
+| 80 | `v1-01-telegram-bridge-backlog` | rascunho/backlog | 2–4 sem. |
+| 90 | `v1-01-full-duplex-backlog` | rascunho/backlog | 3–4 sem. |
 
 ### Grafo de dependências
 
@@ -91,12 +91,12 @@ segundo runtime. [provenance: user-input, code, inferred]
 
 20-tower/v1-01 ─→ v1-02 ─→ v1-03 ───────────────────────→ v1-04 hardening
        │              │
-       └────→ 30-app/v1-01 ─→ v1-02 ─→ v1-03 ─→ v1-04 ─→ v1-05 ─┐
-                                                    │       └────→ v1-06 ─┤
-                                                    ├→ 40-mcp/v1-01 ─→ v1-02
-                                                    └→ 50-tools/v1-01 ─→ v1-02
-                                                                         │
-                                      60-sdk/v1-01 ◄──────────────────────┘
+       └────→ 30-app/v1-01 ─→ v1-02 ─→ v1-03 ─→ 50-tools/v1-01 ─┬→ 30-app/v1-04 ─→ v1-05 ─┐
+                                                   │             │                  └────→ v1-06 ─┤
+                                                   │             └→ 40-mcp/v1-01 ─→ v1-02       │
+                                                   └────────────────→ 50-tools/v1-02             │
+                                                                                                  │
+                                                60-sdk/v1-01 ◄────────────────────────────────────┘
 
 30/v1-05 + 30/v1-06 + 40/v1-02 + 50/v1-02 + 60/v1-01 ─→ 30/v1-07
 30/v1-07 ─→ 30/v2-01 (dashboard, futuro), 80/v1-01, 90/v1-01
@@ -110,11 +110,21 @@ possam ser selecionados por flag. [provenance: user-input]
 ## Contratos compartilhados
 
 - [glossário e identidade](./_shared/session-turn-item-identity.md)
+- [precedência das fontes de verdade](./_shared/source-of-truth.md)
+- [índice completo D-*](./_shared/INDEX.md)
+- [mapa de crates e dependências](./_shared/crate-map.md)
 - [ownership do runtime](./_shared/runtime-ownership.md)
+- [runtime facade](./_shared/runtime-facade.md)
 - [Tower e lifecycle de instâncias](./_shared/tower-instance-lifecycle.md)
 - [autenticação e threat model](./_shared/control-plane-security.md)
 - [ordenação, replay e idempotência](./_shared/identity-event-ordering.md)
 - [tools Tower](./_shared/tower-agent-tools.md)
+- [MCP, transportes e CLI](./_shared/mcp-server-transport-cli.md)
+- [approvals/controller/history](./_shared/approvals-controller-history.md)
+- [SDK TypeScript](./_shared/typescript-sdk.md)
+- [providers](./_shared/provider-contract.md)
+- [Goal futuro](./_shared/goal-boundary.md)
+- [freeze dashboard/ACP](./_shared/ui-freeze.md)
 - [método TDD](./TDD.md)
 - [rastreabilidade](./TRACEABILITY.md)
 

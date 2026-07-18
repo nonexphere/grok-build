@@ -1,45 +1,9 @@
-# Tasks — v1-07-release-hardening
+# Tasks — v1-07 release hardening
 
-## Compatibilidade e Codex adapter
-- [ ] Manter ACP/dashboard current path e executar regression suite
-- [ ] Mapear Codex thread↔Session/prompt/update/reverse permission sem semantic fork
-- [ ] Isolar missing-jsonrpc/ID/capability/Codex differences em adapter crate
-- [ ] Executar native-vs-adapter conformance fixtures
-
-## Goal hot-path inventory
-- [ ] Inventariar reads/events/commands de goal v1 tocados pela facade
-- [ ] Definir port versionada `disabled|v1|v2` sem implementar v2
-- [ ] Test App Server disconnect sem interromper/corromper goal v1
-- [ ] Registrar gaps para o futuro programa Goal v2
-
-## Conformance cross-program
-- [ ] Consumir evidence do SDK, MCP e Tower tools, sem reimplementar
-- [ ] Validar capability downgrade e version compatibility
-- [ ] Differential native/Codex adapter fixtures
-- [ ] Testar daemon modes e remote clients combinados
-
-## Operations e observability
-- [ ] Implementar metrics/traces/admin projection verify/rebuild/token revoke
-- [ ] Alertas para queue/projection/replay/auth/runtime adapter failures
-- [ ] Graceful restart/recovery runbook and tooling
-- [ ] Stability/deprecation/versioning policy
-
-## GA hardening
-- [ ] Full transport/golden/property/fault/fuzz/load suites
-- [ ] Threat review de remote, approvals, paths, secrets e plugins — Follow @code-audit
-- [ ] Dashboard/ACP regression + SDK/MCP drift green
-- [ ] Verificar Definition of Done item por item com evidence
-
-## Validação
-- [ ] Multi-client E2E TUI existente + automation + observer + MCP
-- [ ] Reconnect active Turn/approval/goal with no gap/double effect
-- [ ] Production readiness audit and delivery report
-
-## Specs e docs
-- [ ] Protocol/SDK/client/remote/admin/migration/runbook docs
-- [ ] Atualizar todos status somente após gates
-
-## Tarefas operacionais (humanas)
-- [ ] (HUMAN) Aprovar stable Grok extension inventory — type: product-decision — blocking: v1 compatibility freeze
-- [ ] (HUMAN) Aceitar remote MVP threat model — type: manual-verify — blocking: remote GA
-- [ ] (HUMAN) Executar production sign-off — type: manual-verify — blocking: concluir epic
+- [ ] `AS107-01` [D-TD.2,D-MCP.7] Run one black-box suite against in-process, stdio, WS and MCP; command `cargo test -p xai-grok-app-server -p xai-grok-mcp-server conformance`; accept identical normalized cases.
+- [ ] `AS107-02` [D-SEC.11,D-SEC.12] Run complete threat/security suite; command `cargo test -p xai-grok-app-server -p xai-grok-mcp-server security`; accept all documented scenarios have a named passing test.
+- [ ] `AS107-03` [D-SP.21..24,D-TS.5] Run schema/golden/TS drift gates; command `cargo test -p xai-grok-app-server-protocol && npm --prefix packages/grok-oss-app-server run typecheck`; accept no binding drift.
+- [ ] `AS107-04` [D-TW.15] Run drain/restart/reconnect composition tests; command `cargo test -p xai-grok-tower -p xai-grok-app-server restart`; accept stable Session IDs and correct epoch behavior.
+- [ ] `AS107-05` [D-UI.1..3] Validate frozen ACP/roster/dashboard surfaces in shell/pager packages; run `cargo test -p xai-grok-shell roster && cargo test -p xai-grok-pager dashboard`; accept no MVP dashboard/TUI migration or protocol behavior change.
+- [ ] `AS107-06` [D-TD.3] Produce delivery evidence with every RED/GREEN, skip and blocked gate; run `rg -n 'RED|GREEN|SKIP|BLOCKED' .llms/grok-build/30-app-server/v1-07-release-hardening`; accept skip never labeled PASS and no unresolved P0 contract drift.
+- [ ] [D-SEC.13] `(HUMAN, manual-verify, blocking: remote release)` execute public-bind threat checklist and record explicit acceptance.

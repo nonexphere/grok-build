@@ -1,6 +1,6 @@
 # Epic v2-02 — Persistência, leases e accounting v2
 
-Status: planejado
+Status: rascunho/backlog
 Prioridade: pós-lançamento core
 Estimativa: 2–4 semanas
 Depende de: `../v2-01-domain-foundation/`

@@ -1,42 +1,9 @@
-# Tasks — v1-04-websocket-remote-auth
+# Tasks — v1-04 WebSocket and remote bearer
 
-## Integração Tower
-- [ ] Consumir instance endpoints e processor da Tower sem daemon paralelo
-- [ ] Compartilhar SessionRegistry e processor com in-process/stdio
-- [ ] Preservar ACP routing/dashboard intocados
-- [ ] Testar app-only e combined daemon mode
-
-## Transport acceptors
-- [ ] WebSocket handshake/subprotocol/frame/compression limits
-- [ ] Aceitar Origin sem allowlist conforme contrato e testar o comportamento
-- [ ] Common connection lifecycle and max-message enforcement
-
-## AuthN/AuthZ
-- [ ] Bearer full-control create/load/rotate/revoke e file permissions
-- [ ] Loopback default e non-loopback explicit warning
-- [ ] Provar `ws://` support sem alegar confidencialidade
-- [ ] Runtime method/path sandbox continua authoritative
-
-## Backpressure e operations
-- [ ] Bounded priority queues e delta coalescing
-- [ ] Slow-client isolation/disconnect metrics
-- [ ] Health/status/connections/sessions/admin commands
-- [ ] Graceful drain/restart with interrupted Turn truth
-
-## Conformance e security
-- [ ] Uma suite contra in-process/stdio/WebSocket
-- [ ] half-close/slowloris/decompression/message bomb tests
-- [ ] bearer replay/revoke/redaction/path/symlink tests
-- [ ] load 10 clients/100 Sessions without unbounded memory
-
-## Validação
-- [ ] Threat-model audit — Follow @code-audit
-- [ ] Cross-platform transport CI
-- [ ] Performance targets e focused checks
-
-## Specs e docs
-- [ ] Daemon/admin/security/pairing runbooks
-- [ ] Atualizar SPECS/README/status
-
-## Tarefas operacionais (humanas)
-- [ ] (HUMAN) Aceitar threat model remoto antes do release — type: manual-verify — blocking: remote stable enablement
+- [ ] `AS104-01` [D-TR.2] In `xai-grok-app-server/src/transport/websocket.rs`, implement subprotocol, text frames, ping/pong and 1 MiB cap; run `cargo test -p xai-grok-app-server websocket_transport`; accept binary/batch/oversized frames rejected.
+- [ ] `AS104-02` [D-SEC.1..3] In a new App Server auth module, implement token-file validation and header-only constant-time bearer check; run `cargo test -p xai-grok-app-server bearer_auth`; accept the complete failure matrix has generic 401 responses.
+- [ ] `AS104-03` [D-SEC.5..7] In config/CLI adapter modules, implement loopback defaults and explicit remote warning without Origin/scopes/TLS enforcement; run `cargo test -p xai-grok-app-server remote_bind`; accept locked permissive behavior and exact high-risk warning.
+- [ ] `AS104-04` [D-SEC.8,D-SEC.9] Add redacted connection/audit fields; run `cargo test -p xai-grok-app-server redaction_canary`; accept all canary lengths absent from every output sink.
+- [ ] `AS104-05` [D-SP.19,D-MCP.7] Extend black-box conformance to WebSocket; run `cargo test -p xai-grok-app-server websocket_conformance`; accept equality with in-process/stdio method semantics.
+- [ ] `AS104-06` [D-SEC.10..12] Add network attacker/slow client/oversize tests; run `cargo test -p xai-grok-app-server control_plane_security`; accept bounded queues and safe failures.
+- [ ] [D-SEC.13] `(HUMAN, manual-verify, blocking: remote release)` accept `_shared/control-plane-security.md` before advertising non-loopback release readiness.

@@ -1,45 +1,10 @@
-# Tasks — v1-01-session-protocol
+# Tasks — v1-01 Session protocol wire freeze
 
-## Current-state characterization
-- [ ] Mapear leader frames/routing, ACP, SessionHandle e tracker — Follow @repository-exploration
-- [ ] Capturar wire/serde snapshots atuais relevantes
-- [ ] Validar quais IDs existentes são estáveis
-- [ ] Prototipar vertical ownership boundary sem production mutation
-
-## ADRs
-- [ ] Leader promotion e one-registry ownership
-- [ ] Session/Turn/Item/Interaction identity
-- [ ] source-of-truth/projection e protocol strictness
-- [ ] controller lease e remote threat model
-- [ ] stable vs experimental method/capability inventory
-
-## Protocol crate
-- [ ] Criar JSON-RPC envelopes e error taxonomy
-- [ ] Criar IDs/entities/statuses/input/model selection
-- [ ] Criar initialize/capability negotiation
-- [ ] Criar core session/turn/item/approval method types
-
-## Generation
-- [ ] Gerar JSON Schema da fonte Rust
-- [ ] Gerar TypeScript declarations e SDK skeleton
-- [ ] Migrar/expandir JSONL examples como snapshots validados
-- [ ] CI drift check e reproducible generation
-
-## Robustez
-- [ ] Serde round-trip/unknown/additive compatibility tests
-- [ ] Fuzz malformed/oversized/deep payloads
-- [ ] Secret/provider-neutral field review
-- [ ] Cross-check schema/TS/examples parity
-
-## Validação
-- [ ] Protocol crate tests/check/docs green
-- [ ] Compare generated bundle with `changes/` and explain deltas
-- [ ] Independent contract review — Follow @code-review
-
-## Specs e docs
-- [ ] Atualizar app-server SPECS e protocol compatibility policy
-- [ ] Atualizar root status/decision log
-
-## Tarefas operacionais (humanas)
-- [ ] (HUMAN) Aprovar missing-jsonrpc compatibility — type: product-decision — blocking: compat listener
-- [ ] (HUMAN) Aprovar stable/experimental surface — type: product-decision — blocking: public v1 freeze
+- [ ] `SP101-01` [D-SP.1..4] In `xai-grok-app-server-protocol/src/`, implement envelope/initialize/initialized gate types; run `cargo test -p xai-grok-app-server-protocol initialize`; accept exact strict JSON-RPC shapes and every pre-init class returning its catalog code.
+- [ ] `SP101-02` [D-SP.5..7] In the protocol crate, complete Session/Turn/Item unions and transition validation; run `cargo test -p xai-grok-app-server-protocol entity`; accept Rust serialization matching checked-in schema for every MVP Item kind.
+- [ ] `SP101-03` [D-SP.8..11] In `src/methods.rs`, implement every critical params/result shape; run `cargo test -p xai-grok-app-server-protocol methods`; accept happy/invalid/concurrent examples from `contracts/methods.md` roundtrip unchanged.
+- [ ] `SP101-04` [D-SP.12..16,D-AP.1..5] In `src/events.rs`, implement lifecycle/delta/Interaction/cursor shapes; run `cargo test -p xai-grok-app-server-protocol events`; accept snapshot→replay→live ordering and invalid epoch fixtures.
+- [ ] `SP101-05` [D-SP.17..19,D-SP.29] In protocol error/limit modules, encode stable numeric/string catalog and defaults; run `cargo test -p xai-grok-app-server-protocol errors`; accept retryability/safe-data/backpressure fixtures.
+- [ ] `SP101-06` [D-SP.21..24,D-SP.26..28] In `schemas/` and `packages/grok-oss-app-server/src/types.ts`, add schema/golden/TS drift tests; run `cargo test -p xai-grok-app-server-protocol` and `npm --prefix packages/grok-oss-app-server run typecheck`; accept four complete JSONL scenarios and zero Rust/schema/TS drift.
+- [ ] `SP101-07` [D-SP.20,D-SP.25,D-SP.30] Keep Codex mapping in `contracts/codex-adapter-mapping.md`; run `rg -n 'Thread|thread/' crates/codegen/xai-grok-app-server* packages/grok-oss-app-server`; accept no native public occurrence outside isolated compatibility material.
+- [ ] [D-SP.25] `(HUMAN, product-decision, blocking: compatibility adapter only)` decide whether a future Codex adapter accepts missing `jsonrpc`; native protocol remains strict regardless.

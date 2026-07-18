@@ -1,44 +1,9 @@
-# Tasks — v1-05-history-replay
+# Tasks — v1-05 history, projection and replay
 
-## Projection schema
-- [ ] Criar Session/Turn/Item/event/source-offset/history-epoch tables — Follow @implementation-loop
-- [ ] Criar migrations/indexes/constraints e corruption behavior
-- [ ] Marcar DB explicitamente rebuildable/non-authoritative
-- [ ] Implementar verify/rebuild CLI APIs
-
-## Ingestion
-- [ ] Scan existing session tree incrementalmente
-- [ ] Persistir byte offsets/file identity e handle rotation/truncation
-- [ ] Tolerar corrupt JSONL tail preservando valid prefix
-- [ ] Coalescer journal deltas conforme durability ADR
-
-## Replay e pagination
-- [ ] Implementar watermark snapshot-then-live
-- [ ] Criar opaque scoped cursors e invalidation
-- [ ] Implementar session/list/read e item pagination
-- [ ] Testar replay+live equivalence e no duplicates
-
-## Fork/rewind/archive
-- [ ] Projetar fork parent/relation/worktree sem duplicar actor
-- [ ] Incrementar history epoch no rewind
-- [ ] Implementar archive metadata e physical policy separadamente
-- [ ] Manter hard delete experimental/policy-gated
-
-## Recovery e fault tests
-- [ ] crash during delta/projection commit/rebuild
-- [ ] locked DB/full disk/corrupt tail/partial fork
-- [ ] restore active Turn journal truthfully
-- [ ] rebuild 10k-item fixture com stable IDs
-
-## Validação
-- [ ] Property/golden/fault/performance tests
-- [ ] Projection verify após rebuild real fixture
-- [ ] Focused checks and review
-
-## Specs e docs
-- [ ] Schema/cursor/rebuild/runbook docs
-- [ ] Atualizar SPECS/README/status
-
-## Tarefas operacionais (humanas)
-- [ ] (HUMAN) Aprovar delta durability policy — type: product-decision — blocking: journal stable semantics
-- [ ] (HUMAN) Aprovar archive/delete/FTS ownership — type: product-decision — blocking: stable methods
+- [ ] `AS105-01` [D-AP.4] In a new App Server projection module, index canonical session files without becoming execution truth; run `cargo test -p xai-grok-app-server projection_rebuild`; accept delete/rebuild produces identical IDs/order.
+- [ ] `AS105-02` [D-SP.14,D-AP.5] Persist/derive historyEpoch, eventSeq and entity revisions; run `cargo test -p xai-grok-app-server cursor_semantics`; accept stale/foreign/epoch-mismatched cursor fixtures fail explicitly.
+- [ ] `AS105-03` [D-SP.15] Implement attach-boundary-replay-live subscription; run `cargo test -p xai-grok-app-server snapshot_then_live`; accept no gaps/duplicates under concurrent event production.
+- [ ] `AS105-04` [D-SP.18] Implement retention/byte/queue boundaries; run `cargo test -p xai-grok-app-server replay_backpressure`; accept terminal events retained and explicit resync beyond limits.
+- [ ] `AS105-05` [D-RF.3,D-RF.4] Normalize all major runtime fixtures; run `cargo test -p xai-grok-app-server projection_goldens`; accept stable Items and redaction across rebuild.
+- [ ] `AS105-06` [D-TA.1,D-TA.2] Reuse the history path for `tower_agent_history` in App Server/Tower tools adapters; run `cargo test -p xai-grok-app-server -p xai-grok-tower-tools history_parity`; accept identical epoch/cursor/redaction semantics.
+- [ ] `AS105-07` [D-TD.3] Record crash/rebuild RED/GREEN evidence; run `cargo test -p xai-grok-app-server history_rebuild -- --nocapture`; accept no SQLite-only fact required to execute a Session.

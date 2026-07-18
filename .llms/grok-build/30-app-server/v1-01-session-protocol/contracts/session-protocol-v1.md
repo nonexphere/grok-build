@@ -1,5 +1,10 @@
 # grok-oss App Server Session Protocol v1
 
+Detailed normative companions: [methods](./methods.md),
+[events/replay/interactions](./events.md), [errors/backpressure](./errors.md), and
+[isolated Codex mapping](./codex-adapter-mapping.md). Checked-in schemas/goldens
+live in `crates/codegen/xai-grok-app-server-protocol/schemas/`.
+
 **Fonte de verdade.** Este contrato pertence ao App Server. O Rust protocol
 crate deverá gerar schema, TypeScript, fixtures e SDKs. O bundle em `changes/`
 é seed de design, não uma segunda fonte após implementação.
@@ -118,3 +123,83 @@ apenas descriptors seguros e safe reasoning summaries.
 - ACP e Codex adapters compartilham processor/runtime registry;
 - additive v1 changes preservam clients que ignoram campos novos;
 - projection rebuild não muda IDs já publicados.
+
+## Deepened wire contract
+
+The scaffold protocol version is `2026-07-18.experimental-v1`. Clients MUST send
+that exact value in `initialize`; no silent downgrade exists. Breaking changes
+receive a new version and golden corpus. Additive fields require schema and TS
+regeneration. These artifacts do not claim stable v1.
+
+Requests contain exactly `jsonrpc`, `id`, `method`, `params`; successes contain
+`jsonrpc`, matching `id`, `result`; failures contain `jsonrpc`, matching/null
+`id`, `error {code,message,data?}`; notifications omit `id`. Batch arrays are
+unsupported. Standard JSON-RPC codes keep their meaning and domain codes live
+in `error.data.code`.
+
+### Initialize gate
+
+Initialize input contains protocolVersion, clientInfo and requested
+capabilities. Output contains selected version, serverInfo, serverInstanceId,
+granted capabilities and limits. Client then sends `initialized`. Before that:
+
+| Input | Result |
+|---|---|
+| first `initialize` | allowed |
+| second `initialize` | `already_initialized` |
+| session/turn/item method | `not_initialized` |
+| early `initialized` | `invalid_state` |
+| other notification | invalid unless explicitly declared |
+
+Initialization times out after 10s and cannot grant an unavailable capability.
+
+### Complete MVP inventory
+
+| Method | Core params | Result |
+|---|---|---|
+| `session/list` | filters/page cursor | sessions/next cursor |
+| `session/get` | sessionId | Session snapshot |
+| `session/start` | workspace/agent/binding/key | Session |
+| `session/archive` | sessionId/key | operation result |
+| `session/subscribe` | sessionId/epoch/afterEventSeq | replay boundary |
+| `session/unsubscribe` | subscriptionId | acknowledged |
+| `turn/start` | sessionId/text/key | Turn |
+| `turn/steer` | sessionId/turnId/text/key | Item |
+| `turn/interrupt` | sessionId/turnId/key | accepted operation |
+| `interaction/respond` | target/response/key | accepted operation |
+
+Notifications are `session/created|updated|archived`,
+`turn/created|updated`, `item/created|updated`,
+`interaction/requested|resolved`, `subscription/resyncRequired` and
+`server/draining`.
+
+### Identity, ordering and reconnect
+
+IDs are opaque and never reused. A Turn belongs to one Session; an Item belongs
+to one Turn/Session. Revision counts entity mutations; eventSeq is strictly
+increasing per Session; epoch changes when continuity cannot be guaranteed.
+
+Subscribe establishes a live tap and boundary, validates epoch, replays
+`(afterEventSeq,boundary]`, drains buffered events above the boundary with
+eventSeq deduplication, then continues live. An epoch mismatch demands a new
+snapshot. Retention or queue gaps emit `resyncRequired` and close only the
+subscription. Duplicate sequence is harmless; a gap is never silently skipped.
+
+### Idempotency, interactions and errors
+
+Mutations require a key scoped to authority/method. Same canonical input returns
+the original result; changed input returns `idempotency_conflict`. Retention is
+at least 24h or session lifetime. Interactions have a controller lease, deadline
+and one terminal resolution. Disconnect never auto-allows.
+
+Stable domain codes: `not_initialized`, `already_initialized`,
+`protocol_version_unsupported`, `session_not_found`, `turn_not_found`,
+`invalid_state`, `interaction_required`, `controller_lease_required`,
+`idempotency_conflict`, `epoch_mismatch`, `cursor_too_old`, `resync_required`,
+`message_too_large`, `backpressure`, `unauthorized`, `internal_error`.
+
+Defaults are 1 MiB inbound, 1024 queued outbound events, 10,000 replay events or
+16 MiB, and 10s initialize. Rust types/schemas/goldens live in the protocol
+crate; four goldens cover happy coding, interrupt, multi-session and reconnect.
+No Goal v2, dashboard migration, channel/voice schema, multi-host bridge, local
+MCP self-injection or second SessionActor is included.

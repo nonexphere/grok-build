@@ -1,6 +1,6 @@
 # Epic v2-01 — Migração opcional do dashboard para App Server
 
-Status: planejado
+Status: rascunho/backlog
 Prioridade: pós-lançamento
 Estimativa: 2–4 semanas
 Depende de: `../v1-07-release-hardening/`

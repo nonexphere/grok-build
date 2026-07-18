@@ -1,6 +1,6 @@
 # Epic v1-01 — Realtime voice full duplex (backlog)
 
-Status: planejado
+Status: rascunho/backlog
 Prioridade: pós-lançamento
 Estimativa: 3–4 semanas após research
 Depende de: `../../30-app-server/v1-07-release-hardening/`
@@ -40,4 +40,3 @@ Proveniência: [provenance: user-input, workspace, doc-tree, code, inferred]
 
 - **[HIGH][Confirmed] áudio sensível:** explicit consent/retention policy.
 - **[HIGH][Likely] latency/echo complexity:** dedicated program.
-

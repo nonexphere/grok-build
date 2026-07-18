@@ -13039,6 +13039,34 @@ dependencies = [
 ]
 
 [[package]]
+name = "xai-grok-app-server"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "serde_json",
+ "xai-grok-app-server-protocol",
+]
+
+[[package]]
+name = "xai-grok-app-server-client"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "futures",
+ "xai-grok-app-server-protocol",
+]
+
+[[package]]
+name = "xai-grok-app-server-protocol"
+version = "0.1.0"
+dependencies = [
+ "jsonschema",
+ "schemars 1.0.4",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "xai-grok-auth"
 version = "0.1.0"
 dependencies = [
@@ -13218,6 +13246,15 @@ dependencies = [
  "xai-tool-protocol",
  "xai-tool-runtime",
  "xai-tool-types",
+]
+
+[[package]]
+name = "xai-grok-mcp-server"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "xai-grok-tower",
+ "xai-grok-tower-tools",
 ]
 
 [[package]]
@@ -14035,6 +14072,24 @@ dependencies = [
  "tonic-prost",
  "xai-proto-build",
  "xai-tool-protocol",
+]
+
+[[package]]
+name = "xai-grok-tower"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "xai-grok-app-server-protocol",
+]
+
+[[package]]
+name = "xai-grok-tower-tools"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "xai-grok-app-server-protocol",
+ "xai-grok-tower",
 ]
 
 [[package]]

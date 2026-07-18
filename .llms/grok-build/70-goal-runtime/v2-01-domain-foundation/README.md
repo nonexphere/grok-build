@@ -1,6 +1,6 @@
 # Epic v2-01 — Domínio puro e state machine v2
 
-Status: planejado
+Status: rascunho/backlog
 Prioridade: pós-lançamento core
 Estimativa: 2–4 semanas
 Depende de: `../v1-01-legacy-characterization/`

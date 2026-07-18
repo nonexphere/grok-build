@@ -1,6 +1,6 @@
 # Epic v2-05 — Task DAG, subagents e worktrees v2
 
-Status: planejado
+Status: rascunho/backlog
 Prioridade: pós-lançamento core
 Estimativa: 2–4 semanas
 Depende de: `../v2-03-runtime-continuation/`, `../v2-04-tools-verification/`

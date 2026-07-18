@@ -1,6 +1,6 @@
 # Epic v2-07 — Migração, flags e rollout v2
 
-Status: planejado
+Status: rascunho/backlog
 Prioridade: pós-lançamento core
 Estimativa: 2–4 semanas
 Depende de: `../v2-01-domain-foundation/`, `../v2-02-persistence-leases-accounting/`, `../v2-03-runtime-continuation/`, `../v2-04-tools-verification/`, `../v2-05-task-graph-subagents/`, `../v2-06-clients-projections/`

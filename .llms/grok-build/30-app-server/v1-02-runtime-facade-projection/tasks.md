@@ -1,43 +1,9 @@
-# Tasks — v1-02-runtime-facade-projection
+# Tasks — v1-02 runtime facade and projection
 
-## Facade contract
-- [ ] Definir operations start/resume/read/list/fork/turn/control — Follow @implementation-loop
-- [ ] Definir runtime event enum e error mapping
-- [ ] Implementar fake runtime deterministic para server tests
-- [ ] Implementar shell adapter sem second actor
-
-## Identity allocator
-- [ ] Mapear session UUID→Session e prompt ID→Turn
-- [ ] Definir Item IDs por stable source/event/history epoch
-- [ ] Persistir/derivar source offsets e revision
-- [ ] Testar rebuild stability e collision handling
-
-## Event normalization
-- [ ] Projetar user/agent/reasoning-safe-summary Items
-- [ ] Projetar command/file/MCP/skill/hook/permission/plan Items
-- [ ] Projetar subagent/worktree/background/compaction/rewind/provider errors
-- [ ] Projetar Goal state via interface quando disponível sem hard dependency
-
-## Golden fixtures
-- [ ] Extrair anonymized fixtures de todos major flows
-- [ ] Assert IDs/order/status/revision/final state/no duplicates
-- [ ] Comparar contra `AcpUpdateTracker` behavior oracle
-- [ ] Adicionar malformed/out-of-order/source-retry cases
-
-## Segurança e performance
-- [ ] Redact secrets e omit hidden reasoning
-- [ ] Limitar payload/diff/output projection
-- [ ] Medir projector overhead e allocation
-- [ ] Garantir no blocking I/O no actor event path
-
-## Validação
-- [ ] Facade fake/shell contract suite
-- [ ] Golden normalization suite
-- [ ] `cargo fmt --check`, checks e focused tests
-
-## Specs e docs
-- [ ] Documentar event mapping e instrumentation decisions
-- [ ] Atualizar SPECS/README/status
-
-## Tarefas operacionais (humanas)
-Nenhuma tarefa operacional humana para este epic.
+- [ ] `RF102-01` [D-RF.1] In `xai-grok-tower/src/lib.rs`, finish `GrokRuntimeFacade` using protocol types; run `cargo test -p xai-grok-tower facade_shape`; accept compile-time coverage of all Session/Turn/Interaction/replay operations.
+- [ ] `RF102-02` [D-RF.2,D-RF.7] Add a thin adapter under a new `xai-grok-shell/src/app_server_runtime/` module; run `cargo test -p xai-grok-shell app_server_runtime`; accept each facade call sends one existing SessionActor/leader command and defines no actor state machine.
+- [ ] `RF102-03` [D-RF.3] In `xai-grok-tower/src/projection.rs`, map every characterized runtime event to an Item/lifecycle event; run `cargo test -p xai-grok-tower projection`; accept the mapping table in `_shared/runtime-facade.md` has a fixture for every row.
+- [ ] `RF102-04` [D-RF.4,D-SEC.8] In the projector, redact/drop only contracted fields; run `cargo test -p xai-grok-tower projection_redaction`; accept secret canaries absent and unknown events becoming safe diagnostics, never silent drops.
+- [ ] `RF102-05` [D-RF.5] In Tower/shell integration tests, race two adapters against one Session; run `cargo test -p xai-grok-shell single_actor_owns_turn_mutation`; accept exactly one authoritative actor and ordered mutations.
+- [ ] `RF102-06` [D-RF.6] Build the faithful fake under `xai-grok-tower/src/test_support/`; run `cargo test -p xai-grok-tower fake_conformance`; accept revisions, epochs, idempotency, Interaction blocking and interrupt races match the real adapter suite.
+- [ ] `RF102-07` [D-TD.3] Record named RED/GREEN output for each facade behavior in epic evidence; run `cargo test -p xai-grok-app-server runtime_facade -- --nocapture`; accept no canned-success mock or unobserved RED.

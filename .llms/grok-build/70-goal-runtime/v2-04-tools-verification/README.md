@@ -1,6 +1,6 @@
 # Epic v2-04 — Tools v2 e completion audit
 
-Status: planejado
+Status: rascunho/backlog
 Prioridade: pós-lançamento core
 Estimativa: 2–4 semanas
 Depende de: `../v2-03-runtime-continuation/`
