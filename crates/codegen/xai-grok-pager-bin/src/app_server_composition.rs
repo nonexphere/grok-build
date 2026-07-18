@@ -8,12 +8,18 @@
 use std::sync::Arc;
 
 use xai_grok_app_server::FacadeProcessor;
-use xai_grok_shell::app_server_runtime::ShellRuntimeAdapter;
+use xai_grok_shell::app_server_runtime::{
+    SessionStorageHybridRuntime, ShellRuntimeAdapter,
+};
 use xai_grok_tower::FakeRuntime;
 
 /// Build the experimental App Server processor for composition-root smoke tests.
+///
+/// List/read prefer real session storage (Jsonl); mutations use FakeRuntime until
+/// SessionActor turn mapping is complete.
 pub fn experimental_app_server_processor() -> FacadeProcessor {
-    let adapter = ShellRuntimeAdapter::inject(Arc::new(FakeRuntime::new()));
+    let hybrid = SessionStorageHybridRuntime::new(Arc::new(FakeRuntime::new()));
+    let adapter = ShellRuntimeAdapter::inject(Arc::new(hybrid));
     FacadeProcessor::new(Arc::new(adapter))
 }
 

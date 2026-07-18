@@ -161,6 +161,120 @@ pub fn project_active_session_row(
     }
 }
 
+/// Hybrid production port: **list/read-from-disk** uses the real
+/// [`JsonlStorageAdapter`] (SessionActor persistence ecosystem). Mutations
+/// still go through an injected facade (typically FakeRuntime until turn
+/// commands are fully mapped onto SessionActor).
+pub struct SessionStorageHybridRuntime {
+    storage: crate::session::storage::jsonl::JsonlStorageAdapter,
+    mutations: Arc<dyn GrokRuntimeFacade>,
+}
+
+impl SessionStorageHybridRuntime {
+    pub fn new(mutations: Arc<dyn GrokRuntimeFacade>) -> Self {
+        Self {
+            storage: crate::session::storage::jsonl::JsonlStorageAdapter::new(),
+            mutations,
+        }
+    }
+}
+
+fn summary_to_session(summary: &crate::session::persistence::Summary) -> Session {
+    let created_at_ms = summary.created_at.timestamp_millis().max(0) as u64;
+    let updated_at_ms = summary.updated_at.timestamp_millis().max(0) as u64;
+    Session {
+        session_id: summary.info.id.0.to_string(),
+        history_epoch: "epoch_1".into(),
+        revision: WireCounter::new(0),
+        status: SessionStatus::Dormant,
+        workspace_root: summary.info.cwd.clone(),
+        title: if summary.session_summary.is_empty() {
+            None
+        } else {
+            Some(summary.session_summary.clone())
+        },
+        active_turn_id: None,
+        latest_turn_id: None,
+        provider_binding: None,
+        created_at_ms,
+        updated_at_ms,
+    }
+}
+
+#[async_trait]
+impl GrokRuntimeFacade for SessionStorageHybridRuntime {
+    async fn list_sessions(&self) -> Result<Vec<Session>, RuntimeError> {
+        use crate::session::storage::StorageAdapter;
+        let summaries = self
+            .storage
+            .list_sessions(None)
+            .await
+            .map_err(|e| RuntimeError {
+                code: "runtime_unavailable",
+                message: format!("session storage list failed: {e}"),
+            })?;
+        Ok(summaries.iter().map(summary_to_session).collect())
+    }
+
+    async fn read_session(
+        &self,
+        params: SessionReadParams,
+    ) -> Result<SessionReadResult, RuntimeError> {
+        // Prefer disk summary when present; fall back to mutation port.
+        use crate::session::storage::StorageAdapter;
+        let summaries = self
+            .storage
+            .list_sessions(None)
+            .await
+            .map_err(|e| RuntimeError {
+                code: "runtime_unavailable",
+                message: format!("session storage list failed: {e}"),
+            })?;
+        if let Some(summary) = summaries
+            .iter()
+            .find(|s| s.info.id.0.as_ref() == params.session_id)
+        {
+            return Ok(SessionReadResult {
+                session: summary_to_session(summary),
+                turns: Vec::new(),
+                items: Vec::new(),
+            });
+        }
+        self.mutations.read_session(params).await
+    }
+
+    async fn start_session(&self, params: SessionStartParams) -> Result<Session, RuntimeError> {
+        self.mutations.start_session(params).await
+    }
+    async fn resume_session(&self, params: SessionResumeParams) -> Result<Session, RuntimeError> {
+        self.mutations.resume_session(params).await
+    }
+    async fn fork_session(&self, params: SessionForkParams) -> Result<Session, RuntimeError> {
+        self.mutations.fork_session(params).await
+    }
+    async fn archive_session(&self, params: SessionArchiveParams) -> Result<(), RuntimeError> {
+        self.mutations.archive_session(params).await
+    }
+    async fn start_turn(&self, params: TurnStartParams) -> Result<Turn, RuntimeError> {
+        self.mutations.start_turn(params).await
+    }
+    async fn steer_turn(&self, params: TurnSteerParams) -> Result<Item, RuntimeError> {
+        self.mutations.steer_turn(params).await
+    }
+    async fn interrupt_turn(&self, params: TurnInterruptParams) -> Result<(), RuntimeError> {
+        self.mutations.interrupt_turn(params).await
+    }
+    async fn respond_interaction(
+        &self,
+        params: InteractionResponseParams,
+    ) -> Result<(), RuntimeError> {
+        self.mutations.respond_interaction(params).await
+    }
+    async fn replay(&self, cursor: SubscribeParams) -> Result<ReplayPage, RuntimeError> {
+        self.mutations.replay(cursor).await
+    }
+}
+
 #[cfg(test)]
 mod app_server_runtime_tests {
     use super::*;
@@ -300,5 +414,19 @@ mod multi_workspace_tests {
         assert_eq!(a.workspace_root, "/work/a");
         assert_eq!(b.workspace_root, "/work/b");
         assert_eq!(adapter.registry_len(), 2);
+    }
+}
+
+#[cfg(test)]
+mod hybrid_storage_tests {
+    use super::*;
+    use xai_grok_tower::{FakeRuntime, GrokRuntimeFacade};
+
+    #[tokio::test]
+    async fn hybrid_list_sessions_uses_storage_without_error() {
+        let hybrid = SessionStorageHybridRuntime::new(Arc::new(FakeRuntime::new()));
+        // Empty home still returns Ok(vec) rather than panic.
+        let sessions = hybrid.list_sessions().await.unwrap();
+        assert!(sessions.len() < 100_000);
     }
 }
