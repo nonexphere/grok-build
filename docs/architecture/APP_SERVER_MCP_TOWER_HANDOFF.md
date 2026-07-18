@@ -8,9 +8,11 @@
 | **Produto** | **grok-oss** (fork Goblin de `xai-org/grok-build`) |
 | **Branch auditada** | `goblin-multi-provider-codex` @ `0285ee5` |
 | **Remotes** | `origin` = `xai-org/grok-build` (upstream); `fork` = `nonexphere/grok-build` |
-| **Status** | Read-only audit + handoff. **Não** é plano de implementação aprovado. |
+| **Status** | Handoff + **respostas humanas parciais (2026-07-18)**. Ainda **não** é plano de implementação aprovado. |
+| **Transcrição** | `docs/architecture/transcripts/2026-07-18-user-intent-app-server-mcp-tower.md` |
+| **Respostas** | §13 (preenchidas) · Pendências §14 |
 
-**Instrução:** usar este documento como input para consolidar/reescrever planos em `.llms/grok-build/` e/ou `docs/architecture/`. **Não** implementar código a partir deste arquivo até o humano aprovar o plano consolidado.
+**Instrução:** usar este documento como input para consolidar/reescrever planos em `.llms/grok-build/` e/ou `docs/architecture/`. **Não** implementar código a partir deste arquivo até o humano aprovar o plano consolidado. Priorizar §13 + §1 + transcrição sobre defaults antigos da §6 quando houver conflito.
 
 ---
 
@@ -1048,4 +1050,391 @@ crates/codegen/xai-grok-pager-bin/src/main.rs
 **Não executar implementação a partir deste handoff.**  
 Quando o humano autorizar planejamento: consolidar épicos/contratos a partir deste documento e revalidar paths se a branch tiver avançado.
 
+---
+
+## 13. Respostas humanas (2026-07-18) — decisões travadas
+
+**Fonte primária:**  
+`docs/architecture/transcripts/2026-07-18-user-intent-app-server-mcp-tower.md`  
+(mensagem/áudio do maintainer; ASR normalizado).
+
+**Como ler:** onde §13 conflita com defaults da §5–§6, **§13 vence**.
+
+### 13.1 Brand e conceito Tower
+
+| Decisão | Valor |
+|---------|--------|
+| Nome do conceito | **Tower** (mantido; gosto do humano confirmado) |
+| Tower é | **Novo produto-nome** para control plane multi-sessão + swarm; não existia no vocabulario do repo |
+| Ancestral no código | **Leader** multi-client (`connect_or_spawn` / `run_leader`): primeira UI sobe o processo; próximas UIs `goblin`/`grok-oss` **conectam no leader já em execução** + multi-sessão via **dashboard** |
+| Ação para o Codex | **Analisar** leader + dashboard + session registry como **proto-Tower** a promover/generalizar — **não** reinventar do zero; mapear o que já é multi-client/multi-session vs o que falta (MCP SSE remoto, WS app-server, tools `tower_agent_*`, ACL agent type) |
+
+### 13.2 Escopo MVP vs v2 (programa App Server + MCP + Tower)
+
+| Camada | No MVP? | Notas |
+|--------|---------|--------|
+| App Server (protocolo Codex-like) | **SIM** | Construir de forma **ordenada, em sequência** (não tudo em um PR monólito) |
+| WebSocket app-server | **SIM — early** | Junto da “primeira fatia funcional” de rede, não só no fim |
+| MCP control plane | **SIM — mesmo release** do App Server | |
+| MCP **remoto** (SSE / Streamable HTTP), não só local | **SIM — early** | Humano: *“não quero só MCP local”* |
+| MCP tools de orquestração de swarm/sessões | **SIM** | Ver §13.3 |
+| Multi-sessão **no mesmo processo** | **SIM** | Já existe UX (dashboard); formalizar no protocol/MCP |
+| ACL tower por agent type (customizável; default orchestrator) | **SIM** | |
+| Nome de tools | **`tower_agent_*`** | Ver §13.3 |
+| TypeScript SDK + scripts | **SIM** | WS + SDK (inspiração Codex) |
+| Tools **internas** agent↔agent (peer messaging via runtime tools) | **NÃO no MVP → v2** | Codex deve **analisar** desenho; não implementar no v1 se puder adiar |
+| Goal Runtime redesign v1/v2 + flags | **FORA deste programa** (futuro) | Ver §13.5 |
+| Retrocompat ampla em tudo | **NÃO** | Só planejada para **goal** no futuro |
+
+**Tensão resolvida pelo humano:**  
+“MVP com todas as funcionalidades **deste programa**” = App Server + MCP remoto + WS + swarm tools + multi-session + ACL + SDK.  
+**Não** inclui tools internas de peer messaging (v2) nem Goal v2.
+
+### 13.3 MCP tools MVP (swarm / sessões)
+
+Família: **`tower_agent_*`** (nome confirmado).
+
+Capacidades **MUST** no MVP (lista mínima a expandir no plano):
+
+| Capability | Intent |
+|------------|--------|
+| **list** | Listar agentes/sessões/threads gerenciáveis |
+| **start** | Criar/iniciar sessão/agent/thread |
+| **send** | Enviar mensagem / iniciar turn de input |
+| **hub** | **= a própria Tower** (M1 travado round 3). Não é tool/conceito separado de “inbox”; “hub” no áudio = o control plane Tower |
+| **history / messages** | **full** **ou** **last**; **paginação + limites de bytes + redaction de secrets = SIM (M4)** |
+| **interrupt / resume / archive / status / wait** | **MUST no MVP (M2)** |
+| (swarm) | Gerenciar e orquestrar **várias** sessões/agentes |
+
+**Superfície dupla (M3):** as mesmas operações `tower_agent_*` existem:
+1. como **tools MCP** (clients externos / automação), e  
+2. como **tools do modelo** no runtime para o **orchestrator** (mesmo contrato/semântica).  
+
+Peer messaging *ad hoc* entre agents sem passar pelo control plane permanece **v2**.
+
+### 13.4 Auth / rede (decisões 2026-07-18 round 2)
+
+| ID | Decisão do humano | Valor canônico |
+|----|-------------------|----------------|
+| **R1** | LAN / **internet** | Bind remoto permitido no MVP (não só loopback) |
+| **R2** | **Bearer** | `Authorization: Bearer <token>` (WS handshake + HTTP/MCP) |
+| **R3** | Suporte **`ws://` e `http://`** | Cleartext **permitido** no MVP; **não** exigir TLS-only (HTTPS/WSS podem existir depois/opt-in) |
+| **R4** | **Libera tudo** (Origin) | **Sem** Origin allowlist no MVP (browser clients aceitos sem check de Origin) |
+| **R5** | **Sem escopo fino** | Token **full control** (sem matrix `threads:read` / `turns:start` no MVP) |
+
+| Outros | Valor |
+|--------|--------|
+| MCP local only | **Rejeitado** |
+| MCP remoto SSE / Streamable HTTP | **Required early** |
+| App Server WebSocket | **Required early** (`ws://` ok) |
+| Multi-sessão | Várias sessões **por Tower process** |
+| Multi-Tower na mesma máquina | **SIM (M6)** — ver §13.11 |
+
+**Aviso de segurança (não negociável no doc, mesmo com MVP permissivo):**  
+Com R1+R3+R4+R5, a superfície é **high risk**. O plano **MUST**:
+- documentar threat model honestamente (“bearer over cleartext on internet = stolen token = full control”);
+- default de **bind** ainda pode ser configurável (ex. flag explícita `--listen 0.0.0.0:…`);
+- **nunca** logar/retornar o bearer em claro em events;
+- redaction de secrets em history (M4).  
+Codex **não** deve “suavizar” isso sem decisão humana; o humano **aceitou** o tradeoff de MVP.
+
+### 13.5 Goal e dual-versioning
+
+| Decisão | Valor |
+|---------|--------|
+| Goal redesign no programa atual | **NÃO** — versão futura |
+| Quando goal for feito | Refatorar goal atual → **v1**; implementar **v2**; **flag** ativa/desativa v1 vs v2 |
+| Durante App Server **agora** | **Identificar** componentes/mechanisms muito tocados; opcionalmente “reforçar” fronteiras para facilitar dual-version depois |
+| Retrocompat / dual flags | **Obrigatório só no goal (futuro)**; **não** exigir em app-server/MCP/tower |
+
+### 13.6 ACL Tower (agent types)
+
+| Decisão | Valor |
+|---------|--------|
+| Customizável | **SIM** |
+| Default allow | **`orchestrator`** |
+| Default deny | todos os outros agent types |
+| Tools internas peer (runtime) | **v2** — ACL da v2 reutilizar mesma matriz se possível |
+
+### 13.7 Entrega e DX
+
+| Decisão | Valor |
+|---------|--------|
+| Ordem de build | **Sequencial / ordenada** (fatiar app-server → rede WS+MCP → tools swarm → SDK) |
+| Acesso app-server | **WebSocket** + **TypeScript SDK/scripts** (MUST) |
+| Inspiração protocolo | Codex app-server |
+| SDK | Interface TypeScript real (não só schema solto) |
+
+### 13.8 Mapa rápido §6 → resposta
+
+| ID | Status | Resposta (resumo) |
+|----|--------|-------------------|
+| Q0.1 | **OK** | Daemon/Tower multi-sessão; WS + MCP remoto; orquestrar swarm; SDK TS |
+| Q0.3 | **OK** | MCP clients + scripts TS; UIs conectando no Tower/leader |
+| Q0.5 | **OK** | Tools internas peer messaging; Goal redesign; retrocompat geral |
+| Q1.1 | **OK** | Perto do Codex |
+| Q1.2 | **OK** | WS early + (stdio/IPC conforme ordem); multi-client local herdado do leader |
+| Q1.6 | **parcial** | Multi-UI já via leader; “TUI nativo app-server” não detalhado |
+| Q2.1 | **OK** | MCP **mesmo release** App Server |
+| Q2.2 | **OK** | **Remoto SSE** + (local também ok); **não** só local |
+| Q2.3 | **OK** | list, start, send, history full\|last, interrupt/resume/archive/status/wait; “hub”=Tower |
+| Q2.6 | **OK** | Ambos no release; boot “Tower up” como leader |
+| Q3.1 | **OK** | Conceito Tower no MVP control plane; tools internas agent v2 |
+| Q3.2 | **OK** | **(A) mesmo processo**, multi-sessão |
+| Q3.3 | **OK** | Tower control plane **complementa** (subagents não removidos); peer tools internas depois |
+| Q3.4 | **OK** | Default só orchestrator; customizável |
+| Q3.6 | **OK** | `tower_agent_*` |
+| Q4.2 | **OK** | Remoto LAN/internet; bearer; ws/http cleartext; sem Origin; sem scopes |
+| Q5.1 | **OK** | SDK TS **obrigatório** |
+| Q6.1 | **OK** | Goal **fora** (futuro v1/v2+flag) |
+| Q6.2 | **implícito** | Não mencionado → tratar multi-provider 1.0 como **paralelo**, não núcleo |
+| Q8.1 | **OK direção** | Sequencial; early WS+MCP remoto |
+| S1–S2,S6–S9 | **OK** | SIM (implícito) |
+| S3–S5 | **parcial** | Swarm/sessões via MCP SIM; peer messaging interno agent **v2** |
+| S10 | **aberto** | |
+| S11 | **SIM** (remoto MCP/WS) | |
+| S12 | **NÃO** (goal futuro) | |
+
+### 13.9 Implicações de arquitetura (para o Codex planejar)
+
+1. **Tower daemon** multi-sessão; **várias Towers** por máquina com identidade distinta (porta/socket/token).  
+2. Uma Tower: **qualquer workspace** em `start` (cwd por sessão).  
+3. App Server **WS** (`ws://`) + MCP **HTTP/SSE** (`http://`) early.  
+4. Auth: **bearer full-control**; sem scopes finos; sem Origin gate.  
+5. **`tower_agent_*`** no MCP **e** no tool surface do orchestrator (mesmo modelo).  
+6. History com full|last + pagination + size limits + redaction.  
+7. interrupt/resume/archive/status/wait = MUST.  
+8. Goal fora; inventário de hot-paths opcional.  
+9. Threat model remoto documentado (MVP permissivo).
+
+### 13.10 “Hub” = Tower (M1 — travado round 3)
+
+| Decisão | Valor |
+|---------|--------|
+| **M1** | Com “hub” o humano **quis dizer o Tower** (o control plane), **não** uma tool/entidade separada |
+
+**Consequência no plano:**
+- **Não** criar tool `tower_agent_hub` só por causa do áudio.
+- O “hub” é o **daemon Tower** (app-server + MCP + registry multi-sessão).
+- Superfície de tools: `tower_agent_list|start|send|…` sobre **esse** hub/Tower.
+- Se no futuro precisar de overview explícito, preferir `tower_agent_status` / `list` rico, não o nome “hub”.
+
+### 13.10b MCP config vs tool interna (M5 — intenção + recomendação)
+
+**Pergunta do humano (round 3):**  
+Se já existe **tool interna** de acesso ao Tower (orchestrator → `tower_agent_*` no mesmo processo), o agent **não** precisa de config MCP para a Tower **local**. Config MCP (`mcp_servers.*`) serviria **só** para conectar em **Towers externas** (outra máquina / outra instância). O que achamos?
+
+| Superfície | Quem usa | Como conecta |
+|------------|----------|--------------|
+| **In-process tools** `tower_agent_*` | Orchestrator (e tipos com ACL) na **mesma** Tower | Chamada de tool local → facade da Tower atual (**sem** `config.toml` MCP) |
+| **MCP server** desta Tower | Clientes externos (Cursor, scripts, outras apps, **outras** Towers) | `http://…/mcp` + bearer |
+| **MCP client** no Grok | Sessão que quer falar com **outra** Tower | Sim: entrada `mcp_servers.<name>` apontando para Tower remota |
+
+**Recomendação de arquitetura (aceitar como default de plano salvo veto):**
+
+1. **SIM à intenção:** tool interna ≠ MCP client config. Orchestrator na Tower A usa tools in-process para A.  
+2. **MCP server** da Tower A continua **MUST** (você quer SSE remoto + automação + SDK/clients).  
+3. **MCP client config** para “a própria Tower” é **redundante e confusa** — evitar auto-injetar a Tower local como MCP server da própria sessão (loop/tool-dup).  
+4. **MCP client config** para **Towers externas** = path suportado (multi-tower federation light).  
+5. **Nome M5** só importa para (4) e para docs de clientes externos; proposed id: `grok-oss-tower` (remoto) ou por-instance `tower-<id>`.
+
+**Status M5:** intenção humana **alinhada**; detalhe de naming de server key para externos ainda `[PROPOSED]` `grok-oss-tower`.
+
+### 13.11 Multi-Tower + multi-workspace (M6 — travado)
+
+| Requisito | Valor |
+|-----------|--------|
+| Um processo Tower | Pode **criar/gerir sessões em qualquer workspace** (cwd/root por sessão, não preso a um único project dir do daemon) |
+| Várias Towers na **mesma máquina** | **SIM**, se o usuário quiser (instâncias isoladas) |
+| Isolamento entre Towers | Por **listen endpoint** (porta/`--listen`) + **bearer token** + estado/home instance id — Codex deve desenhar discovery opcional (ex. listar towers locais) sem forçar singleton global |
+| Default UX | Pode continuar “connect or spawn **default** tower”; flags para **nova** tower / tower explícita |
+
+Isto **substitui** a pergunta “1 tower por machine vs por cwd”:  
+→ **N towers por machine**; **1 session → 1 workspace** (qualquer path); **1 tower → N sessions → N workspaces**.
+
+### 13.12 Nome do MCP server (M5)
+
+- **In-process:** sem key MCP (tools internas).  
+- **Clientes externos / outras Towers:** key de config; **`[PROPOSED]`** `grok-oss-tower` ou `tower-<instance-id>`.  
+- Ver §13.10b.
+
+### 13.13 Map R*/M* (atualizado round 3)
+
+| ID | Status | Resposta |
+|----|--------|----------|
+| R1 | **OK** | LAN/internet |
+| R2 | **OK** | Bearer |
+| R3 | **OK** | `ws://` + `http://` (cleartext OK) |
+| R4 | **OK** | Origin liberado (sem allowlist) |
+| R5 | **OK** | Sem escopos finos (full control) |
+| M1 | **OK** | “hub” = **Tower** (não tool separada) |
+| M2 | **OK** | interrupt/resume/archive/status/wait **MUST** |
+| M3 | **OK** | Orchestrator **também** usa o mesmo modelo de tools |
+| M4 | **OK** | pagination + limits + redaction **SIM** |
+| M5 | **OK intenção** | Tool interna local; MCP config **só** towers **externas**; nome key `[PROPOSED]` |
+| M6 | **OK** | N Towers/machine; 1 Tower → any workspace sessions |
+
+---
+
+## 14. Perguntas que ainda faltam (atualizado)
+
+**Resolvido:** R1–R5, M1–M6 (M5 naming fino still proposed).  
+**Em aberto detalhado:** T1–T4 abaixo; depois K*, O*, Q0.*
+
+### 14.3 Sessões / swarm / dashboard — **T1–T4 em detalhe**
+
+Responda em áudio/chat com o **ID** (ex. “T1: 32” / “T3: paralelo no MVP”).
+
+---
+
+#### **T1 — Cap de sessões concorrentes por Tower**
+
+**O que é:** quantas sessões/threads **vivas** uma única Tower (um processo) pode manter ao mesmo tempo.
+
+**Por que importa:** memória, CPU, FDs, fairness; sem cap, um swarm pode derrubar a máquina.
+
+**Opções típicas:**
+
+| Opção | Exemplo | Tradeoff |
+|-------|---------|----------|
+| A | Soft cap configurável, default **8** ou **16** | Seguro, configurável |
+| B | Soft cap alto (ex. **64**) | Mais swarm, mais risco |
+| C | **Sem** cap no MVP | Máxima flexibilidade; pior operabilidade |
+| D | Cap por **workspace** + cap global | Mais complexo |
+
+**Pergunta:** qual default e se é hard-fail vs “recusar start com erro claro”?
+
+**Resposta:**
+
+```text
+T1:
+```
+
+---
+
+#### **T2 — O que `tower_agent_start` cria?**
+
+Hoje o harness tem **sessões Grok** (arquivos em `~/.grok-oss/sessions/…`, dashboard, ACP). O plano App Server fala em **Thread** (identidade de protocolo Codex-like).
+
+**Pergunta:** no MVP, `start` cria o quê?
+
+| Opção | Significado |
+|-------|-------------|
+| **A — Unificado** | 1 start → 1 **Thread** app-server **=** 1 **sessão** Grok (mesma identidade, projectável nos dois mundos) **[recomendado]** |
+| **B — Só Thread** | Protocolo novo; sessão legada só se “importar” depois |
+| **C — Só sessão legada** | App Server só espelha; Thread é alias fino |
+| **D — Dois objetos** | Thread e Session separados no MVP (evitar — duplica lifecycle) |
+
+**Também diga:** `start` aceita `cwd`/workspace path? (pelo M6, **deveria** sim).
+
+**Resposta:**
+
+```text
+T2:
+cwd no start? (sim/não):
+```
+
+---
+
+#### **T3 — Dashboard TUI vs App Server no MVP**
+
+Hoje: dashboard / multi-sessão via **leader + ACP + pager**.  
+Amanhã: App Server (WS/JSON-RPC) + MCP.
+
+**Pergunta:** no **MVP deste programa**, o dashboard:
+
+| Opção | Significado |
+|-------|-------------|
+| **A — Paralelo** | Dashboard continua no path **leader/ACP** atual; App Server/MCP é **outra porta** para scripts/remotos. TUI “nativa app-server” **depois**. **[menor risco]** |
+| **B — Client early** | Dashboard/TUI já fala App Server no MVP (migração grande; mais risco) |
+| **C — Híbrido** | Dashboard lista sessões via facade compartilhada, mas UI ainda ACP para o resto |
+
+Isto **não** impede multi-sessão no MVP (já existe); só define se reescrevemos a TUI agora.
+
+**Resposta:**
+
+```text
+T3:
+```
+
+---
+
+#### **T4 — Segundo `grok-oss` na máquina: connect vs nova Tower**
+
+Com M6 você quer **várias Towers** se a pessoa quiser, e também o UX de “já tem uma rodando, conecta”.
+
+**Pergunta:** comportamento default ao rodar `grok-oss` / TUI de novo:
+
+| Opção | Comportamento |
+|-------|----------------|
+| **A — Connect default** | Se existe Tower **default** (env/socket conhecido), **conecta**; senão **spawn**. Nova Tower só com flag explícita (`--tower new` / `--listen …` / `--isolated`). **[recomendado; parece o leader atual]** |
+| **B — Sempre novo processo** | Cada invoke = Tower nova (ruim pra multi-UI no mesmo hub) |
+| **C — Prompt interativo** | “Conectar na Tower X / criar nova?” |
+| **D — Por workspace** | Default tower **por cwd** (conflita um pouco com “sessão em qualquer workspace” **dentro** da tower, mas pode coexistir como *discovery key*) |
+
+**Também:** como o user **escolhe** entre Towers se há várias? (porta, nome, `GROK_OSS_TOWER_URL`, lista local?)
+
+**Resposta:**
+
+```text
+T4 default:
+T4 como escolher entre várias:
+```
+
+---
+
+### 14.4 SDK TypeScript
+
+| ID | Pergunta |
+|----|----------|
+| **K1** | SDK no monorepo path preferido? (ex. `packages/grok-oss-app-server`, `npm/…`) |
+| **K2** | Publicar npm no MVP ou só path local / generate? |
+| **K3** | SDK só Node, ou também browser? |
+
+### 14.5 Sequência de entrega (confirmar fatias)
+
+Proposta para você confirmar (SIM/ajustar):
+
+1. Proto-Tower: formalizar leader lifecycle + multi-session registry (sem renomear tudo)  
+2. Protocol crate + facade  
+3. In-process / stdio app-server vertical slice  
+4. **WebSocket + auth token**  
+5. **MCP SSE remoto + `tower_agent_*`**  
+6. TS SDK mínimo + exemplos  
+7. ACL agent-type + docs  
+8. (v2) tools internas peer messaging  
+
+| ID | Pergunta |
+|----|----------|
+| **O1** | Essa ordem serve? O que puxar/empurrar? |
+| **O2** | “Primeira funcionalidade” = fatia 4+5 juntas (WS+MCP remoto) assim que o core existir? |
+
+### 14.6 Meta residual
+
+| ID | Pergunta |
+|----|----------|
+| **Q0.2** | Usuário primário além de você? (open-source público no dia 1?) |
+| **Q0.4** | Demo de aceite em 5 passos **literais** (comando + resultado esperado) — se puder gravar |
+| **Q0.6** | Prazo ou “quando ficar pronto”? |
+| **Q7.6** | Planos em PT ou EN para o Codex? |
+
+### 14.7 Já decidido — não perguntar de novo
+
+- Nome **Tower**  
+- MCP **mesmo release** App Server  
+- MCP **remoto SSE** + **WebSocket** early  
+- Tools MCP swarm: list/start/send/hub/history full\|last  
+- Multi-sessão **mesmo processo**  
+- ACL default **orchestrator only**, customizável  
+- Tools names **`tower_agent_*`**  
+- Peer tools **internas** → **v2**  
+- Goal redesign → **futuro** (v1/v2 + flag); retrocompat **só goal**  
+- Durante App Server: **inventariar** hot-paths (não dual-flag obrigatório)  
+- **TS SDK** MUST  
+- Inspiração **Codex** app-server  
+- Analisar **leader/dashboard** como proto-Tower  
+
+---
+
 **Fim do handoff.**
+
