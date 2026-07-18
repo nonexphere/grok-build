@@ -73,3 +73,29 @@ mod remote_bind_tests {
         assert!(w.contains("experimental/unsafe"));
     }
 }
+
+#[cfg(test)]
+mod control_plane_security_tests {
+    use super::*;
+
+    #[test]
+    fn control_plane_security_canary_matrix() {
+        for sample in [
+            "sk-live-canary",
+            "Bearer abc",
+            "access_token=xyz",
+            "GROK_TEST_SECRET_CANARY",
+        ] {
+            assert!(assert_no_secret_canaries(sample).is_err());
+        }
+        assert!(assert_no_secret_canaries("session started ok").is_ok());
+    }
+
+    #[test]
+    fn redaction_canary_lengths() {
+        for n in [0usize, 1, 8, 32, 43] {
+            let s = format!("prefix {} suffix", "x".repeat(n));
+            assert!(assert_no_secret_canaries(&s).is_ok());
+        }
+    }
+}

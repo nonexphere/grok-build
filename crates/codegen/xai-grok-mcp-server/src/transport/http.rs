@@ -95,3 +95,27 @@ mod streamable_http_tests {
         assert_eq!(table.resume_from("s1", Some(12)), 12);
     }
 }
+
+#[cfg(test)]
+mod auth_failures_tests {
+    use super::*;
+
+    #[test]
+    fn bearer_header_only_and_auth_failures_are_generic() {
+        let expected = "token-value";
+        for bad in [None, Some(""), Some("Bearer x"), Some("token-value")] {
+            let err = validate_http_bearer(bad, expected);
+            assert!(err.is_err());
+        }
+        assert!(validate_http_bearer(Some("Bearer token-value"), expected).is_ok());
+        assert!(reject_token_query("access_token=1").is_err());
+    }
+
+    #[test]
+    fn redaction_canary_absent_from_post_response_shape() {
+        let resp = post_mcp_response(serde_json::json!(1), serde_json::json!({"ok":true}));
+        let s = resp.to_string();
+        assert!(!s.contains("sk-"));
+        assert!(!s.contains("access_token"));
+    }
+}
