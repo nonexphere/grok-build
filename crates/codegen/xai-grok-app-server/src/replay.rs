@@ -24,15 +24,13 @@ pub async fn replay_all_pages(
         let through = page.replayed_through.clone();
         pages.push(page);
         match next {
-            Some(c) if c.as_u64() > through.as_u64() || c.as_u64() > after.as_u64() => {
+            Some(c) if c.as_u64() > after.as_u64() => {
                 after = c;
             }
-            Some(c) => {
-                after = c;
-                break;
-            }
+            Some(_) => break,
             None => break,
         }
+        let _ = through;
     }
     Ok(pages)
 }
