@@ -37,11 +37,11 @@ segundo runtime. [provenance: user-input, code, inferred]
 |---|---|---|---|
 | 0 | `10/v1-01`, `20/v1-01`, `30/v1-01` | os três | baseline honesto, ownership e contratos congelados |
 | 1 | `10/v1-02`, `20/v1-02`, `30/v1-02` | providers e runtime | provider seam + uma Tower/registry + facade única |
-| 2 | `30/v1-03`, `20/v1-03` | parcialmente | vertical slice in-process/stdio e lifecycle multi-instance |
-| 3 | `50/v1-01`, depois `30/v1-04` e `40/v1-01` | WS e MCP somente após facade/descriptors | facade de tools congelada, WebSocket bearer e MCP early |
-| 4 | `30/v1-05..06` | history/approvals | replay e controle sobre a facade comum |
-| 5 | `50/v1-02`, `60/v1-01`, `10/v1-03..05` | sim | ACL/in-process tools, SDK real, BYOK por provider |
-| 6 | `30/v1-07`, `40/v1-02`, `20/v1-04` | hardening conjunto | conformance, threat model, runbooks e release evidence |
+| 2 | `30/v1-03` | não | primeira vertical slice local in-process/stdio completa |
+| 3 | `20/v1-03`, `30/v1-05..06`, `50/v1-01` | parcialmente | lifecycle multi-instance, replay/interactions e tools in-process |
+| 4 | `30/v1-04`, depois `40/v1-01` | parcialmente | WebSocket local primeiro; MCP somente após descriptors/facade |
+| 5 | `50/v1-02`, `60/v1-01`, `10/v1-03..05` | sim | ACL/paridade, SDK real, BYOK por provider |
+| 6 | `30/v1-07`, `40/v1-02`, `20/v1-04` | hardening conjunto | remote/TLS classification, conformance, runbooks e release evidence |
 | 7+ | Goal v2, dashboard client, gateways e voz | fora do MVP core | programas separados e explicitamente aprovados |
 
 ## Status e estimativas dos epics

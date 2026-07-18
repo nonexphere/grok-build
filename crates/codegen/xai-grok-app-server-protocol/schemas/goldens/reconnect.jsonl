@@ -1,8 +1,8 @@
-{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2026-07-18.experimental-v1","clientInfo":{"name":"golden-reconnect","version":"1"},"capabilities":{"interactions":false,"reconnect":true,"experimental":[]}}}
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2026-07-18.experimental-v2","clientInfo":{"name":"golden-reconnect","version":"1"},"capabilities":{"interactions":false,"reconnect":true,"experimental":[]}}}
 {"jsonrpc":"2.0","method":"initialized","params":{}}
-{"jsonrpc":"2.0","id":2,"method":"session/subscribe","params":{"sessionId":"session_1","historyEpoch":"epoch_1","afterEventSeq":41}}
-{"jsonrpc":"2.0","method":"item/delta","params":{"sessionId":"session_1","historyEpoch":"epoch_1","eventSeq":42,"timestampMs":1784376020000,"turnId":"turn_9","itemId":"item_42","revision":2,"delta":"resumed","stream":"content"}}
-{"jsonrpc":"2.0","id":2,"result":{"subscriptionId":"sub_2","historyEpoch":"epoch_1","replayedThroughEventSeq":42,"liveFromEventSeq":43}}
-{"jsonrpc":"2.0","method":"item/completed","params":{"sessionId":"session_1","historyEpoch":"epoch_1","eventSeq":43,"timestampMs":1784376020100,"item":{"itemId":"item_42","sessionId":"session_1","turnId":"turn_9","type":"agent_message","status":"completed","revision":3,"eventSeq":43,"createdAtMs":1784376019900,"text":"resumed"}}}
-{"jsonrpc":"2.0","id":3,"method":"session/subscribe","params":{"sessionId":"session_1","historyEpoch":"old_epoch","afterEventSeq":43}}
+{"jsonrpc":"2.0","id":2,"method":"session/subscribe","params":{"sessionId":"session_1","historyEpoch":"epoch_1","afterEventSeq":"41"}}
+{"jsonrpc":"2.0","method":"item/delta","params":{"subscriptionId":"sub_2","sessionId":"session_1","historyEpoch":"epoch_1","eventSeq":"42","timestampMs":1784376020000,"turnId":"turn_9","itemId":"item_42","revision":"2","delta":"resumed","stream":"content"}}
+{"jsonrpc":"2.0","id":2,"result":{"subscriptionId":"sub_2","historyEpoch":"epoch_1","replayedThroughEventSeq":"42","liveFromEventSeq":"43"}}
+{"jsonrpc":"2.0","method":"item/completed","params":{"subscriptionId":"sub_2","sessionId":"session_1","historyEpoch":"epoch_1","eventSeq":"43","timestampMs":1784376020100,"item":{"itemId":"item_42","sessionId":"session_1","turnId":"turn_9","type":"agent_message","status":"completed","revision":"3","eventSeq":"43","createdAtMs":1784376019900,"text":"resumed"}}}
+{"jsonrpc":"2.0","id":3,"method":"session/subscribe","params":{"sessionId":"session_1","historyEpoch":"old_epoch","afterEventSeq":"43"}}
 {"jsonrpc":"2.0","id":3,"error":{"code":-32012,"message":"The history epoch changed; read a new snapshot.","data":{"code":"epoch_mismatch","retryable":true,"currentHistoryEpoch":"epoch_2"}}}

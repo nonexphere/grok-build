@@ -14,6 +14,7 @@
 | `xai-grok-mcp-server` | MCP server adapter over tools/facade | MCP client behavior, semantic duplication |
 | `xai-grok-mcp` | existing external MCP client | control-plane server |
 | `xai-grok-shell` | existing `SessionActor`, permissions, execution | public JSON-RPC wire structs |
+| `xai-grok-pager-bin` | composition root that constructs Shell adapter, Tower, App Server and optional MCP transports | runtime semantics or protocol types |
 | `packages/grok-oss-app-server` | TS wire types/client/examples | server semantics |
 
 ## Allowed dependency DAG
@@ -42,6 +43,18 @@ graph TD
 
 The current scaffold intentionally omits the future `Processor -> Tower` edge
 until dispatch exists. Adding a dependency earlier would be fake integration.
+
+## Composition root and dependency inversion
+
+`xai-grok-pager-bin` is the only MVP composition root. `xai-grok-tower` owns the
+runtime port, registry policy, projections and Tower instance lifecycle, but it
+never imports `xai-grok-shell`. Shell depends on Tower only to implement
+`GrokRuntimeFacade` as a thin adapter over existing leader/`SessionActor`
+handles. The binary depends on both and injects that implementation into Tower,
+App Server and tools. “Promote the leader” means promote its capability behind
+this port; it does **not** authorize moving or copying the leader state machine
+in MVP. A future physical extraction requires a separate ADR and byte-compatible
+migration.
 
 ## Forbidden edges
 

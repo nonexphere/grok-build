@@ -2,12 +2,17 @@
 
 This is the canonical completion matrix for the 2026-07-18 contract-deepening pass. Status describes this pass only: DONE means the requested contract/schema/scaffold evidence exists, not that runtime business logic is implemented. PARTIAL names the exact remaining gap and why it is not faked. [provenance: review §11–§14]
 
+The post-review corrections are recorded in
+[`ARCHITECTURE_CORRECTIONS.md`](./ARCHITECTURE_CORRECTIONS.md); they refine wire
+types, composition ownership, gates and release posture without changing the
+157-ID inventory.
+
 ## Master artifact map
 
 | Domain | Canonical sources |
 |---|---|
 | Glossary/truth | `session-turn-item-identity.md`, `source-of-truth.md` |
-| Crates | `crate-map.md`, workspace manifests and five new Rust crates |
+| Crates | `crate-map.md`, workspace manifests and six new Rust crates |
 | Protocol | `30-app-server/v1-01-session-protocol/contracts/*.md`, protocol Rust/schema/goldens |
 | Tower/facade | `tower-instance-lifecycle.md`, `runtime-facade.md`, `xai-grok-tower` |
 | Tools/security | `tower-agent-tools.md`, `control-plane-security.md`, tool schema |

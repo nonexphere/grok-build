@@ -1,4 +1,4 @@
-//! Params/results for every critical experimental-v1 method.
+//! Params/results for every critical experimental-v2 method.
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};

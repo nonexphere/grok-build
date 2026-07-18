@@ -8,7 +8,7 @@ use xai_grok_app_server_protocol::{
     InteractionRequest, InteractionResponseParams, Item, Session, SessionArchiveParams,
     SessionForkParams, SessionReadParams, SessionReadResult, SessionResumeParams,
     SessionStartParams, SubscribeParams, Turn, TurnInterruptParams, TurnStartParams,
-    TurnSteerParams,
+    TurnSteerParams, WireCounter,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -35,7 +35,14 @@ pub trait GrokRuntimeFacade: Send + Sync {
         &self,
         params: InteractionResponseParams,
     ) -> Result<(), RuntimeError>;
-    async fn replay(&self, cursor: SubscribeParams) -> Result<Vec<RuntimeEvent>, RuntimeError>;
+    async fn replay(&self, cursor: SubscribeParams) -> Result<ReplayPage, RuntimeError>;
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ReplayPage {
+    pub events: Vec<RuntimeEvent>,
+    pub replayed_through: WireCounter,
+    pub next_cursor: Option<WireCounter>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -47,7 +54,7 @@ pub enum RuntimeEvent {
         session_id: String,
         turn_id: String,
         item_id: String,
-        revision: u64,
+        revision: WireCounter,
         delta: String,
     },
     ItemCompleted(Item),

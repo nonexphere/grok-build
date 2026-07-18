@@ -35,7 +35,9 @@ bearers are full-control and have no fine-grained scopes. [provenance: handoff R
 3. The runtime canonicalizes the path and applies folder trust/sandbox policy.
 4. Symlink or ownership changes between authorization and actor creation abort.
 5. `agentType` is optional; absence selects the runtime’s ordinary default.
-6. `providerBinding` is an opaque existing binding ID, never credentials.
+6. `providerBinding` is the structured immutable public tuple
+   `{providerId, credentialId, modelId, backend, bindingRevision}`. It contains
+   identifiers only, rejects unknown fields, and never contains credentials.
 7. The key is 8..128 bytes. Same canonical input replays the first result.
 8. A created Session starts `starting`, then `ready` or `failed`; no success is
    returned before the registry has a stable Session ID and canonical file path.
@@ -49,7 +51,7 @@ Happy request:
 Happy result:
 
 ```json
-{"jsonrpc":"2.0","id":10,"result":{"session":{"sessionId":"0198...","historyEpoch":"epoch_1","revision":1,"status":"ready","workspaceRoot":"/work/grok-goblin","title":null,"activeTurnId":null,"latestTurnId":null,"providerBinding":null,"createdAtMs":1784376000000,"updatedAtMs":1784376000000}}}
+{"jsonrpc":"2.0","id":10,"result":{"session":{"sessionId":"0198...","historyEpoch":"epoch_1","revision":"1","status":"ready","workspaceRoot":"/work/grok-goblin","title":null,"activeTurnId":null,"latestTurnId":null,"providerBinding":null,"createdAtMs":1784376000000,"updatedAtMs":1784376000000}}}
 ```
 
 Invalid workspace:
@@ -131,8 +133,12 @@ The result names `subscriptionId`, current `historyEpoch`,
 after the processor has established the live tap and buffered the replay/live
 boundary. Details and sequence diagram are in `events.md`.
 
+All event-sequence and revision values are canonical decimal strings on the
+wire. A client may open multiple subscriptions for one Session; every stream is
+owned, routed and unsubscribed by `subscriptionId`.
+
 ```json
-{"jsonrpc":"2.0","id":24,"method":"session/subscribe","params":{"sessionId":"session_1","historyEpoch":"epoch_1","afterEventSeq":41}}
+{"jsonrpc":"2.0","id":24,"method":"session/subscribe","params":{"sessionId":"session_1","historyEpoch":"epoch_1","afterEventSeq":"41"}}
 ```
 
 Invalid cursor example:

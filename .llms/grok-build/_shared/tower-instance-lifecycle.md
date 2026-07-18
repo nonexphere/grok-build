@@ -112,6 +112,14 @@ actors, queue depth, spawn latency and failed lifecycle transitions. Future
 knobs (`max_resident_sessions`, `idle_release_after`) are inert until specified;
 they MUST NOT silently change MVP behavior.
 
+“No product session cap” does not mean unbounded resource admission. The runtime
+MUST enforce safety budgets for resident actors, active Turns, pending loads,
+connection queues, replay bytes, file descriptors and minimum free disk. A
+budget refusal is explicit, retryable where appropriate, observable, and never
+archives or deletes a Session. Defaults are derived conservatively from process
+and OS capacity; configured values are instance-scoped. Dormant persisted
+Sessions remain listable even when a residency budget is exhausted.
+
 Soft telemetry records current and peak values for: Tower instances, registered
 Sessions, resident actors, dormant Sessions, active Turns, pending Interactions,
 per-connection outbound queue depth, replay buffer bytes, process RSS, open file

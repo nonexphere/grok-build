@@ -39,7 +39,7 @@ External client example (never auto-written by grok-oss):
 Stdio reads/writes one JSON-RPC message per line in MVP; stdout is protocol-only
 and diagnostics go to stderr. EOF begins graceful drain. In-process uses typed
 processor calls and the same initialize gate. WebSocket requires subprotocol
-`grok-oss.app-server.experimental-v1`, bearer during HTTP upgrade, 30s ping,
+`grok-oss.app-server.experimental-v2`, bearer during HTTP upgrade, 30s ping,
 10s pong timeout and 1 MiB messages. Each text frame contains one JSON object;
 binary, fragmented-over-limit and batch frames are rejected.
 

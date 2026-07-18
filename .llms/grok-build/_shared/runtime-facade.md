@@ -21,13 +21,19 @@ pub trait GrokRuntimeFacade: Send + Sync {
     async fn steer_turn(&self, params: TurnSteerParams) -> Result<Item, RuntimeError>;
     async fn interrupt_turn(&self, params: TurnInterruptParams) -> Result<(), RuntimeError>;
     async fn respond_interaction(&self, params: InteractionResponseParams) -> Result<(), RuntimeError>;
-    async fn replay(&self, cursor: SubscribeParams) -> Result<Vec<RuntimeEvent>, RuntimeError>;
+    async fn replay(&self, cursor: SubscribeParams) -> Result<ReplayPage, RuntimeError>;
 }
 ```
 
+`ReplayPage` is byte/event bounded and contains `events`,
+`replayed_through` and optional `next_cursor`; an unbounded `Vec` is forbidden.
 The scaffold declares this full shape and has no implementation. Streaming live
 events will add a separate subscription receiver without changing replay cursor
 semantics; no method returns canned success.
+
+The composition root is `xai-grok-pager-bin`: it constructs the Shell adapter
+and injects it. Tower never imports Shell, and Shell never delegates actor
+semantics back through App Server or MCP.
 
 ## Mapping to existing operations
 

@@ -126,7 +126,7 @@ apenas descriptors seguros e safe reasoning summaries.
 
 ## Deepened wire contract
 
-The scaffold protocol version is `2026-07-18.experimental-v1`. Clients MUST send
+The scaffold protocol version is `2026-07-18.experimental-v2`. Clients MUST send
 that exact value in `initialize`; no silent downgrade exists. Breaking changes
 receive a new version and golden corpus. Additive fields require schema and TS
 regeneration. These artifacts do not claim stable v1.

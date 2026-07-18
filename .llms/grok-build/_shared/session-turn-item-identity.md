@@ -23,7 +23,7 @@ because several adjacent runtime concepts are superficially similar.
 | revision | Per-entity mutation counter | eventSeq, optimistic lease revision across entities, or timestamp |
 | AgentType | Runtime profile name used by capability/ACL policy | model ID, provider, bearer authority, Session role, or free-form prompt text |
 | CredentialId | Opaque identity of stored provider credentials | credential value, catalog slug, bearer token, or AgentType |
-| ProviderBinding | Immutable reference binding provider/credential/model/backend to a Session/Turn | secret storage, mutable alias, or control-plane bearer |
+| ProviderBinding | Immutable structured reference `{providerId, credentialId, modelId, backend, bindingRevision}` captured by a Session and snapshotted for every Turn | secret storage, mutable alias, opaque string, or control-plane bearer |
 | Runtime facade | Single typed port from adapters to existing leader/SessionActor behavior | second actor, wire protocol, persistence authority, or canned-success fake |
 | Projection | Rebuildable client/history representation derived from canonical runtime/session files | execution truth, credential store, SessionActor state, or authoritative transcript |
 
@@ -38,3 +38,7 @@ renumber already published identities. IDs are opaque on the wire and bounded to
 Native methods use `session/*`, `turn/*`, `item/*`. Codex terminology may appear
 only in the isolated compatibility mapping file and citations; it never enters
 native Rust type names, MCP tools, SDK API or product-facing examples.
+
+`eventSeq`, entity `revision`, binding revision and replay cursor counters are
+internal `u64` values serialized as canonical decimal strings. JSON numbers are
+invalid for these fields so JavaScript cannot silently lose precision.

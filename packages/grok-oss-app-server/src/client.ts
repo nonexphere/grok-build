@@ -1,4 +1,4 @@
-import type { InitializeParams, InitializeResult, Item, OperationResult, ProtocolEvent, Session, SessionListParams, SessionListResult, SessionReadResult, SessionStartParams, SubscribeParams, Turn } from "./types.js";
+import type { InitializeParams, InitializeResult, Item, OperationResult, ProtocolEvent, Session, SessionListParams, SessionListResult, SessionReadResult, SessionStartParams, SubscribeParams, SubscribeResult, Turn } from "./types.js";
 
 export interface JsonRpcTransport {
   send(message: string): Promise<void>;
@@ -37,12 +37,13 @@ export class AppServerClient {
 
   async *subscribe(params: SubscribeParams): AsyncIterable<Item> {
     const queue = new AsyncEventQueue<Item>();
-    this.eventQueues.set(params.sessionId, queue);
+    const result = await this.request<SubscribeResult>("session/subscribe", params);
+    this.eventQueues.set(result.subscriptionId, queue);
     try {
-      await this.request("session/subscribe", params);
       for await (const item of queue) yield item;
     } finally {
-      this.eventQueues.delete(params.sessionId);
+      this.eventQueues.delete(result.subscriptionId);
+      void this.request<OperationResult>("session/unsubscribe", { subscriptionId: result.subscriptionId }).catch(() => undefined);
     }
   }
 
@@ -78,9 +79,9 @@ export class AppServerClient {
   }
 
   private routeEvent(event: ProtocolEvent): void {
-    const sessionId = event.params.sessionId;
+    const subscriptionId = event.params.subscriptionId;
     const item = event.params.item;
-    if (sessionId && item && typeof item === "object") this.eventQueues.get(sessionId)?.push(item as Item);
+    if (subscriptionId && item && typeof item === "object") this.eventQueues.get(subscriptionId)?.push(item as Item);
   }
 }
 

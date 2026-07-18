@@ -6,6 +6,8 @@ granulares vivem nos `tasks.md` de cada epic.
 | Requisito | Contrato | Epic owner | Prova de aceite |
 |---|---|---|---|
 | Session canônico | `_shared/session-turn-item-identity.md` | `30/v1-01` | schema/TS/MCP sem `thread` nativo |
+| ProviderBinding estruturado | protocol schema + `_shared/provider-contract.md` | `30/v1-01`, `10/v1-02` | unknown/secret fields rejeitados; snapshot imutável por Turn |
+| contadores lossless no wire | protocol Rust/generated/operational schemas | `30/v1-01`, `60/v1-01` | `u64::MAX` roundtrip como decimal string; JSON number rejeitado |
 | Tower promove leader | `_shared/runtime-ownership.md` | `20/v1-01` | actor/registry ownership + connect-or-spawn tests |
 | N sessions/workspaces | `_shared/tower-instance-lifecycle.md` | `20/v1-02` | multi-session integration |
 | N Towers/machine | mesmo | `20/v1-03` | isolated endpoint/token/state smoke |
@@ -13,7 +15,7 @@ granulares vivem nos `tasks.md` de cada epic.
 | WS early | `_shared/mcp-server-transport-cli.md`, protocol errors | `30/v1-04` | transport conformance WS |
 | MCP remoto same release | `_shared/mcp-server-transport-cli.md` | `40/v1-01..02` | stdio + HTTP/SSE conformance |
 | bearer full-control | `_shared/control-plane-security.md` | `30/v1-04`, `40/v1-02` | auth/redaction/threat tests |
-| sem Origin/scopes/TLS mandatory | mesmo | `30/v1-04` | config/warning tests + docs |
+| sem Origin/scopes/TLS mandatory no modo experimental | mesmo | `30/v1-04` | cleartext remoto rotulado unsafe; produção exige TLS/gate humano |
 | tools MUST | `_shared/tower-agent-tools.md` | `50/v1-01` | one contract suite por operação |
 | in-process + MCP semantic parity | runtime/tools contracts | `50/v1-02` | differential conformance |
 | ACL orchestrator default | security/tools | `50/v1-02` | allow/deny/config tests |
@@ -23,7 +25,7 @@ granulares vivem nos `tasks.md` de cada epic.
 | Goal fora do core | `_shared/goal-boundary.md` | `70/*` | DAG sem Goal v2 em release core |
 | goal v1/v2 flags | `_shared/goal-boundary.md` | `70/v2-01..07` | future dual-version/rollback fixtures |
 | BYOK OR/Groq/CF | `_shared/provider-contract.md` + onboarding docs | `10/v1-02..05` | onboarding→catalog→turn→logout |
-| TDD | `TDD.md` | todos | RED/GREEN + package/conformance gate |
+| TDD | `TDD.md`, `scripts/run-rust-test-gate.sh` | todos | RED/GREEN + gate que falha com zero testes |
 | gateways/voice só backlog | project docs | `80/v1-01`, `90/v1-01` | nenhum dependency inverso/core code task |
 
 ## Deepening de contratos e scaffolds (2026-07-18)

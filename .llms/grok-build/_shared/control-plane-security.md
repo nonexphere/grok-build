@@ -67,6 +67,12 @@ The warning goes to stderr/logs without address credentials and is emitted once
 per enabled remote surface. It is not a confirmation prompt that automation can
 accidentally bypass.
 
+Non-loopback cleartext is always labeled `experimental/unsafe`; a warning alone
+does not make it release-ready. A production/public remote release requires TLS
+at the process or an explicitly documented trusted reverse proxy plus the HUMAN
+threat-model gate. This tightens release classification without changing the
+locked ability to run an explicitly requested unsafe development mode.
+
 ## Explicitly deferred defenses
 
 Fine-grained scopes, Origin checks, TLS/WSS termination, pairing/device approval,

@@ -30,14 +30,19 @@ by the runtime projector may cross the protocol.
 
 ## Ordering model
 
-- `eventSeq`: strictly increasing `u64` per Session/historyEpoch.
-- Item `revision`: strictly increasing per Item, independent of eventSeq.
+- `eventSeq`: strictly increasing internal `u64` per Session/historyEpoch,
+  serialized as a canonical decimal string.
+- Item `revision`: strictly increasing internal `u64` per Item, independent of
+  eventSeq and also serialized as a decimal string.
 - Session/Turn revisions: strictly increasing per entity.
 - `historyEpoch`: opaque identity of continuity. Restart changes it only when
   replay continuity cannot be proven; rebuild that preserves event identity may
   retain it.
 - Cross-Session order has no meaning. Concurrent Sessions can interleave on a
   connection while each Session remains ordered.
+- Subscribed lifecycle events carry `subscriptionId`; unsolicited connection
+  events may omit it. Clients route subscription streams by this ID, never only
+  by Session ID.
 
 Invalid examples:
 

@@ -3,14 +3,16 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::{Item, Session, Turn};
+use crate::{Item, Session, Turn, WireCounter};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct EventMeta {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub subscription_id: Option<String>,
     pub session_id: String,
     pub history_epoch: String,
-    pub event_seq: u64,
+    pub event_seq: WireCounter,
     pub timestamp_ms: u64,
 }
 
@@ -45,7 +47,7 @@ pub struct ItemDeltaEvent {
     pub meta: EventMeta,
     pub turn_id: String,
     pub item_id: String,
-    pub revision: u64,
+    pub revision: WireCounter,
     pub delta: String,
     pub stream: String,
 }

@@ -3,6 +3,15 @@
 Este é o método canônico para executar os epics desta árvore. Behavior change
 sem teste vermelho observado não satisfaz o plano.
 
+## Gates Rust não-vazios
+
+Um `cargo test <filtro>` termina com sucesso mesmo quando seleciona zero testes,
+portanto não é um gate de epic válido sozinho. Todo gate Rust nomeado DEVE usar
+`scripts/run-rust-test-gate.sh <fragmento-esperado> cargo test ...`. O wrapper
+exige tanto sucesso do Cargo quanto ao menos uma linha
+`test ...<fragmento-esperado>... ok`. Comandos de package completo, sem filtro,
+continuam válidos quando a aceitação é a suíte integral.
+
 ## Ciclo obrigatório
 
 1. Escolher uma regra observável do epic e seu entrypoint real.

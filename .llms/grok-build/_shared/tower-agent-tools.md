@@ -161,7 +161,7 @@ it cannot add a parallel registry or a `tower_agent_hub`.
 ```
 
 ```json
-{"tool":"tower_agent_wait","arguments":{"sessionId":"session_01","afterEventSeq":12,"timeoutMs":30000}}
+{"tool":"tower_agent_wait","arguments":{"sessionId":"session_01","afterEventSeq":"12","timeoutMs":30000}}
 ```
 
 ### Multi-session swarm orchestration
@@ -171,8 +171,8 @@ it cannot add a parallel registry or a `tower_agent_hub`.
 {"tool":"tower_agent_start","arguments":{"workspaceRoot":"/work/b","agentType":"review","model":null,"providerBinding":null,"sandboxMode":null,"idempotencyKey":"start-reviewer-b"}}
 {"tool":"tower_agent_send","arguments":{"sessionId":"session_a","input":[{"type":"text","text":"Implement the protocol fixture."}],"mode":"new_turn","turnId":null,"idempotencyKey":"send-worker-a"}}
 {"tool":"tower_agent_send","arguments":{"sessionId":"session_b","input":[{"type":"text","text":"Review the protocol contract."}],"mode":"new_turn","turnId":null,"idempotencyKey":"send-reviewer-b"}}
-{"tool":"tower_agent_wait","arguments":{"sessionId":"session_a","historyEpoch":"epoch_a","afterEventSeq":0,"timeoutMs":30000}}
-{"tool":"tower_agent_wait","arguments":{"sessionId":"session_b","historyEpoch":"epoch_b","afterEventSeq":0,"timeoutMs":30000}}
+{"tool":"tower_agent_wait","arguments":{"sessionId":"session_a","historyEpoch":"epoch_a","afterEventSeq":"0","timeoutMs":30000}}
+{"tool":"tower_agent_wait","arguments":{"sessionId":"session_b","historyEpoch":"epoch_b","afterEventSeq":"0","timeoutMs":30000}}
 ```
 
 The orchestrator polls each Session independently; no cross-Session event order

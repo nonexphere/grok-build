@@ -6,13 +6,90 @@
 use schemars::{schema_for, JsonSchema};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::{fmt, str::FromStr};
 
 pub mod events;
 pub mod methods;
 pub use events::*;
 pub use methods::*;
 
-pub const PROTOCOL_VERSION: &str = "2026-07-18.experimental-v1";
+pub const PROTOCOL_VERSION: &str = "2026-07-18.experimental-v2";
+
+/// Lossless JSON representation for monotonic counters shared with JavaScript.
+/// The wire form is a canonical unsigned decimal string, never a JSON number.
+#[derive(
+    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, JsonSchema,
+)]
+#[serde(try_from = "String", into = "String")]
+#[schemars(with = "String")]
+pub struct WireCounter(String);
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WireCounterError;
+
+impl fmt::Display for WireCounterError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("wire counter must be a canonical unsigned decimal string")
+    }
+}
+
+impl WireCounter {
+    pub fn new(value: u64) -> Self {
+        Self(value.to_string())
+    }
+    pub fn as_u64(&self) -> u64 {
+        self.0.parse().expect("validated wire counter")
+    }
+}
+
+impl From<u64> for WireCounter {
+    fn from(value: u64) -> Self {
+        Self::new(value)
+    }
+}
+impl Default for WireCounter {
+    fn default() -> Self {
+        Self::new(0)
+    }
+}
+impl From<WireCounter> for String {
+    fn from(value: WireCounter) -> Self {
+        value.0
+    }
+}
+impl FromStr for WireCounter {
+    type Err = WireCounterError;
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        let parsed = value.parse::<u64>().map_err(|_| WireCounterError)?;
+        if parsed.to_string() != value {
+            return Err(WireCounterError);
+        }
+        Ok(Self(value.to_owned()))
+    }
+}
+impl TryFrom<String> for WireCounter {
+    type Error = WireCounterError;
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        value.parse()
+    }
+}
+impl fmt::Display for WireCounter {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(&self.0)
+    }
+}
+
+/// Public, immutable inference selection. It contains identifiers only—never
+/// tokens, cookies, authorization headers, or other credential material.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ProviderBinding {
+    pub provider_id: String,
+    pub credential_id: String,
+    pub model_id: String,
+    pub backend: String,
+    pub binding_revision: WireCounter,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
@@ -125,14 +202,14 @@ pub enum SessionStatus {
 pub struct Session {
     pub session_id: String,
     pub history_epoch: String,
-    pub revision: u64,
+    pub revision: WireCounter,
     pub status: SessionStatus,
     pub workspace_root: String,
     pub title: Option<String>,
     pub active_turn_id: Option<String>,
     pub latest_turn_id: Option<String>,
     #[serde(default)]
-    pub provider_binding: Option<String>,
+    pub provider_binding: Option<ProviderBinding>,
     pub created_at_ms: u64,
     pub updated_at_ms: u64,
 }
@@ -164,7 +241,8 @@ pub enum TurnKind {
 pub struct Turn {
     pub turn_id: String,
     pub session_id: String,
-    pub revision: u64,
+    pub provider_binding: Option<ProviderBinding>,
+    pub revision: WireCounter,
     pub status: TurnStatus,
     pub kind: TurnKind,
     pub ordinal: u64,
@@ -280,8 +358,8 @@ pub struct Item {
     pub item_id: String,
     pub session_id: String,
     pub turn_id: String,
-    pub event_seq: u64,
-    pub revision: u64,
+    pub event_seq: WireCounter,
+    pub revision: WireCounter,
     pub status: ItemStatus,
     pub created_at_ms: u64,
     #[serde(flatten)]
@@ -295,7 +373,7 @@ pub struct SessionStartParams {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent_type: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub provider_binding: Option<String>,
+    pub provider_binding: Option<ProviderBinding>,
     pub idempotency_key: String,
 }
 
@@ -325,7 +403,7 @@ pub struct TurnRef {
 pub struct SubscribeParams {
     pub session_id: String,
     #[serde(default)]
-    pub after_event_seq: u64,
+    pub after_event_seq: WireCounter,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub history_epoch: Option<String>,
 }
@@ -389,8 +467,8 @@ mod tests {
             item_id: "item_1".into(),
             session_id: "session_1".into(),
             turn_id: "turn_1".into(),
-            event_seq: 3,
-            revision: 1,
+            event_seq: 3.into(),
+            revision: 1.into(),
             status: ItemStatus::Completed,
             created_at_ms: 1_784_376_000_000,
             body: ItemBody::AgentMessage {
@@ -403,8 +481,59 @@ mod tests {
     }
 
     #[test]
+    fn provider_binding_is_structured_and_contains_no_secret_material() {
+        let value = serde_json::json!({
+            "providerId": "codex",
+            "credentialId": "work",
+            "modelId": "gpt-5.6",
+            "backend": "responses",
+            "bindingRevision": "7"
+        });
+        let binding: ProviderBinding = serde_json::from_value(value.clone()).unwrap();
+        assert_eq!(serde_json::to_value(binding).unwrap(), value);
+        assert!(
+            serde_json::from_value::<ProviderBinding>(serde_json::json!({
+                "providerId": "codex",
+                "credentialId": "work",
+                "modelId": "gpt-5.6",
+                "backend": "responses",
+                "bindingRevision": "7",
+                "accessToken": "secret"
+            }))
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn wire_counters_serialize_as_lossless_decimal_strings() {
+        let counter = WireCounter::new(u64::MAX);
+        assert_eq!(
+            serde_json::to_value(&counter).unwrap(),
+            serde_json::json!("18446744073709551615")
+        );
+        assert_eq!(
+            serde_json::from_value::<WireCounter>(serde_json::json!("18446744073709551615"))
+                .unwrap(),
+            counter
+        );
+        assert!(serde_json::from_value::<WireCounter>(serde_json::json!(1)).is_err());
+        assert!(serde_json::from_value::<WireCounter>(serde_json::json!("01")).is_err());
+    }
+
+    #[test]
     fn generated_protocol_schema_compiles() {
         jsonschema::validator_for(&protocol_schema()).expect("valid JSON Schema");
+    }
+
+    #[test]
+    fn checked_in_generated_schema_matches_rust_types_byte_for_byte() {
+        let mut generated = serde_json::to_string_pretty(&protocol_schema()).unwrap();
+        generated.push('\n');
+        assert_eq!(
+            include_str!("../schemas/generated-protocol.schema.json"),
+            generated,
+            "run: cargo run -p xai-grok-app-server-protocol --example generate-schema"
+        );
     }
 
     #[test]
@@ -452,7 +581,7 @@ mod tests {
             (
                 "tower_agent_history",
                 serde_json::json!({"sessionId":"session_1","mode":"last","maxBytes":4096}),
-                serde_json::json!({"sessionId":"session_1","historyEpoch":"epoch_1","items":[],"nextEventSeq":0,"truncated":false,"redacted":true}),
+                serde_json::json!({"sessionId":"session_1","historyEpoch":"epoch_1","items":[],"nextEventSeq":"0","truncated":false,"redacted":true}),
             ),
             (
                 "tower_agent_resume",
@@ -461,8 +590,8 @@ mod tests {
             ),
             (
                 "tower_agent_wait",
-                serde_json::json!({"sessionId":"session_1","afterEventSeq":0,"timeoutMs":1000}),
-                serde_json::json!({"sessionId":"session_1","historyEpoch":"epoch_1","events":[],"nextEventSeq":0,"wakeReason":"timeout"}),
+                serde_json::json!({"sessionId":"session_1","afterEventSeq":"0","timeoutMs":1000}),
+                serde_json::json!({"sessionId":"session_1","historyEpoch":"epoch_1","events":[],"nextEventSeq":"0","wakeReason":"timeout"}),
             ),
             (
                 "tower_agent_interrupt",

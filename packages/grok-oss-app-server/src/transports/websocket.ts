@@ -9,7 +9,7 @@ export class WebSocketTransport implements JsonRpcTransport {
   constructor(url: string, token: string) {
     if (!token) throw new Error("GROK_OSS_TOWER_TOKEN is required");
     if (new URL(url).username || new URL(url).password || new URL(url).search) throw new Error("Credentials/query parameters are forbidden in the WebSocket URL");
-    this.socket = new WebSocket(url, "grok-oss.app-server.experimental-v1", { headers: { Authorization: `Bearer ${token}` }, maxPayload: 1048576 });
+    this.socket = new WebSocket(url, "grok-oss.app-server.experimental-v2", { headers: { Authorization: `Bearer ${token}` }, maxPayload: 1048576 });
     this.opened = new Promise((resolve, reject) => { this.socket.once("open", resolve); this.socket.once("error", reject); });
     this.socket.on("message", (data, binary) => { if (binary) this.queue.fail(new Error("Binary App Server frame")); else this.queue.push(data.toString()); });
     this.socket.once("close", () => this.queue.end());
