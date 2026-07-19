@@ -20,7 +20,8 @@ use futures_util::StreamExt;
 use serde_json::{json, Value};
 use tokio::time::timeout;
 use xai_grok_mcp_server::{
-    MCP_PROTOCOL_VERSION, McpHttpConfig, run_mcp_http_server,
+    DEFAULT_MAX_SESSION_EVENTS, MCP_PROTOCOL_VERSION, McpHttpConfig, McpSession,
+    run_mcp_http_server,
 };
 use xai_grok_tower::FakeRuntime;
 
@@ -544,33 +545,200 @@ async fn r5_mcp_event_buffer_cap_drops_oldest() {
     assert!(session_arc.events_after(min.saturating_sub(1)).is_err());
 }
 
-#[tokio::test]
-async fn r5_mcp_ttl_eviction_clears_active_turn_slot() {
-    // R5-07: TTL eviction removes the session and clears active_turn tracking
-    // so orphan turns are not left without a controller path.
-    let (addr, state, _join) = spawn_server_with(McpHttpConfig {
-        bearer_token: TOKEN.to_owned(),
-        require_auth: true,
-        session_ttl: Duration::from_millis(30),
-        ..Default::default()
-    })
-    .await;
-    let c = client();
-    let (_, _, session) = post_json(&c, addr, Some(TOKEN), None, &init_request(1)).await;
-    let sid = session.expect("session");
+/// Probe facade that records every `interrupt_turn` call (R5-07 evidence).
+struct InterruptProbeRuntime {
+    inner: FakeRuntime,
+    interrupts: Arc<std::sync::Mutex<Vec<(String, String)>>>,
+}
+
+#[async_trait::async_trait]
+impl xai_grok_tower::GrokRuntimeFacade for InterruptProbeRuntime {
+    async fn list_sessions(
+        &self,
+    ) -> Result<Vec<xai_grok_app_server_protocol::Session>, xai_grok_tower::RuntimeError> {
+        self.inner.list_sessions().await
+    }
+    async fn read_session(
+        &self,
+        params: xai_grok_app_server_protocol::SessionReadParams,
+    ) -> Result<xai_grok_app_server_protocol::SessionReadResult, xai_grok_tower::RuntimeError>
     {
-        let s = state.sessions.lock().unwrap().get(&sid).cloned().unwrap();
-        *s.tower_session_id.lock().unwrap() = Some("tower-sess".into());
-        *s.active_turn_id.lock().unwrap() = Some("turn-1".into());
-        // Backdate last_active so TTL fires.
+        self.inner.read_session(params).await
+    }
+    async fn start_session(
+        &self,
+        params: xai_grok_app_server_protocol::SessionStartParams,
+    ) -> Result<xai_grok_app_server_protocol::Session, xai_grok_tower::RuntimeError> {
+        self.inner.start_session(params).await
+    }
+    async fn resume_session(
+        &self,
+        params: xai_grok_app_server_protocol::SessionResumeParams,
+    ) -> Result<xai_grok_app_server_protocol::Session, xai_grok_tower::RuntimeError> {
+        self.inner.resume_session(params).await
+    }
+    async fn fork_session(
+        &self,
+        params: xai_grok_app_server_protocol::SessionForkParams,
+    ) -> Result<xai_grok_app_server_protocol::Session, xai_grok_tower::RuntimeError> {
+        self.inner.fork_session(params).await
+    }
+    async fn archive_session(
+        &self,
+        params: xai_grok_app_server_protocol::SessionArchiveParams,
+    ) -> Result<(), xai_grok_tower::RuntimeError> {
+        self.inner.archive_session(params).await
+    }
+    async fn start_turn(
+        &self,
+        params: xai_grok_app_server_protocol::TurnStartParams,
+    ) -> Result<xai_grok_app_server_protocol::Turn, xai_grok_tower::RuntimeError> {
+        self.inner.start_turn(params).await
+    }
+    async fn steer_turn(
+        &self,
+        params: xai_grok_app_server_protocol::TurnSteerParams,
+    ) -> Result<xai_grok_app_server_protocol::Item, xai_grok_tower::RuntimeError> {
+        self.inner.steer_turn(params).await
+    }
+    async fn interrupt_turn(
+        &self,
+        params: xai_grok_app_server_protocol::TurnInterruptParams,
+    ) -> Result<(), xai_grok_tower::RuntimeError> {
+        self.interrupts
+            .lock()
+            .unwrap()
+            .push((params.session_id.clone(), params.turn_id.clone()));
+        self.inner.interrupt_turn(params).await
+    }
+    async fn respond_interaction(
+        &self,
+        params: xai_grok_app_server_protocol::InteractionResponseParams,
+    ) -> Result<(), xai_grok_tower::RuntimeError> {
+        self.inner.respond_interaction(params).await
+    }
+    async fn replay(
+        &self,
+        cursor: xai_grok_app_server_protocol::SubscribeParams,
+    ) -> Result<xai_grok_tower::ReplayPage, xai_grok_tower::RuntimeError> {
+        self.inner.replay(cursor).await
+    }
+}
+
+#[tokio::test]
+async fn r5_mcp_ttl_eviction_via_lookup_interrupts_active_turn() {
+    // R5-07: TTL eviction on the **lookup** path (non-initialize POST) must
+    // call interrupt_turn — not only remove the transport session.
+    let interrupts = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let runtime: Arc<dyn xai_grok_tower::GrokRuntimeFacade> = Arc::new(InterruptProbeRuntime {
+        inner: FakeRuntime::new(),
+        interrupts: interrupts.clone(),
+    });
+    // Start a real Tower session + turn so interrupt_turn can succeed.
+    let tower = runtime
+        .start_session(xai_grok_app_server_protocol::SessionStartParams {
+            workspace_root: "/work/ttl".into(),
+            agent_type: None,
+            provider_binding: None,
+            idempotency_key: "ttl-sess".into(),
+        })
+        .await
+        .unwrap();
+    let turn = runtime
+        .start_turn(xai_grok_app_server_protocol::TurnStartParams {
+            session_id: tower.session_id.clone(),
+            input: vec![xai_grok_app_server_protocol::InputBlock::Text {
+                text: "hold".into(),
+            }],
+            idempotency_key: "ttl-turn".into(),
+        })
+        .await
+        .unwrap();
+
+    let handle = run_mcp_http_server(
+        runtime.clone(),
+        McpHttpConfig {
+            bearer_token: TOKEN.to_owned(),
+            require_auth: true,
+            session_ttl: Duration::from_millis(30),
+            tower_instance_id: "tower-A".to_owned(),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let addr = handle.addr;
+    let state = handle.state.clone();
+    let c = client();
+
+    // Session A: initialize, bind tower session + active turn, then expire.
+    let (_, _, session_a) = post_json(&c, addr, Some(TOKEN), None, &init_request(1)).await;
+    let sid_a = session_a.expect("session A");
+    {
+        let s = state.sessions.lock().unwrap().get(&sid_a).cloned().unwrap();
+        *s.tower_session_id.lock().unwrap() = Some(tower.session_id.clone());
+        *s.active_turn_id.lock().unwrap() = Some(turn.turn_id.clone());
         *s.last_active.lock().unwrap() =
             std::time::Instant::now() - Duration::from_secs(10);
     }
-    // Next initialize triggers eviction of the expired session.
-    let _ = post_json(&c, addr, Some(TOKEN), None, &init_request(2)).await;
+
+    // Session B (fresh) — initialize is one eviction path; also prove lookup:
+    // first create B, then use tools/list on B which calls lookup_session
+    // (async interrupt path) while A is still expired in the map... but
+    // initialize already evicted A. So: expire A, then tools/list on a
+    // **second** session that is still alive after re-init, after re-injecting
+    // an expired peer? Simpler: expire A without re-init by using a second
+    // live session C that we create first, expire A, then tools/list on C.
+    let (_, _, session_c) = post_json(&c, addr, Some(TOKEN), None, &init_request(2)).await;
+    let sid_c = session_c.expect("session C (live peer)");
+    // Re-bind A as expired peer (initialize may have already dropped A if
+    // TTL was already hit; re-insert if missing so lookup on C still finds A
+    // to evict... Actually initialize on C already ran eviction. Ensure A
+    // is re-inserted expired so the next lookup on C re-evicts A.
+    {
+        let fingerprint = {
+            // Match product bearer fingerprint of TOKEN for session A.
+            use std::collections::hash_map::DefaultHasher;
+            use std::hash::{Hash, Hasher};
+            let mut h = DefaultHasher::new();
+            TOKEN.hash(&mut h);
+            h.finish()
+        };
+        let expired = Arc::new(McpSession::new(
+            fingerprint,
+            "tower-A".to_owned(),
+            DEFAULT_MAX_SESSION_EVENTS,
+        ));
+        *expired.tower_session_id.lock().unwrap() = Some(tower.session_id.clone());
+        *expired.active_turn_id.lock().unwrap() = Some(turn.turn_id.clone());
+        *expired.last_active.lock().unwrap() =
+            std::time::Instant::now() - Duration::from_secs(10);
+        state
+            .sessions
+            .lock()
+            .unwrap()
+            .insert(sid_a.clone(), expired);
+    }
+    interrupts.lock().unwrap().clear();
+
+    // Lookup path: tools/list on live session C → lookup_session → interrupt A.
+    let (list_status, _, _) = post_json(
+        &c,
+        addr,
+        Some(TOKEN),
+        Some(&sid_c),
+        &json!({"jsonrpc":"2.0","id":3,"method":"tools/list"}),
+    )
+    .await;
+    assert!(list_status.is_success(), "live peer tools/list must succeed");
     assert!(
-        !state.sessions.lock().unwrap().contains_key(&sid),
-        "expired session must be removed"
+        !state.sessions.lock().unwrap().contains_key(&sid_a),
+        "expired peer must be removed by lookup eviction"
+    );
+    let calls = interrupts.lock().unwrap().clone();
+    assert!(
+        calls.iter().any(|(s, t)| s == &tower.session_id && t == &turn.turn_id),
+        "lookup TTL eviction must call interrupt_turn for the active turn, got {calls:?}"
     );
 }
 

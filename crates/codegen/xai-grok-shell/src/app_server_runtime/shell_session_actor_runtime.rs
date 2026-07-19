@@ -23,15 +23,17 @@
 //!   `unsupported` for these and documents the gap in `waves/c1-shell-port.md`.
 //! - **REAL (R6 hide-not-delete):** `archive_session` writes `archived.flag`
 //!   and projects `SessionStatus::Archived` without deleting session data.
-//! - **PARTIAL (design pending):** `respond_interaction` (R10) — delivery
-//!   channel into the existing pending-interaction surface is implemented
-//!   (C6-B): it checks `pending_interactions` membership, removes the entry
-//!   (first-answer-wins), and delivers the decision string via a process-local
-//!   oneshot hub. It does NOT re-evaluate allow/deny policy. Production
-//!   auto-register is PARTIAL — the live actor does not yet register its
-//!   parked-future oneshots into the hub; the composition root (C2-A) must
-//!   wire that. Tests inject a resident with a pre-seeded pending map +
-//!   oneshot to prove the delivery path.
+//! - **REAL (R10 / R5-09 delivery channel):** `respond_interaction` is a
+//!   delivery channel into the existing pending-interaction surface (C6-B):
+//!   it checks `pending_interactions` membership, removes the entry
+//!   (first-answer-wins), and delivers the decision string via the shared
+//!   process-local oneshot hub (`SessionHandle::interaction_delivery_hub` /
+//!   `ResidentHandle::delivery_hub`). It does NOT re-evaluate allow/deny
+//!   policy. The live actor parks reverse-request oneshots on that hub at
+//!   spawn (`ask_user_question` dual-waits hub vs ACP). Fixture/tests may
+//!   also pre-seed the hub. Without a resident, the method returns
+//!   `unsupported` honestly. Product turns still need a real spawn factory
+//!   (EXTERNAL credentials) — that is separate from this delivery seam.
 //! - **PARTIAL (projection):** `read_session` Turn/Item projection (R2) and
 //!   `replay` full `RuntimeEvent` projection (R11) — Shell has no first-class
 //!   `Turn`/`Item`/`RuntimeEvent` projector; the adapter builds a shared one

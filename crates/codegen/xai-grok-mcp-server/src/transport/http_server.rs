@@ -113,7 +113,9 @@ pub struct McpSession {
 pub const DEFAULT_MAX_SESSION_EVENTS: usize = 1024;
 
 impl McpSession {
-    fn new(bearer_fingerprint: u64, tower_instance_id: String, max_events: usize) -> Self {
+    /// Construct a transport session (used by the server and integration tests
+    /// that inject expired peers for TTL eviction coverage).
+    pub fn new(bearer_fingerprint: u64, tower_instance_id: String, max_events: usize) -> Self {
         Self {
             bearer_fingerprint,
             tower_instance_id,
@@ -437,7 +439,7 @@ async fn post_mcp(
         }
         Some((sid, session))
     } else {
-        match lookup_session(&state, &headers) {
+        match lookup_session(&state, &headers).await {
             Ok(s) => {
                 s.1.touch();
                 Some(s)
@@ -513,7 +515,7 @@ async fn get_mcp(
     if !accept.contains("text/event-stream") {
         return StatusCode::NOT_ACCEPTABLE.into_response();
     }
-    let session = match lookup_session(&state, &headers) {
+    let session = match lookup_session(&state, &headers).await {
         Ok(s) => s,
         Err(resp) => return resp,
     };
@@ -843,11 +845,16 @@ fn check_protocol_version(headers: &HeaderMap) -> Result<(), Response> {
     Ok(())
 }
 
-fn lookup_session(
-    state: &McpHttpState,
+/// Resolve a negotiated transport session after R5-07 TTL eviction that
+/// **always** interrupts active turns on expired peers (same path as
+/// initialize / DELETE). Async because interrupt goes through the facade.
+async fn lookup_session(
+    state: &Arc<McpHttpState>,
     headers: &HeaderMap,
 ) -> Result<(String, Arc<McpSession>), Response> {
-    evict_expired_sessions(state);
+    // R5-07: every lookup path must cancel in-flight Tower turns on TTL
+    // expiry — not only initialize. Sync-only retain left orphans.
+    evict_expired_sessions_and_interrupt(state).await;
     let sid = match headers.get(MCP_SESSION_HEADER).and_then(|h| h.to_str().ok()) {
         Some(s) => s.to_owned(),
         None => return Err(StatusCode::BAD_REQUEST.into_response()),
