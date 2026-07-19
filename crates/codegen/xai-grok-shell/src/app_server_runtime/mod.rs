@@ -4,18 +4,23 @@
 //! [`ShellRuntimeAdapter`] (or another `GrokRuntimeFacade` impl) and injects it
 //! into Tower/App Server/tools. Tower never imports this module.
 //!
-//! Production path: methods must eventually forward to the existing
-//! leader/`SessionActor` ownership model. Until that command mapping lands,
-//! tests inject a faithful [`xai_grok_tower::FakeRuntime`]. Do **not** mix real
-//! JSONL list/read with FakeRuntime mutations (split authority).
+//! Production path: [`ShellSessionActorRuntime`] forwards the storage-backed
+//! facade methods to the real JSONL storage adapter (C1-D). The actor-backed
+//! turn/interaction methods are PARTIAL until the live `SessionActor` fixture
+//! is wired. Tests may inject a faithful [`xai_grok_tower::FakeRuntime`] for
+//! conformance only. Do **not** mix real JSONL list/read with FakeRuntime
+//! mutations (split authority).
+
+pub mod shell_session_actor_runtime;
+pub use shell_session_actor_runtime::ShellSessionActorRuntime;
 
 use std::sync::Arc;
 
 use async_trait::async_trait;
 use xai_grok_app_server_protocol::{
     InteractionResponseParams, Item, Session, SessionArchiveParams, SessionForkParams,
-    SessionReadParams, SessionReadResult, SessionResumeParams, SessionStartParams, SessionStatus,
-    SubscribeParams, Turn, TurnInterruptParams, TurnStartParams, TurnSteerParams, WireCounter,
+    SessionReadParams, SessionReadResult, SessionResumeParams, SessionStartParams,
+    SubscribeParams, Turn, TurnInterruptParams, TurnStartParams, TurnSteerParams,
 };
 use xai_grok_tower::{GrokRuntimeFacade, ReplayPage, RuntimeError, SessionRegistry};
 
@@ -133,27 +138,6 @@ impl GrokRuntimeFacade for ShellRuntimeAdapter {
     }
 }
 
-/// Project an active-session row into a protocol Session (list path only).
-pub fn project_active_session_row(
-    session_id: &str,
-    workspace_root: &str,
-    created_at_ms: u64,
-) -> Session {
-    Session {
-        session_id: session_id.into(),
-        history_epoch: "epoch_1".into(),
-        revision: WireCounter::new(0),
-        status: SessionStatus::Dormant,
-        workspace_root: workspace_root.into(),
-        title: None,
-        active_turn_id: None,
-        latest_turn_id: None,
-        provider_binding: None,
-        created_at_ms,
-        updated_at_ms: created_at_ms,
-    }
-}
-
 #[cfg(test)]
 mod app_server_runtime_tests {
     use super::*;
@@ -251,13 +235,6 @@ mod app_server_runtime_tests {
         }
         assert_eq!(ok, 8);
         assert_eq!(adapter.registry_len(), 1);
-    }
-
-    #[test]
-    fn project_active_session_row_is_dormant_metadata_only() {
-        let s = project_active_session_row("sid", "/work", 1);
-        assert_eq!(s.status, SessionStatus::Dormant);
-        assert_eq!(s.workspace_root, "/work");
     }
 }
 

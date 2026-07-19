@@ -13458,6 +13458,7 @@ dependencies = [
  "semver",
  "serde_json",
  "serial_test",
+ "tempfile",
  "tikv-jemalloc-ctl",
  "tikv-jemalloc-sys",
  "tikv-jemallocator",

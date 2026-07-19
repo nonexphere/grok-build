@@ -1,0 +1,73 @@
+warning: /home/guilherme/github/grok-goblin/crates/codegen/xai-grok-pager-bin/Cargo.toml: file `/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-pager-bin/src/main.rs` found to be present in multiple build targets:
+  * `bin` target `goblin`
+  * `bin` target `grok-oss`
+  * `bin` target `xai-grok-pager`
+warning: function `build_responses_input` is never used
+    --> crates/codegen/xai-grok-sampling-types/src/conversation.rs:2719:4
+     |
+2719 | fn build_responses_input(req: &ConversationRequest) -> rs::InputParam {
+     |    ^^^^^^^^^^^^^^^^^^^^^
+     |
+     = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `easy_input_content_text` is never used
+    --> crates/codegen/xai-grok-sampling-types/src/conversation.rs:2927:4
+     |
+2927 | fn easy_input_content_text(content: &rs::EasyInputContent) -> Option<String> {
+     |    ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: `xai-grok-sampling-types` (lib) generated 2 warnings
+warning: `xai-grok-sampling-types` (lib) generated 2 warnings (2 duplicates)
+warning: unused import: `AuthProvider`
+ --> crates/codegen/xai-grok-multi-auth/src/registry.rs:5:21
+  |
+5 | use xai_grok_auth::{AuthProvider, ProviderRegistry};
+  |                     ^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `AuthProvider`
+ --> crates/codegen/xai-grok-multi-auth/src/cli.rs:9:5
+  |
+9 |     AuthProvider, CredentialStore, ModelListRequest, ProviderId, ProviderModel, ProviderRegistry,
+  |     ^^^^^^^^^^^^
+
+warning: unused import: `AuthProvider`
+  --> crates/codegen/xai-grok-multi-auth/src/token_manager.rs:24:5
+   |
+24 |     AuthProvider, CredentialBinding, CredentialKey, CredentialLockPurpose, CredentialSecret,
+   |     ^^^^^^^^^^^^
+
+warning: unused import: `AuthProvider`
+  --> crates/codegen/xai-grok-multi-auth/src/request_auth.rs:10:5
+   |
+10 |     AuthProvider, CredentialBinding, CredentialKey, CredentialStore, ModelBinding,
+   |     ^^^^^^^^^^^^
+
+warning: `xai-grok-multi-auth` (lib) generated 4 warnings (run `cargo fix --lib -p xai-grok-multi-auth` to apply 1 suggestion)
+warning: `xai-grok-multi-auth` (lib) generated 4 warnings (4 duplicates)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.00s
+     Running tests/c1_shell_port.rs (target/debug/deps/c1_shell_port-083035a131af0a0a)
+
+running 18 tests
+test c1_real_adapter_list_sessions_reads_jsonl_summaries_not_dormant_stub ... ok
+test c1_real_adapter_interrupt_turn_returns_unsupported_actor_gap ... ok
+test c1_real_adapter_respond_interaction_returns_unsupported ... ok
+test c1_real_adapter_read_session_projects_session_row_from_summary ... ok
+test c1_real_adapter_no_hybrid_authority_real_list_with_fake_mutation_rejected ... ok
+test c1_real_adapter_start_session_idempotency_conflict_on_different_input ... ok
+test c1_real_adapter_archive_session_returns_unsupported_not_delete ... ok
+test c1_real_adapter_resume_session_unknown_returns_not_found ... ok
+test c1_real_adapter_shell_runtime_adapter_wraps_real_port ... ok
+test c1_real_adapter_steer_turn_returns_unsupported_actor_gap ... ok
+test c1_real_adapter_start_session_idempotency_key_dedups_same_session_id ... ok
+test c1_real_adapter_resume_session_loads_persisted_summary ... ok
+test c1_real_adapter_replay_epoch_mismatch_returns_error ... ok
+test c1_real_adapter_start_turn_returns_unsupported_actor_gap ... ok
+test c1_real_adapter_start_session_persists_summary_and_returns_real_id ... ok
+test c1_real_adapter_replay_cursor_pagination_advances_after_event_seq ... ok
+test c1_real_adapter_replay_projects_updates_jsonl_into_runtime_events ... ok
+test c1_real_adapter_fork_session_copies_history_to_new_cwd ... ok
+
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+

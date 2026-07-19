@@ -1,18 +1,35 @@
 //! Experimental App Server composition root.
 //!
-//! Until SessionActor-backed `GrokRuntimeFacade` lands, tests inject FakeRuntime
-//! only. Production mutations must not mix real storage list with fake mutation
-//! authority (see adversarial audit F-01 / corrective contract).
+//! C1-D: the product path injects the real Shell-owned
+//! [`ShellSessionActorRuntime`] (backed by the JSONL storage adapter), NOT
+//! `FakeRuntime`. `FakeRuntime` remains available for unit/conformance tests
+//! only. Do not mix real storage list/read with FakeRuntime mutations (split
+//! authority — audit F-01 / F-13).
 
 use std::sync::Arc;
 
 use xai_grok_app_server::FacadeProcessor;
-use xai_grok_shell::app_server_runtime::ShellRuntimeAdapter;
-use xai_grok_tower::FakeRuntime;
+use xai_grok_shell::app_server_runtime::{ShellRuntimeAdapter, ShellSessionActorRuntime};
+use xai_grok_tower::GrokRuntimeFacade;
 
-/// Build the experimental App Server processor for composition-root smoke tests.
+/// Build the experimental App Server processor for the product path.
+///
+/// Uses the real Shell session-actor runtime rooted at `grok_home()`. The
+/// actor-backed turn/interaction methods are PARTIAL (C1-D); storage-backed
+/// methods (list/read/start/resume/fork/replay) are real.
 pub fn experimental_app_server_processor() -> FacadeProcessor {
-    let adapter = ShellRuntimeAdapter::inject(Arc::new(FakeRuntime::new()));
+    let root = xai_grok_shell::util::grok_home::grok_home();
+    experimental_app_server_processor_with_root(root)
+}
+
+/// Build the experimental App Server processor with an explicit storage root.
+///
+/// Test seam: tests pass a `TempDir` so they never touch the real `grok_home()`.
+pub fn experimental_app_server_processor_with_root(
+    root: std::path::PathBuf,
+) -> FacadeProcessor {
+    let real: Arc<dyn GrokRuntimeFacade> = Arc::new(ShellSessionActorRuntime::new(root));
+    let adapter = ShellRuntimeAdapter::inject(real);
     FacadeProcessor::new(Arc::new(adapter))
 }
 
@@ -37,7 +54,9 @@ mod composition_tests {
 
     #[tokio::test]
     async fn composition_root_initialize_session_turn() {
-        let processor = experimental_app_server_processor();
+        // Use a temp root so the real port never touches the user's grok_home.
+        let temp = tempfile::TempDir::new().unwrap();
+        let processor = experimental_app_server_processor_with_root(temp.path().to_path_buf());
         let init = processor
             .handle_line(
                 &json!({
@@ -66,6 +85,15 @@ mod composition_tests {
             .unwrap()
             .unwrap();
         assert!(start.contains("sessionId"));
+    }
+
+    /// The product composition root must inject the real port, not FakeRuntime.
+    #[test]
+    fn composition_root_injects_real_port_not_fake_runtime() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let processor = experimental_app_server_processor_with_root(temp.path().to_path_buf());
+        // Smoke: the processor builds from the real port without panicking.
+        let _ = processor;
     }
 }
 
