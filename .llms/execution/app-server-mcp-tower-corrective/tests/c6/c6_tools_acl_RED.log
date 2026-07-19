@@ -1,0 +1,59 @@
+warning: /home/guilherme/github/grok-goblin/crates/codegen/xai-grok-pager-bin/Cargo.toml: file `/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-pager-bin/src/main.rs` found to be present in multiple build targets:
+  * `bin` target `goblin`
+  * `bin` target `grok-oss`
+  * `bin` target `xai-grok-pager`
+    Blocking waiting for file lock on build directory
+   Compiling xai-grok-tower-tools v0.1.0 (/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-tower-tools)
+warning: function `project_runtime_event_to_json` is never used
+   --> crates/codegen/xai-grok-tower-tools/src/lib.rs:410:4
+    |
+410 | fn project_runtime_event_to_json(event: &xai_grok_tower::RuntimeEvent) -> Value {
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `xai-grok-tower-tools` (lib) generated 1 warning
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2m 27s
+     Running tests/c6_tools_acl.rs (target/debug/deps/c6_tools_acl-f982b54ebf41c48f)
+
+running 24 tests
+test c6_acl_is_fail_closed_by_default ... ok
+test c6_forbidden_hub_symbol_absent ... ok
+test c6_custom_explicit_opt_in_is_allowed ... ok
+test c6_idempotency_key_conflict_on_diverging_input ... ok
+test c6_invalid_params_when_workspace_root_missing ... ok
+test c6_acl_denies_every_tool_before_target_lookup ... ok
+test c6_idempotency_start_replays_same_session ... ok
+test c6_idempotency_send_replays_same_turn ... ok
+test c6_in_process_path_has_no_mcp_loop ... ok
+test c6_tower_agent_list_invoke_path ... ok
+test c6_tower_agent_history_invoke_path ... ok
+test c6_swarm_n_sessions_without_hub ... ok
+test c6_tower_agent_resume_invoke_path ... ok
+test c6_tower_agent_send_new_turn_rejects_turn_id ... ok
+test c6_tower_agent_archive_invoke_path ... ok
+test c6_tower_agent_send_steer_active_requires_turn_id ... ok
+test c6_tower_agent_status_invoke_path ... ok
+test c6_tower_agent_send_steer_active_invoke_path ... ok
+test c6_tower_agent_interrupt_invoke_path ... ok
+test c6_tower_agent_send_new_turn_invoke_path ... ok
+test c6_tower_agent_start_invoke_path ... ok
+test c6_all_nine_descriptors_have_input_and_output_schema ... ok
+test c6_unknown_tool_is_method_not_found ... ok
+test c6_tower_agent_wait_invoke_path ... FAILED
+
+failures:
+
+---- c6_tower_agent_wait_invoke_path stdout ----
+
+thread 'c6_tower_agent_wait_invoke_path' (886105) panicked at crates/codegen/xai-grok-tower-tools/tests/c6_tools_acl.rs:352:5:
+assertion failed: out["events"].is_array()
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    c6_tower_agent_wait_invoke_path
+
+test result: FAILED. 23 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p xai-grok-tower-tools --test c6_tools_acl`

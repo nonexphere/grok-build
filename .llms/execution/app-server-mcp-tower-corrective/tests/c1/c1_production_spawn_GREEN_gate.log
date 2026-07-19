@@ -1,0 +1,12 @@
+=== c1_production_spawn ===
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+=== c1_turn_lifecycle ===
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+=== c1_shell_port ===
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+=== app_server_runtime invariants ===
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 5684 filtered out; finished in 0.00s
+=== composition root ===
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 29 filtered out; finished in 0.00s
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 29 filtered out; finished in 0.00s
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 29 filtered out; finished in 0.00s

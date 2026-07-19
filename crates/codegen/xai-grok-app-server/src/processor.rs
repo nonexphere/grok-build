@@ -133,12 +133,25 @@ impl FacadeProcessor {
                 Ok(json!({ "session": session }))
             }
             "session/list" => {
-                let _p: SessionListParams = deser(params).unwrap_or(SessionListParams {
+                let p: SessionListParams = deser(params).unwrap_or(SessionListParams {
                     page: Default::default(),
                     include_archived: false,
                     workspace_root: None,
                 });
-                let sessions = self.runtime.list_sessions().await.map_err(map_runtime)?;
+                let mut sessions = self.runtime.list_sessions().await.map_err(map_runtime)?;
+                // R6 / C7-B: hide archived sessions from the default list unless
+                // the caller explicitly opts in with `include_archived`.
+                if !p.include_archived {
+                    sessions.retain(|s| {
+                        !matches!(
+                            s.status,
+                            xai_grok_app_server_protocol::SessionStatus::Archived
+                        )
+                    });
+                }
+                if let Some(root) = p.workspace_root.as_ref() {
+                    sessions.retain(|s| &s.workspace_root == root);
+                }
                 Ok(serde_json::to_value(SessionListResult {
                     sessions,
                     next_cursor: None,

@@ -1,0 +1,88 @@
+warning: /home/guilherme/github/grok-goblin/crates/codegen/xai-grok-pager-bin/Cargo.toml: file `/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-pager-bin/src/main.rs` found to be present in multiple build targets:
+  * `bin` target `goblin`
+  * `bin` target `grok-oss`
+  * `bin` target `xai-grok-pager`
+   Compiling xai-grok-config v0.1.0 (/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-config)
+   Compiling xai-grok-tower v0.1.0 (/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-tower)
+   Compiling xai-grok-multi-auth v0.1.0 (/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-multi-auth)
+   Compiling xai-grok-sandbox v0.1.0 (/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-sandbox)
+warning: unused import: `AuthProvider`
+ --> crates/codegen/xai-grok-multi-auth/src/registry.rs:5:21
+  |
+5 | use xai_grok_auth::{AuthProvider, ProviderRegistry};
+  |                     ^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `AuthProvider`
+ --> crates/codegen/xai-grok-multi-auth/src/cli.rs:9:5
+  |
+9 |     AuthProvider, CredentialStore, ModelListRequest, ProviderId, ProviderModel, ProviderRegistry,
+  |     ^^^^^^^^^^^^
+
+warning: unused import: `AuthProvider`
+  --> crates/codegen/xai-grok-multi-auth/src/token_manager.rs:24:5
+   |
+24 |     AuthProvider, CredentialBinding, CredentialKey, CredentialLockPurpose, CredentialSecret,
+   |     ^^^^^^^^^^^^
+
+warning: unused import: `AuthProvider`
+  --> crates/codegen/xai-grok-multi-auth/src/request_auth.rs:10:5
+   |
+10 |     AuthProvider, CredentialBinding, CredentialKey, CredentialStore, ModelBinding,
+   |     ^^^^^^^^^^^^
+
+   Compiling xai-grok-tools v0.1.220-alpha.4 (/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-tools)
+warning: `xai-grok-multi-auth` (lib) generated 4 warnings (run `cargo fix --lib -p xai-grok-multi-auth` to apply 1 suggestion)
+warning: `xai-grok-multi-auth` (lib) generated 4 warnings (4 duplicates)
+   Compiling xai-grok-sampling-types v0.1.0 (/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-sampling-types)
+   Compiling xai-grok-announcements v0.1.0 (/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-announcements)
+   Compiling xai-grok-hooks v0.1.0 (/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-hooks)
+warning: function `build_responses_input` is never used
+    --> crates/codegen/xai-grok-sampling-types/src/conversation.rs:2719:4
+     |
+2719 | fn build_responses_input(req: &ConversationRequest) -> rs::InputParam {
+     |    ^^^^^^^^^^^^^^^^^^^^^
+     |
+     = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `easy_input_content_text` is never used
+    --> crates/codegen/xai-grok-sampling-types/src/conversation.rs:2927:4
+     |
+2927 | fn easy_input_content_text(content: &rs::EasyInputContent) -> Option<String> {
+     |    ^^^^^^^^^^^^^^^^^^^^^^^
+
+   Compiling xai-grok-sampler v0.1.0 (/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-sampler)
+   Compiling xai-grok-agent v0.1.0 (/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-agent)
+   Compiling xai-chat-state v0.1.0 (/home/guilherme/github/grok-goblin/crates/codegen/xai-chat-state)
+   Compiling xai-grok-subagent-resolution v0.1.0 (/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-subagent-resolution)
+warning: `xai-grok-sampling-types` (lib) generated 2 warnings
+   Compiling xai-grok-telemetry v0.1.0 (/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-telemetry)
+   Compiling xai-grok-plugin-marketplace v0.1.0 (/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-plugin-marketplace)
+   Compiling xai-grok-mcp v0.1.0 (/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-mcp)
+   Compiling xai-grok-config-types v0.1.0 (/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-config-types)
+   Compiling xai-grok-workspace v0.1.220-alpha.4 (/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-workspace)
+   Compiling xai-grok-shared v0.0.0 (/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-shared)
+   Compiling xai-grok-shell-base v0.1.0 (/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-shell-base)
+   Compiling xai-grok-http v0.1.0 (/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-http)
+   Compiling xai-grok-shell-session-support v0.1.0 (/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-shell-session-support)
+   Compiling xai-grok-memory v0.1.0 (/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-memory)
+   Compiling xai-grok-shell v0.2.102 (/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-shell)
+warning: `xai-grok-sampling-types` (lib) generated 2 warnings (2 duplicates)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2m 30s
+     Running tests/c5_provider_binding_projection.rs (target/debug/deps/c5_provider_binding_projection-a1633d2e21e68994)
+
+running 10 tests
+test c5_idempotent_restart_projects_persisted_binding ... ok
+test c5_list_sessions_projects_persisted_binding ... ok
+test c5_replay_session_changed_snapshot_projects_binding ... ok
+test c5_session_without_binding_projects_none_everywhere ... ok
+test c5_sidecar_json_contains_no_secret_material ... ok
+test c5_resume_session_projects_persisted_binding ... ok
+test c5_start_with_binding_read_session_returns_same_identifiers ... ok
+test c5_fork_session_inherits_parent_binding ... ok
+test c5_read_session_turns_carry_session_binding ... ok
+test c5_start_turn_projects_session_binding_on_turn ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+

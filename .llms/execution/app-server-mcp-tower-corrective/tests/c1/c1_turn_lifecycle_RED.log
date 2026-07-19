@@ -1,0 +1,109 @@
+warning: /home/guilherme/github/grok-goblin/crates/codegen/xai-grok-pager-bin/Cargo.toml: file `/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-pager-bin/src/main.rs` found to be present in multiple build targets:
+  * `bin` target `goblin`
+  * `bin` target `grok-oss`
+  * `bin` target `xai-grok-pager`
+    Blocking waiting for file lock on build directory
+warning: function `build_responses_input` is never used
+    --> crates/codegen/xai-grok-sampling-types/src/conversation.rs:2719:4
+     |
+2719 | fn build_responses_input(req: &ConversationRequest) -> rs::InputParam {
+     |    ^^^^^^^^^^^^^^^^^^^^^
+     |
+     = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `easy_input_content_text` is never used
+    --> crates/codegen/xai-grok-sampling-types/src/conversation.rs:2927:4
+     |
+2927 | fn easy_input_content_text(content: &rs::EasyInputContent) -> Option<String> {
+     |    ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: `xai-grok-sampling-types` (lib) generated 2 warnings
+warning: `xai-grok-sampling-types` (lib) generated 2 warnings (2 duplicates)
+   Compiling xai-grok-multi-auth v0.1.0 (/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-multi-auth)
+warning: unused import: `AuthProvider`
+ --> crates/codegen/xai-grok-multi-auth/src/registry.rs:5:21
+  |
+5 | use xai_grok_auth::{AuthProvider, ProviderRegistry};
+  |                     ^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `AuthProvider`
+ --> crates/codegen/xai-grok-multi-auth/src/cli.rs:9:5
+  |
+9 |     AuthProvider, CredentialStore, ModelListRequest, ProviderId, ProviderModel, ProviderRegistry,
+  |     ^^^^^^^^^^^^
+
+warning: unused import: `AuthProvider`
+  --> crates/codegen/xai-grok-multi-auth/src/token_manager.rs:24:5
+   |
+24 |     AuthProvider, CredentialBinding, CredentialKey, CredentialLockPurpose, CredentialSecret,
+   |     ^^^^^^^^^^^^
+
+warning: unused import: `AuthProvider`
+  --> crates/codegen/xai-grok-multi-auth/src/request_auth.rs:10:5
+   |
+10 |     AuthProvider, CredentialBinding, CredentialKey, CredentialStore, ModelBinding,
+   |     ^^^^^^^^^^^^
+
+   Compiling xai-grok-shell v0.2.102 (/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-shell)
+warning: `xai-grok-multi-auth` (lib) generated 4 warnings (4 duplicates)
+warning: `xai-grok-multi-auth` (lib) generated 4 warnings (run `cargo fix --lib -p xai-grok-multi-auth` to apply 1 suggestion)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 10s
+     Running tests/c1_turn_lifecycle.rs (target/debug/deps/c1_turn_lifecycle-46d424e9884002d6)
+
+running 9 tests
+
+thread 'c1_turn_start_turn_routes_prompt_through_real_cmd_tx_and_persists' (635490) panicked at crates/codegen/xai-grok-shell/tests/c1_turn_lifecycle.rs:155:10:
+start_turn routes through real cmd_tx: RuntimeError { code: "unsupported", message: "RED stub" }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+thread 'c1_turn_concurrent_starts_serialize_through_single_mailbox' (635486) panicked at crates/codegen/xai-grok-shell/tests/c1_turn_lifecycle.rs:485:34:
+called `Result::unwrap()` on an `Err` value: RuntimeError { code: "unsupported", message: "RED stub" }
+
+thread 'c1_turn_interrupt_turn_turn_id_mismatch_returns_turn_not_found' (635488) panicked at crates/codegen/xai-grok-shell/tests/c1_turn_lifecycle.rs:455:5:
+assertion `left == right` failed
+  left: "unsupported"
+ right: "turn_not_found"
+test c1_turn_interrupt_turn_turn_id_mismatch_returns_turn_not_found ... FAILED
+
+thread 'c1_turn_steer_turn_targets_running_turn_and_returns_item' (635493) panicked at crates/codegen/xai-grok-shell/tests/c1_turn_lifecycle.rs:209:10:
+called `Result::unwrap()` on an `Err` value: RuntimeError { code: "unsupported", message: "RED stub" }
+test c1_turn_concurrent_starts_serialize_through_single_mailbox ... FAILED
+test c1_turn_start_turn_routes_prompt_through_real_cmd_tx_and_persists ... FAILED
+test c1_turn_start_turn_without_resident_returns_unsupported ... ok
+
+thread 'c1_turn_resume_re_residents_actor_and_routes_turn' (635489) panicked at crates/codegen/xai-grok-shell/tests/c1_turn_lifecycle.rs:517:10:
+turn routes after resume re-resident: RuntimeError { code: "unsupported", message: "RED stub" }
+
+thread 'c1_turn_steer_turn_turn_id_mismatch_returns_turn_not_found' (635494) panicked at crates/codegen/xai-grok-shell/tests/c1_turn_lifecycle.rs:249:5:
+assertion `left == right` failed
+  left: "unsupported"
+ right: "turn_not_found"
+test c1_turn_steer_turn_targets_running_turn_and_returns_item ... FAILED
+test c1_turn_resume_re_residents_actor_and_routes_turn ... FAILED
+test c1_turn_steer_turn_turn_id_mismatch_returns_turn_not_found ... FAILED
+
+thread 'c1_turn_interrupt_turn_cancels_running_turn_only' (635487) panicked at crates/codegen/xai-grok-shell/tests/c1_turn_lifecycle.rs:425:10:
+turn became running
+test c1_turn_interrupt_turn_cancels_running_turn_only ... FAILED
+
+thread 'c1_turn_steer_turn_against_running_turn_returns_item' (635492) panicked at crates/codegen/xai-grok-shell/tests/c1_turn_lifecycle.rs:366:10:
+turn became running
+test c1_turn_steer_turn_against_running_turn_returns_item ... FAILED
+
+failures:
+
+failures:
+    c1_turn_concurrent_starts_serialize_through_single_mailbox
+    c1_turn_interrupt_turn_cancels_running_turn_only
+    c1_turn_interrupt_turn_turn_id_mismatch_returns_turn_not_found
+    c1_turn_resume_re_residents_actor_and_routes_turn
+    c1_turn_start_turn_routes_prompt_through_real_cmd_tx_and_persists
+    c1_turn_steer_turn_against_running_turn_returns_item
+    c1_turn_steer_turn_targets_running_turn_and_returns_item
+    c1_turn_steer_turn_turn_id_mismatch_returns_turn_not_found
+
+test result: FAILED. 1 passed; 8 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.01s
+
+error: test failed, to rerun pass `-p xai-grok-shell --test c1_turn_lifecycle`

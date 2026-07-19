@@ -3,6 +3,8 @@
 pub mod in_process;
 pub mod stdio;
 pub mod websocket;
+#[cfg(feature = "websocket")]
+pub mod ws_listener;
 
 use async_trait::async_trait;
 

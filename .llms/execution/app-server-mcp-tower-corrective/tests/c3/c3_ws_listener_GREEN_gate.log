@@ -1,0 +1,68 @@
+warning: /home/guilherme/github/grok-goblin/crates/codegen/xai-grok-pager-bin/Cargo.toml: file `/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-pager-bin/src/main.rs` found to be present in multiple build targets:
+  * `bin` target `goblin`
+  * `bin` target `grok-oss`
+  * `bin` target `xai-grok-pager`
+warning: unused variable: `lease`
+  --> crates/codegen/xai-grok-app-server/src/controller.rs:52:13
+   |
+52 |         let lease = table.grant("s", "ix", "c1", 2);
+   |             ^^^^^ help: if this is intentional, prefix it with an underscore: `_lease`
+   |
+   = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: `xai-grok-app-server` (lib test) generated 1 warning (run `cargo fix --lib -p xai-grok-app-server --tests` to apply 1 suggestion)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.27s
+     Running unittests src/lib.rs (target/debug/deps/xai_grok_app_server-1d2dfc8c78103018)
+
+running 42 tests
+test co_start_tests::co_start_rejects_dual_stdio_accepts_stdio_plus_ws_matrix ... ok
+test controller::controller_lease_tests::controller_lease_revisioned_exactly_one_controller ... ok
+test conformance_tests::runtime_facade_end_to_end_via_processor ... ok
+test controller::controller_lease_tests::interaction_identity_distinct_from_request_ids ... ok
+test controller::controller_policy_tests::interaction_idempotency_second_resolve_fails ... ok
+test controller::controller_policy_tests::controller_disconnect_never_auto_allows ... ok
+test processor::processor_tests::composition_processor_depends_on_facade_trait_not_shell ... ok
+test security::control_plane_security_tests::control_plane_security_canary_matrix ... ok
+test security::remote_bind_tests::remote_bind_warning_exact_only_for_non_loopback ... ok
+test security::security_tests::remote_cleartext_is_labeled_experimental_unsafe ... ok
+test replay::cursor_semantics_tests::projection_rebuild_via_replay_is_stable_for_fake ... ok
+test security::control_plane_security_tests::redaction_canary_lengths ... ok
+test processor::processor_tests::processor_rejects_methods_before_initialize ... ok
+test transport::websocket::websocket_tests::bearer_auth_rejects_prefix_and_length_mismatches_identically ... ok
+test security::security_tests::secret_canaries_detect_common_leaks ... ok
+test replay::cursor_semantics_tests::cursor_semantics_epoch_mismatch_and_bounded_pages ... ok
+test snapshot_then_live_tests::snapshot_then_live_no_gap_on_fake ... ok
+test transport::websocket::websocket_tests::websocket_auth_header_only_rejects_missing_and_url_tokens ... ok
+test conformance_tests::conformance_in_process_and_stdio_normalized_outputs_match ... ok
+test transport::stdio::stdio_tests::stdio_ndjson_one_json_object_per_line_vertical_slice ... ok
+test transport::websocket::websocket_tests::websocket_reuses_processor_parity_with_stdio ... ok
+test transport::websocket::websocket_tests::websocket_transport_rejects_batch_and_oversized_frames ... ok
+test processor::processor_tests::processor_initialize_session_turn_vertical_slice ... ok
+test ws_listener_blackbox_tests::ws_listener_cleartext_non_loopback_warns_experimental_unsafe ... ok
+test transport::ws_listener::ws_listener_unit_tests::bounded_writer_drops_when_full ... ok
+test ws_listener_blackbox_tests::ws_listener_default_config_is_loopback ... ok
+test transport::in_process::in_process_tests::in_process_initialize_session_turn_item_stream ... ok
+test ws_listener_blackbox_tests::ws_listener_rejects_credentials_in_url_at_bind ... ok
+test websocket_conformance_tests::websocket_conformance_initialize_matches_stdio_shape ... ok
+test ws_listener_blackbox_tests::ws_listener_disconnect_drains_and_closes ... ok
+test conformance_tests::backpressure_subscribe_is_bounded_page ... ok
+test ws_listener_blackbox_tests::ws_listener_rejects_missing_authorization_header ... ok
+test ws_listener_blackbox_tests::ws_listener_handshake_subprotocol_negotiates_protocol_version ... ok
+test ws_listener_blackbox_tests::ws_listener_rejects_wrong_bearer ... ok
+test ws_listener_blackbox_tests::ws_listener_rejects_jsonrpc_batch ... ok
+test ws_listener_blackbox_tests::ws_listener_rejects_binary_frame ... ok
+test ws_listener_blackbox_tests::ws_listener_ping_pong_keepalive ... ok
+test ws_listener_blackbox_tests::ws_listener_text_frame_initialize_then_session_start_roundtrip ... ok
+test ws_listener_blackbox_tests::ws_conformance_matches_stdio_method_shapes ... ok
+test ws_listener_blackbox_tests::ws_listener_slow_client_resync_via_replay_fake_adapter ... ok
+test ws_listener_blackbox_tests::ws_listener_rejects_oversize_text_frame ... ok
+test ws_listener_blackbox_tests::ws_listener_bounded_writer_survives_burst ... ok
+
+test result: ok. 42 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.07s
+
+   Doc-tests xai_grok_app_server
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

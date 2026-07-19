@@ -1,0 +1,177 @@
+warning: /home/guilherme/github/grok-goblin/crates/codegen/xai-grok-pager-bin/Cargo.toml: file `/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-pager-bin/src/main.rs` found to be present in multiple build targets:
+  * `bin` target `goblin`
+  * `bin` target `grok-oss`
+  * `bin` target `xai-grok-pager`
+    Blocking waiting for file lock on build directory
+   Compiling xai-grok-tower-tools v0.1.0 (/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-tower-tools)
+   Compiling xai-grok-mcp-server v0.1.0 (/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-mcp-server)
+warning: unused import: `process_mcp_stdio_batch`
+ --> crates/codegen/xai-grok-mcp-server/src/transport/stdio.rs:9:33
+  |
+9 | use crate::{handle_mcp_jsonrpc, process_mcp_stdio_batch};
+  |                                 ^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `xai-grok-mcp-server` (lib) generated 1 warning (run `cargo fix --lib -p xai-grok-mcp-server` to apply 1 suggestion)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 45.59s
+     Running unittests src/lib.rs (target/debug/deps/xai_grok_app_server_protocol-399de1575797688f)
+
+running 22 tests
+test errors::errors_tests::errors_defaults_match_contract_backpressure_policy ... ok
+test errors::errors_tests::errors_initialize_gate_maps_pre_init_classes ... ok
+test tests::all_four_jsonl_goldens_are_valid_json_objects ... ok
+test envelope::initialize_envelope_tests::initialize_envelope_rejects_missing_jsonrpc_and_batches ... ok
+test envelope::initialize_envelope_tests::initialize_envelope_accepts_strict_request_shape ... ok
+test envelope::initialize_envelope_tests::initialize_envelope_accepts_notification_and_failure_shapes ... ok
+test errors::errors_tests::errors_catalog_covers_jsonrpc_and_domain_codes ... ok
+test tests::provider_binding_is_structured_and_contains_no_secret_material ... ok
+test tests::initialize_roundtrip_preserves_wire_shape ... ok
+test tests::wire_counters_serialize_as_lossless_decimal_strings ... ok
+test tests::item_roundtrip_preserves_tagged_body ... ok
+test methods::methods_tests::methods_results_and_method_document_tags_are_stable ... ok
+test methods::methods_tests::methods_session_and_turn_params_roundtrip_happy_and_reject_unknown ... ok
+test events::events_tests::events_snapshot_replay_live_ordering_shapes_roundtrip ... ok
+test transitions::entity_transition_tests::entity_session_turn_item_transitions_and_roundtrip ... ok
+test events::events_tests::events_invalid_epoch_and_interaction_request_shapes ... ok
+test transitions::entity_transition_tests::entity_all_mvp_item_body_kinds_roundtrip ... ok
+test tests::checked_in_generated_schema_matches_rust_types_byte_for_byte ... ok
+test tests::generated_protocol_schema_compiles ... ok
+test tests::all_nine_tower_tool_input_and_output_examples_validate ... ok
+test tests::checked_in_schemas_compile_and_cover_nine_tool_pairs ... ok
+test tests::golden_params_and_events_validate_against_named_checked_in_definitions ... ok
+
+test result: ok. 22 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.72s
+
+     Running unittests src/lib.rs (target/debug/deps/xai_grok_mcp_server-3f897ee8a0557016)
+
+running 11 tests
+test mcp_extra_tests::tool_descriptors_exact_nine ... ok
+test tests::mcp_lists_exactly_nine_tools ... ok
+test mcp_extra_tests::no_local_self_injection_in_production_source ... ok
+test transport::http::auth_failures_tests::bearer_header_only_and_auth_failures_are_generic ... ok
+test transport::http::limits_tests::limits_reject_oversized_body_explicitly ... ok
+test transport::http::auth_failures_tests::redaction_canary_absent_from_post_response_shape ... ok
+test tests::no_self_mcp_loop_tool_names ... ok
+test transport::http::streamable_http_tests::streamable_http_bearer_header_only_and_safe_sse_resume ... ok
+test mcp_extra_tests::adapter_parity_list_start_via_mcp_jsonrpc ... ok
+test tests::mcp_stdio_tools_call_shares_semantic_core_with_in_process ... ok
+test transport::stdio::stdio_tests::stdio_protocol_only_stdout_and_graceful_eof ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/streamable_http.rs (target/debug/deps/streamable_http-74c2b28265dbdc6f)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/xai_grok_tower-5e7f8b2a82849ea5)
+
+running 22 tests
+test budgets::resource_budget_tests::telemetry_peaks_retain_high_water_marks ... ok
+test instance::tests::tower_instance_id_enforces_wire_format ... ok
+test budgets::resource_budget_tests::resource_budget_admission_fails_explicitly_without_product_cap_on_dormant ... ok
+test instance::two_instances_tests::instance_state_root_is_disjoint_per_instance_id ... ok
+test lifecycle::drain_tests::restart_epoch_requires_explicit_resync_signal ... ok
+test lifecycle::stale_metadata_tests::stale_metadata_does_not_delete_on_pid_alone ... ok
+test lifecycle::drain_tests::drain_rejects_new_work_and_restart_bumps_epoch ... ok
+test instance::two_instances_tests::instance_contention_duplicate_id_rejected ... ok
+test metadata::session_metadata_tests::session_metadata_points_to_path_not_transcript ... ok
+test leader_characterization_tests::leader_characterization_tower_has_no_second_actor_type ... ok
+test instance::tests::multi_instance_directory_isolates_handles ... ok
+test instance::two_instances_tests::two_instances_have_disjoint_registries ... ok
+test projection::projection_tests::projection_maps_item_delta_and_redacts_secrets ... ok
+test lease::lease_tests::interaction_lease_first_writer_wins_stale_rejected ... ok
+test projection::projection_tests::projection_redaction_unknown_events_become_safe_diagnostics ... ok
+test registry::one_actor_tests::one_actor_per_session_id_serializes_residency ... ok
+test telemetry::lifecycle_metrics_tests::audit_canary_labels_reject_secret_names ... ok
+test telemetry::lifecycle_metrics_tests::lifecycle_metrics_are_bounded_and_secret_free ... ok
+test registry::one_actor_tests::one_actor_concurrent_get_or_insert_collapses_to_single_token ... ok
+test workspace::workspace_symlink_tests::workspace_symlink_escape_is_fail_closed ... ok
+test fake::fake_conformance_tests::facade_shape_covers_session_turn_interaction_replay ... ok
+test fake::fake_conformance_tests::fake_conformance_session_turn_item_idempotency ... ok
+
+test result: ok. 22 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/tower_instance_isolation.rs (target/debug/deps/tower_instance_isolation-884be99bf70622c6)
+
+running 4 tests
+test invalid_instance_id_is_rejected_before_path_derivation ... ok
+test default_instance_is_distinct_from_named_instances ... ok
+test two_instances_have_disjoint_state_roots ... ok
+test two_instances_have_disjoint_registries_and_directories ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/xai_grok_tower_tools-37ad9df4bc2d99ed)
+
+running 11 tests
+test acl_parity_tests::acl_matrix_orchestrator_default_deny_custom_opt_in ... ok
+test acl_parity_tests::forbidden_hub_symbol_absent_from_tool_names ... ok
+test acl_parity_tests::adapter_parity_mcp_and_in_process_normalized ... ok
+test history_parity_tests::history_parity_epoch_and_redaction_flag ... ok
+test acl_parity_tests::idempotency_start_replays_same_session ... ok
+test tests::acl_is_fail_closed_by_default ... ok
+test tests::contract_has_exactly_nine_unique_tools ... ok
+test swarm_limits_tests::mutations_start_send_archive_have_stable_errors ... ok
+test swarm_limits_tests::swarm_limits_n_sessions_without_hub ... ok
+test invoke_tests::tool_contract_all_nine_tools_invoke_facade ... ok
+test tests::every_descriptor_resolves_exact_input_and_output_definition ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/c6_tools_acl.rs (target/debug/deps/c6_tools_acl-127aebead5c42986)
+
+running 24 tests
+test c6_acl_is_fail_closed_by_default ... ok
+test c6_custom_explicit_opt_in_is_allowed ... ok
+test c6_forbidden_hub_symbol_absent ... ok
+test c6_idempotency_key_conflict_on_diverging_input ... ok
+test c6_acl_denies_every_tool_before_target_lookup ... ok
+test c6_idempotency_start_replays_same_session ... ok
+test c6_invalid_params_when_workspace_root_missing ... ok
+test c6_in_process_path_has_no_mcp_loop ... ok
+test c6_idempotency_send_replays_same_turn ... ok
+test c6_tower_agent_archive_invoke_path ... ok
+test c6_tower_agent_history_invoke_path ... ok
+test c6_tower_agent_list_invoke_path ... ok
+test c6_all_nine_descriptors_have_input_and_output_schema ... ok
+test c6_tower_agent_resume_invoke_path ... ok
+test c6_swarm_n_sessions_without_hub ... ok
+test c6_tower_agent_interrupt_invoke_path ... ok
+test c6_tower_agent_send_new_turn_rejects_turn_id ... ok
+test c6_tower_agent_send_new_turn_invoke_path ... ok
+test c6_tower_agent_send_steer_active_invoke_path ... ok
+test c6_tower_agent_send_steer_active_requires_turn_id ... ok
+test c6_tower_agent_start_invoke_path ... ok
+test c6_tower_agent_status_invoke_path ... ok
+test c6_unknown_tool_is_method_not_found ... ok
+test c6_tower_agent_wait_invoke_path ... ok
+
+test result: ok. 24 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests xai_grok_app_server_protocol
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests xai_grok_mcp_server
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests xai_grok_tower
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests xai_grok_tower_tools
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

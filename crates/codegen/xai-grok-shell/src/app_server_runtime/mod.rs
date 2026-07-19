@@ -12,7 +12,10 @@
 //! mutations (split authority).
 
 pub mod shell_session_actor_runtime;
-pub use shell_session_actor_runtime::ShellSessionActorRuntime;
+pub use shell_session_actor_runtime::{
+    experimental_local_turn_spawn, RealSpawnFn, ResidentHandle, SessionSpawner,
+    ShellSessionActorRuntime,
+};
 
 use std::sync::Arc;
 

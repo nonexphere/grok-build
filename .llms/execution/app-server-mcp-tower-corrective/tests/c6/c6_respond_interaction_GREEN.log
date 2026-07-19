@@ -1,0 +1,65 @@
+warning: /home/guilherme/github/grok-goblin/crates/codegen/xai-grok-pager-bin/Cargo.toml: file `/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-pager-bin/src/main.rs` found to be present in multiple build targets:
+  * `bin` target `goblin`
+  * `bin` target `grok-oss`
+  * `bin` target `xai-grok-pager`
+warning: function `build_responses_input` is never used
+    --> crates/codegen/xai-grok-sampling-types/src/conversation.rs:2719:4
+     |
+2719 | fn build_responses_input(req: &ConversationRequest) -> rs::InputParam {
+     |    ^^^^^^^^^^^^^^^^^^^^^
+     |
+     = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `easy_input_content_text` is never used
+    --> crates/codegen/xai-grok-sampling-types/src/conversation.rs:2927:4
+     |
+2927 | fn easy_input_content_text(content: &rs::EasyInputContent) -> Option<String> {
+     |    ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: `xai-grok-sampling-types` (lib) generated 2 warnings
+warning: `xai-grok-sampling-types` (lib) generated 2 warnings (2 duplicates)
+warning: unused import: `AuthProvider`
+ --> crates/codegen/xai-grok-multi-auth/src/registry.rs:5:21
+  |
+5 | use xai_grok_auth::{AuthProvider, ProviderRegistry};
+  |                     ^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `AuthProvider`
+ --> crates/codegen/xai-grok-multi-auth/src/cli.rs:9:5
+  |
+9 |     AuthProvider, CredentialStore, ModelListRequest, ProviderId, ProviderModel, ProviderRegistry,
+  |     ^^^^^^^^^^^^
+
+warning: unused import: `AuthProvider`
+  --> crates/codegen/xai-grok-multi-auth/src/token_manager.rs:24:5
+   |
+24 |     AuthProvider, CredentialBinding, CredentialKey, CredentialLockPurpose, CredentialSecret,
+   |     ^^^^^^^^^^^^
+
+warning: unused import: `AuthProvider`
+  --> crates/codegen/xai-grok-multi-auth/src/request_auth.rs:10:5
+   |
+10 |     AuthProvider, CredentialBinding, CredentialKey, CredentialStore, ModelBinding,
+   |     ^^^^^^^^^^^^
+
+warning: `xai-grok-multi-auth` (lib) generated 4 warnings (run `cargo fix --lib -p xai-grok-multi-auth` to apply 1 suggestion)
+warning: `xai-grok-multi-auth` (lib) generated 4 warnings (4 duplicates)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.84s
+     Running tests/c6_respond_interaction.rs (target/debug/deps/c6_respond_interaction-b8022d9a6216c379)
+
+running 10 tests
+test interaction_facade_production_source_has_no_second_permission_engine ... ok
+test interaction_facade_suite_covers_minimum_scenarios ... ok
+test interaction_facade_delivers_deny_decision_verbatim ... ok
+test interaction_facade_delivers_decision_to_parked_oneshot ... ok
+test interaction_facade_unknown_session_not_found ... ok
+test interaction_facade_does_not_re_evaluate_policy ... ok
+test interaction_facade_no_resident_unsupported ... ok
+test interaction_facade_delivers_for_question_kind ... ok
+test interaction_facade_unknown_interaction_not_found ... ok
+test interaction_facade_second_call_is_interaction_not_found ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+

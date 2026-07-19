@@ -1,0 +1,92 @@
+warning: /home/guilherme/github/grok-goblin/crates/codegen/xai-grok-pager-bin/Cargo.toml: file `/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-pager-bin/src/main.rs` found to be present in multiple build targets:
+  * `bin` target `goblin`
+  * `bin` target `grok-oss`
+  * `bin` target `xai-grok-pager`
+warning: function `build_responses_input` is never used
+    --> crates/codegen/xai-grok-sampling-types/src/conversation.rs:2719:4
+     |
+2719 | fn build_responses_input(req: &ConversationRequest) -> rs::InputParam {
+     |    ^^^^^^^^^^^^^^^^^^^^^
+     |
+     = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `easy_input_content_text` is never used
+    --> crates/codegen/xai-grok-sampling-types/src/conversation.rs:2927:4
+     |
+2927 | fn easy_input_content_text(content: &rs::EasyInputContent) -> Option<String> {
+     |    ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: `xai-grok-sampling-types` (lib) generated 2 warnings
+warning: unused import: `AuthProvider`
+ --> crates/codegen/xai-grok-multi-auth/src/registry.rs:5:21
+  |
+5 | use xai_grok_auth::{AuthProvider, ProviderRegistry};
+  |                     ^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `AuthProvider`
+ --> crates/codegen/xai-grok-multi-auth/src/cli.rs:9:5
+  |
+9 |     AuthProvider, CredentialStore, ModelListRequest, ProviderId, ProviderModel, ProviderRegistry,
+  |     ^^^^^^^^^^^^
+
+warning: unused import: `AuthProvider`
+  --> crates/codegen/xai-grok-multi-auth/src/token_manager.rs:24:5
+   |
+24 |     AuthProvider, CredentialBinding, CredentialKey, CredentialLockPurpose, CredentialSecret,
+   |     ^^^^^^^^^^^^
+
+warning: unused import: `AuthProvider`
+  --> crates/codegen/xai-grok-multi-auth/src/request_auth.rs:10:5
+   |
+10 |     AuthProvider, CredentialBinding, CredentialKey, CredentialStore, ModelBinding,
+   |     ^^^^^^^^^^^^
+
+warning: `xai-grok-multi-auth` (lib) generated 4 warnings (run `cargo fix --lib -p xai-grok-multi-auth` to apply 1 suggestion)
+   Compiling xai-grok-pager v0.2.102 (/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-pager)
+warning: unused import: `process_mcp_stdio_batch`
+ --> crates/codegen/xai-grok-mcp-server/src/transport/stdio.rs:9:33
+  |
+9 | use crate::{handle_mcp_jsonrpc, process_mcp_stdio_batch};
+  |                                 ^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `xai-grok-mcp-server` (lib) generated 1 warning (run `cargo fix --lib -p xai-grok-mcp-server` to apply 1 suggestion)
+   Compiling xai-grok-pager-bin v0.2.102 (/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-pager-bin)
+   Compiling xai-grok-pager-minimal v0.1.0 (/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-pager-minimal)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 24.69s
+     Running unittests src/main.rs (target/debug/deps/goblin-483bdc4ce18a60cf)
+
+running 5 tests
+test app_server_composition::mcp_http_composition_tests::mcp_http_composition_does_not_self_register_local_mcp ... ok
+test app_server_composition::mcp_http_composition_tests::mcp_http_composition_fail_closed_on_empty_bearer ... ok
+test app_server_composition::mcp_http_composition_tests::mcp_http_config_requires_auth_by_default ... ok
+test app_server_composition::mcp_http_composition_tests::mcp_http_serve_env_gate_default_is_off ... ok
+test app_server_composition::mcp_http_composition_tests::mcp_http_composition_bind_auth_and_dispatch_roundtrip ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 40 filtered out; finished in 0.06s
+
+     Running unittests src/main.rs (target/debug/deps/grok_oss-558dc95fca23863d)
+
+running 5 tests
+test app_server_composition::mcp_http_composition_tests::mcp_http_composition_does_not_self_register_local_mcp ... ok
+test app_server_composition::mcp_http_composition_tests::mcp_http_composition_fail_closed_on_empty_bearer ... ok
+test app_server_composition::mcp_http_composition_tests::mcp_http_config_requires_auth_by_default ... ok
+test app_server_composition::mcp_http_composition_tests::mcp_http_serve_env_gate_default_is_off ... ok
+test app_server_composition::mcp_http_composition_tests::mcp_http_composition_bind_auth_and_dispatch_roundtrip ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 40 filtered out; finished in 0.06s
+
+     Running unittests src/main.rs (target/debug/deps/xai_grok_pager-bdd0b4bd4079e3e6)
+
+running 5 tests
+test app_server_composition::mcp_http_composition_tests::mcp_http_composition_does_not_self_register_local_mcp ... ok
+test app_server_composition::mcp_http_composition_tests::mcp_http_composition_fail_closed_on_empty_bearer ... ok
+test app_server_composition::mcp_http_composition_tests::mcp_http_config_requires_auth_by_default ... ok
+test app_server_composition::mcp_http_composition_tests::mcp_http_serve_env_gate_default_is_off ... ok
+test app_server_composition::mcp_http_composition_tests::mcp_http_composition_bind_auth_and_dispatch_roundtrip ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 40 filtered out; finished in 0.05s
+

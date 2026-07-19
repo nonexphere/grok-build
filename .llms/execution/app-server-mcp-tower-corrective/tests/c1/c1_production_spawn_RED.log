@@ -1,0 +1,90 @@
+warning: /home/guilherme/github/grok-goblin/crates/codegen/xai-grok-pager-bin/Cargo.toml: file `/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-pager-bin/src/main.rs` found to be present in multiple build targets:
+  * `bin` target `goblin`
+  * `bin` target `grok-oss`
+  * `bin` target `xai-grok-pager`
+warning: function `build_responses_input` is never used
+    --> crates/codegen/xai-grok-sampling-types/src/conversation.rs:2719:4
+     |
+2719 | fn build_responses_input(req: &ConversationRequest) -> rs::InputParam {
+     |    ^^^^^^^^^^^^^^^^^^^^^
+     |
+     = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `easy_input_content_text` is never used
+    --> crates/codegen/xai-grok-sampling-types/src/conversation.rs:2927:4
+     |
+2927 | fn easy_input_content_text(content: &rs::EasyInputContent) -> Option<String> {
+     |    ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: `xai-grok-sampling-types` (lib) generated 2 warnings
+warning: `xai-grok-sampling-types` (lib) generated 2 warnings (2 duplicates)
+warning: unused import: `AuthProvider`
+ --> crates/codegen/xai-grok-multi-auth/src/registry.rs:5:21
+  |
+5 | use xai_grok_auth::{AuthProvider, ProviderRegistry};
+  |                     ^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `AuthProvider`
+ --> crates/codegen/xai-grok-multi-auth/src/cli.rs:9:5
+  |
+9 |     AuthProvider, CredentialStore, ModelListRequest, ProviderId, ProviderModel, ProviderRegistry,
+  |     ^^^^^^^^^^^^
+
+warning: unused import: `AuthProvider`
+  --> crates/codegen/xai-grok-multi-auth/src/token_manager.rs:24:5
+   |
+24 |     AuthProvider, CredentialBinding, CredentialKey, CredentialLockPurpose, CredentialSecret,
+   |     ^^^^^^^^^^^^
+
+warning: unused import: `AuthProvider`
+  --> crates/codegen/xai-grok-multi-auth/src/request_auth.rs:10:5
+   |
+10 |     AuthProvider, CredentialBinding, CredentialKey, CredentialStore, ModelBinding,
+   |     ^^^^^^^^^^^^
+
+warning: `xai-grok-multi-auth` (lib) generated 4 warnings (run `cargo fix --lib -p xai-grok-multi-auth` to apply 1 suggestion)
+   Compiling xai-grok-shell v0.2.102 (/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-shell)
+warning: `xai-grok-multi-auth` (lib) generated 4 warnings (4 duplicates)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 07s
+     Running tests/c1_production_spawn.rs (target/debug/deps/c1_production_spawn-9f8225beb2b9e5fa)
+
+running 7 tests
+test c1_prod_spawn_seam_without_spawn_fn_returns_unsupported_with_missing_deps ... ok
+test c1_f4_concurrent_ensure_resident_does_not_double_spawn ... ok
+test c1_f3_dead_actor_clears_stale_current_prompt_id_and_returns_session_closed ... FAILED
+test c1_prod_spawn_seam_resume_re_residents_and_routes_turn ... ok
+test c1_prod_spawn_seam_routes_real_resident_when_spawn_fn_injected ... ok
+test c1_f2_next_ordinal_seeds_from_summary_on_resume ... FAILED
+test c1_f1_steer_turn_event_seq_is_monotonic_not_wall_clock ... FAILED
+
+failures:
+
+---- c1_f3_dead_actor_clears_stale_current_prompt_id_and_returns_session_closed stdout ----
+
+thread 'c1_f3_dead_actor_clears_stale_current_prompt_id_and_returns_session_closed' (823439) panicked at crates/codegen/xai-grok-shell/tests/c1_production_spawn.rs:465:5:
+assertion `left == right` failed: stale current_prompt_id must be cleared after session_closed
+  left: "session_closed"
+ right: "turn_not_found"
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- c1_f2_next_ordinal_seeds_from_summary_on_resume stdout ----
+
+thread 'c1_f2_next_ordinal_seeds_from_summary_on_resume' (823438) panicked at crates/codegen/xai-grok-shell/tests/c1_production_spawn.rs:384:5:
+ordinal must seed from summary.num_messages (5) on resume, got 2
+
+---- c1_f1_steer_turn_event_seq_is_monotonic_not_wall_clock stdout ----
+
+thread 'c1_f1_steer_turn_event_seq_is_monotonic_not_wall_clock' (823437) panicked at crates/codegen/xai-grok-shell/tests/c1_production_spawn.rs:305:5:
+event_seq must increase: [1784429020846, 1784429020846, 1784429020846]
+
+
+failures:
+    c1_f1_steer_turn_event_seq_is_monotonic_not_wall_clock
+    c1_f2_next_ordinal_seeds_from_summary_on_resume
+    c1_f3_dead_actor_clears_stale_current_prompt_id_and_returns_session_closed
+
+test result: FAILED. 4 passed; 3 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+error: test failed, to rerun pass `-p xai-grok-shell --test c1_production_spawn`

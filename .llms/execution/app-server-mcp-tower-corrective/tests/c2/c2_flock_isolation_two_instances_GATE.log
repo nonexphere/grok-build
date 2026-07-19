@@ -1,0 +1,22 @@
+warning: /home/guilherme/github/grok-goblin/crates/codegen/xai-grok-pager-bin/Cargo.toml: file `/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-pager-bin/src/main.rs` found to be present in multiple build targets:
+  * `bin` target `goblin`
+  * `bin` target `grok-oss`
+  * `bin` target `xai-grok-pager`
+   Compiling xai-grok-tower v0.1.0 (/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-tower)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.41s
+     Running tests/tower_instance_isolation.rs (target/debug/deps/tower_instance_isolation-a2c01c7614c90d77)
+
+running 10 tests
+test default_instance_is_distinct_from_named_instances ... ok
+test invalid_instance_id_is_rejected_before_path_derivation ... ok
+test two_instances_have_disjoint_state_roots ... ok
+test flock_isolation_tests::instance_contention_second_claimer_fails_while_held ... ok
+test two_instances_have_disjoint_registries_and_directories ... ok
+test flock_isolation_tests::instance_lock_probe_reports_held_state ... ok
+test flock_isolation_tests::instance_lock_scaffold_files_under_root ... ok
+test flock_isolation_tests::instance_lock_records_holder_pid ... ok
+test flock_isolation_tests::two_instances_take_disjoint_flock_concurrently ... ok
+test flock_isolation_tests::instance_contention_single_winner_among_many ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+

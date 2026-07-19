@@ -73,7 +73,12 @@ async fn c1_real_adapter_list_sessions_reads_jsonl_summaries_not_dormant_stub() 
     // is the real cwd, and the session id matches the on-disk summary.
     assert_eq!(row.workspace_root, "/work/list");
     assert_ne!(row.status, SessionStatus::Dormant);
-    assert_eq!(row.history_epoch, "epoch_1");
+    // R5-04: unique per-session epoch (not a global constant).
+    assert!(
+        row.history_epoch.starts_with("epoch_"),
+        "history_epoch must be durable unique stream id, got {}",
+        row.history_epoch
+    );
 }
 
 #[tokio::test]
@@ -255,7 +260,8 @@ async fn c1_real_adapter_fork_session_copies_history_to_new_cwd() {
 }
 
 #[tokio::test]
-async fn c1_real_adapter_archive_session_returns_unsupported_not_delete() {
+async fn c1_real_adapter_archive_session_hides_not_delete() {
+    use xai_grok_app_server_protocol::SessionStatus;
     let temp = TempDir::new().unwrap();
     let port = real_port(&temp);
     let s = port
@@ -267,18 +273,29 @@ async fn c1_real_adapter_archive_session_returns_unsupported_not_delete() {
         })
         .await
         .unwrap();
-    let err = port
-        .archive_session(SessionArchiveParams {
+    // R6: reversible hide-not-delete — Ok, status Archived, data remains.
+    port.archive_session(SessionArchiveParams {
+        session_id: s.session_id.clone(),
+        idempotency_key: "archive-1".into(),
+    })
+    .await
+    .expect("archive must succeed as hide");
+    let listed = port.list_sessions().await.unwrap();
+    let row = listed
+        .iter()
+        .find(|row| row.session_id == s.session_id)
+        .expect("archived session must still be on disk (not deleted)");
+    assert_eq!(row.status, SessionStatus::Archived);
+    // Still readable.
+    let read = port
+        .read_session(SessionReadParams {
             session_id: s.session_id.clone(),
-            idempotency_key: "archive-1".into(),
+            include_turns: false,
+            include_items: false,
         })
         .await
-        .unwrap_err();
-    // R6: must NOT silently delete (data loss). Returns unsupported.
-    assert_eq!(err.code, "unsupported");
-    // The session must still be on disk (not deleted).
-    let listed = port.list_sessions().await.unwrap();
-    assert!(listed.iter().any(|row| row.session_id == s.session_id));
+        .unwrap();
+    assert_eq!(read.session.status, SessionStatus::Archived);
 }
 
 #[tokio::test]
@@ -341,12 +358,25 @@ async fn c1_real_adapter_interrupt_turn_returns_unsupported_actor_gap() {
 }
 
 #[tokio::test]
-async fn c1_real_adapter_respond_interaction_returns_unsupported() {
+async fn c1_real_adapter_respond_interaction_returns_unsupported_without_resident() {
+    // C6-B: respond_interaction is now a delivery channel (no longer a stub).
+    // With a real session on disk but no resident actor (production spawner
+    // returns unsupported), the delivery channel honestly returns
+    // `unsupported` because the decision cannot be routed to a parked future.
     let temp = TempDir::new().unwrap();
     let port = real_port(&temp);
+    let s = port
+        .start_session(SessionStartParams {
+            workspace_root: "/work/ri".into(),
+            agent_type: None,
+            provider_binding: None,
+            idempotency_key: "ri-1".into(),
+        })
+        .await
+        .unwrap();
     let err = port
         .respond_interaction(InteractionResponseParams {
-            session_id: "s".into(),
+            session_id: s.session_id,
             turn_id: "t".into(),
             interaction_id: "ix".into(),
             decision: "allow".into(),
@@ -355,6 +385,26 @@ async fn c1_real_adapter_respond_interaction_returns_unsupported() {
         .await
         .unwrap_err();
     assert_eq!(err.code, "unsupported");
+}
+
+#[tokio::test]
+async fn c1_real_adapter_respond_interaction_unknown_session_not_found() {
+    // C6-B: an unknown session id is rejected at the storage layer before
+    // the resident check — the delivery channel cannot deliver to a session
+    // that does not exist on disk.
+    let temp = TempDir::new().unwrap();
+    let port = real_port(&temp);
+    let err = port
+        .respond_interaction(InteractionResponseParams {
+            session_id: "no-such-session".into(),
+            turn_id: "t".into(),
+            interaction_id: "ix".into(),
+            decision: "allow".into(),
+            idempotency_key: "r".into(),
+        })
+        .await
+        .unwrap_err();
+    assert_eq!(err.code, "session_not_found");
 }
 
 #[tokio::test]
@@ -376,7 +426,7 @@ async fn c1_real_adapter_replay_projects_updates_jsonl_into_runtime_events() {
         .replay(SubscribeParams {
             session_id: s.session_id.clone(),
             after_event_seq: WireCounter::new(0),
-            history_epoch: Some("epoch_1".into()),
+            history_epoch: Some(s.history_epoch.clone()),
         })
         .await
         .unwrap();

@@ -92,14 +92,98 @@ fn print_serve_startup_info(bind_addr: SocketAddr, secret: &str) {
     eprintln!("   Grok agent server starting...");
     eprintln!();
     eprintln!("   Address:  {}:{}", bind_addr.ip(), bind_addr.port());
-    eprintln!("   Secret:   {}", secret);
+    // R4-01 / R5-08: never print the raw secret or any derived fingerprint.
+    let _ = secret; // presence-only; avoid unused when secret is only for auth
+    eprintln!("   Secret:   present");
     eprintln!();
     eprintln!(
-        "   WebSocket URL: ws://{}/ws?server-key={}",
-        bind_addr, secret
+        "   WebSocket URL: ws://{}/ws  (Authorization: Bearer <token>)",
+        bind_addr
     );
     eprintln!();
 }
+
+/// Format the auth status line used by experimental startup logs (R4-01 / R5-08).
+/// Presence only — no secret material and no derived fingerprint of the token.
+fn format_startup_token_status(token: &str) -> String {
+    let _ = token;
+    "   Token:     present".to_string()
+}
+
+/// Print startup information for the experimental App Server WS listener path
+/// (C3-G). Honest about the experimental / non-TLS posture: cleartext
+/// non-loopback is `experimental/unsafe`; TLS is a HUMAN gate (D-SEC.13).
+#[cfg(feature = "app-server-ws")]
+fn print_app_server_ws_startup_info(bind: &str, token: &str) {
+    eprintln!();
+    eprintln!("   Grok OSS App Server (experimental) starting...");
+    eprintln!();
+    eprintln!("   Bind:      {bind}");
+    eprintln!("   Auth:      Bearer (required)");
+    eprintln!("   TLS:       not provided (HUMAN gate D-SEC.13 — cleartext only)");
+    let host = bind.split(':').next().unwrap_or("127.0.0.1");
+    if app_server_composition::app_server_serve_env_enabled() && host != "127.0.0.1"
+        && host != "localhost" && host != "::1"
+    {
+        eprintln!("   WARNING:   non-loopback cleartext bind is experimental/unsafe");
+    }
+    eprintln!();
+    eprintln!("   Connect:   ws://{bind}/  (Authorization: Bearer <token>)");
+    eprintln!();
+    // R4-01: never print the raw bearer — presence + fingerprint only.
+    eprintln!("{}", format_startup_token_status(token));
+    eprintln!();
+}
+
+/// RAII guard that aborts the app-server WS accept loop on drop so the
+/// process can exit cleanly after a signal.
+#[cfg(feature = "app-server-ws")]
+struct AppServerWsGuard(xai_grok_app_server::WsListenerHandle);
+
+#[cfg(feature = "app-server-ws")]
+impl Drop for AppServerWsGuard {
+    fn drop(&mut self) {
+        self.0.join.abort();
+    }
+}
+
+/// Print startup information for the experimental MCP Streamable HTTP listener
+/// path (C4-F). Honest about the experimental / non-TLS posture: cleartext
+/// non-loopback is `experimental/unsafe`; TLS is a HUMAN gate (D-SEC.13 /
+/// MCP102-HUMAN). Fail-closed bearer is required.
+#[cfg(feature = "mcp-streamable-http")]
+fn print_mcp_http_startup_info(bind: &str, token: &str, tower_id: &str) {
+    eprintln!();
+    eprintln!("   Grok OSS MCP Streamable HTTP (experimental) starting...");
+    eprintln!();
+    eprintln!("   Bind:      {bind}");
+    eprintln!("   Auth:      Bearer (required, fail-closed)");
+    eprintln!("   TLS:       not provided (HUMAN gate D-SEC.13 / MCP102-HUMAN — cleartext only)");
+    eprintln!("   Tower:     {tower_id}");
+    let host = bind.split(':').next().unwrap_or("127.0.0.1");
+    if host != "127.0.0.1" && host != "localhost" && host != "::1" {
+        eprintln!("   WARNING:   non-loopback cleartext bind is experimental/unsafe");
+    }
+    eprintln!();
+    eprintln!("   Connect:   http://{bind}/mcp  (Authorization: Bearer <token>)");
+    eprintln!();
+    // R4-01: never print the raw bearer — presence + fingerprint only.
+    eprintln!("{}", format_startup_token_status(token));
+    eprintln!();
+}
+
+/// RAII guard that aborts the MCP HTTP accept loop on drop so the process
+/// can exit cleanly after a signal.
+#[cfg(feature = "mcp-streamable-http")]
+struct McpHttpGuard(xai_grok_mcp_server::McpHttpHandle);
+
+#[cfg(feature = "mcp-streamable-http")]
+impl Drop for McpHttpGuard {
+    fn drop(&mut self) {
+        self.0.join.abort();
+    }
+}
+
 /// Entrypoint tag for `grok -p`; keys the quiet stderr default in `init_tracing_simple`.
 const HEADLESS_ENTRYPOINT: &str = "headless";
 /// Initialize simple tracing for non-TUI agent modes.
@@ -1308,6 +1392,136 @@ async fn run_agent_command(
             let mut agent_config = agent_config.clone();
             apply_headless_args_to_config(&a.headless, &mut agent_config);
             let secret = a.get_secret();
+
+            // C4-F F-5: if both experimental listeners are requested, warn and
+            // prefer MCP HTTP (checked first) so operators are not surprised.
+            #[cfg(any(feature = "mcp-streamable-http", feature = "app-server-ws"))]
+            {
+                let mcp_on = {
+                    #[cfg(feature = "mcp-streamable-http")]
+                    {
+                        app_server_composition::mcp_http_serve_env_enabled()
+                    }
+                    #[cfg(not(feature = "mcp-streamable-http"))]
+                    {
+                        false
+                    }
+                };
+                let ws_on = {
+                    #[cfg(feature = "app-server-ws")]
+                    {
+                        app_server_composition::app_server_serve_env_enabled()
+                    }
+                    #[cfg(not(feature = "app-server-ws"))]
+                    {
+                        false
+                    }
+                };
+                if mcp_on && ws_on {
+                    eprintln!(
+                        "warning: both GROK_OSS_MCP_HTTP and GROK_OSS_APP_SERVER are set; \
+                         only the MCP Streamable HTTP listener will start (WS is skipped). \
+                         Unset one of the env vars to choose a single path."
+                    );
+                }
+            }
+
+            // C4-F: experimental MCP Streamable HTTP listener product path.
+            //
+            // When `GROK_OSS_MCP_HTTP=1` is set (or `GROK_OSS_MCP=http`), `agent
+            // serve` starts the MCP Streamable HTTP listener over the real
+            // `ShellSessionActorRuntime` instead of the shell agent server.
+            // Feature-gated by `mcp-streamable-http`. Distinct from WS path
+            // (`GROK_OSS_APP_SERVER`).
+            //
+            // Default bind is loopback (`--bind`); cleartext non-loopback is
+            // `experimental/unsafe` and warned at bind time. TLS stays a HUMAN
+            // gate (D-SEC.13 / MCP102-HUMAN). Bearer auth is required and
+            // fail-closed: an empty `--secret`/`GROK_AGENT_SECRET` causes
+            // `run_mcp_http_server` to refuse to bind (F-2). No self-loop: the
+            // composition root never registers the local `/mcp` URL.
+            #[cfg(feature = "mcp-streamable-http")]
+            if app_server_composition::mcp_http_serve_env_enabled() {
+                let bind = a.bind.to_string();
+                let tower_id = app_server_composition::select_tower_instance_id(None)
+                    .map_err(|e| {
+                        anyhow::anyhow!(
+                            "invalid Tower instance id from GROK_OSS_TOWER / GROK_TOWER_INSTANCE \
+                             (R4-10 fail-fast; will not silently use 'default'): {e:?}"
+                        )
+                    })?;
+                print_mcp_http_startup_info(&bind, &secret, &tower_id);
+                let handle = app_server_composition::run_mcp_http(bind, secret, tower_id)
+                    .await
+                    .map_err(|e| anyhow::anyhow!(
+                        "MCP HTTP listener failed to bind (fail-closed bearer requires non-empty --secret/GROK_AGENT_SECRET): {e}"
+                    ))?;
+                // Run until the process is signaled. The accept loop lives on
+                // the returned join handle; abort it on shutdown.
+                let _guard = McpHttpGuard(handle);
+                // Block until a Ctrl-C / SIGTERM. The listener serves
+                // connections on its own tasks; this just keeps the process
+                // alive. Errors from the signal wait are non-fatal.
+                #[cfg(unix)]
+                {
+                    use tokio::signal::unix::{SignalKind, signal};
+                    let mut term = signal(SignalKind::terminate()).ok();
+                    let mut hup = signal(SignalKind::hangup()).ok();
+                    tokio::select! {
+                        _ = tokio::signal::ctrl_c() => {}
+                        _ = async { if let Some(s) = term.as_mut() { let _ = s.recv().await; } else { std::future::pending::<()>().await; } } => {}
+                        _ = async { if let Some(s) = hup.as_mut() { let _ = s.recv().await; } else { std::future::pending::<()>().await; } } => {}
+                    }
+                }
+                #[cfg(not(unix))]
+                {
+                    let _ = tokio::signal::ctrl_c().await;
+                }
+                return Ok(());
+            }
+
+            // C3-G: experimental App Server WS listener product path.
+            //
+            // When `GROK_OSS_APP_SERVER=1` is set, `agent serve` starts the
+            // `FacadeProcessor`-backed WebSocket listener over the real
+            // `ShellSessionActorRuntime` (composition root in
+            // `app_server_composition`) instead of the shell agent server.
+            // Feature-gated by `app-server-ws`; without the feature the env
+            // gate is a no-op and the shell agent server path runs unchanged.
+            // Default bind is loopback (`--bind`); cleartext non-loopback is
+            // `experimental/unsafe` and warned at bind time. TLS stays a HUMAN
+            // gate (D-SEC.13).
+            #[cfg(feature = "app-server-ws")]
+            if app_server_composition::app_server_serve_env_enabled() {
+                let bind = a.bind.to_string();
+                print_app_server_ws_startup_info(&bind, &secret);
+                let handle = app_server_composition::run_app_server_ws(bind, secret)
+                    .await
+                    .map_err(|e| anyhow::anyhow!("app-server WS listener failed to bind: {e}"))?;
+                // Run until the process is signaled. The accept loop lives on
+                // the returned join handle; abort it on shutdown.
+                let _guard = AppServerWsGuard(handle);
+                // Block until a Ctrl-C / SIGTERM. The listener serves
+                // connections on its own tasks; this just keeps the process
+                // alive. Errors from the signal wait are non-fatal.
+                #[cfg(unix)]
+                {
+                    use tokio::signal::unix::{SignalKind, signal};
+                    let mut term = signal(SignalKind::terminate()).ok();
+                    let mut hup = signal(SignalKind::hangup()).ok();
+                    tokio::select! {
+                        _ = tokio::signal::ctrl_c() => {}
+                        _ = async { if let Some(s) = term.as_mut() { let _ = s.recv().await; } else { std::future::pending::<()>().await; } } => {}
+                        _ = async { if let Some(s) = hup.as_mut() { let _ = s.recv().await; } else { std::future::pending::<()>().await; } } => {}
+                    }
+                }
+                #[cfg(not(unix))]
+                {
+                    let _ = tokio::signal::ctrl_c().await;
+                }
+                return Ok(());
+            }
+
             let server_config = xai_grok_shell::agent::ServerConfig {
                 bind_addr: a.bind,
                 secret: secret.clone(),
@@ -1974,8 +2188,39 @@ async fn async_main() -> Result<()> {
                         println!();
                         xai_grok_shell::instrumentation::finalize_and_exit(0);
                     }
+                    xai_grok_multi_auth::cli::LoginProviderArg::Byok(id) => {
+                        // BYOK API-key login (OpenRouter / Groq / Cloudflare).
+                        // The coordinator validates the registry + API_KEY_LOGIN
+                        // capability, rejects XAI_API_KEY fallback, and persists
+                        // the credential to the durable file store. The secret is
+                        // read from `GROK_BYOK_API_KEY` (non-TTY) for now; an
+                        // interactive prompt is a follow-on.
+                        let provider_id =
+                            xai_grok_auth::ProviderId::new_unchecked(&id);
+                        let home = xai_grok_multi_auth::token_resolve::grok_home();
+                        let store = std::sync::Arc::new(
+                            xai_grok_multi_auth::store::FileCredentialStore::new(home),
+                        )
+                            as std::sync::Arc<dyn xai_grok_auth::CredentialStore>;
+                        let registry = std::sync::Arc::new(
+                            xai_grok_multi_auth::registry::build_default_registry(),
+                        );
+                        let coordinator =
+                            xai_grok_multi_auth::login_coordinator::LoginCoordinator::new(
+                                store, registry,
+                            );
+                        let meta = coordinator
+                            .run_api_key_login(&provider_id, None)
+                            .await
+                            .map_err(|e| anyhow::anyhow!("BYOK `{id}` login failed: {e}"))?;
+                        println!(
+                            "Logged in to {id} as alias `{}` (credential {}).",
+                            meta.alias, meta.key.credential_id
+                        );
+                        xai_grok_shell::instrumentation::finalize_and_exit(0);
+                    }
                     xai_grok_multi_auth::cli::LoginProviderArg::Interactive => {
-                        // prompt_provider_selection always resolves to Xai/Codex.
+                        // prompt_provider_selection always resolves to a concrete provider.
                         unreachable!("interactive selection resolves before match");
                     }
                 }
@@ -2395,6 +2640,27 @@ async fn signal_leaders_to_relaunch(installed_version: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// R4-01 / R5-08: startup auth line must never contain the raw secret or a
+    /// derived fingerprint of the secret.
+    #[test]
+    fn r4_startup_token_status_never_contains_raw_secret() {
+        let canary = "r4-secret-canary-DO-NOT-LOG-9f3c2a1b";
+        let line = format_startup_token_status(canary);
+        assert!(
+            !line.contains(canary),
+            "startup token status must not embed raw secret: {line}"
+        );
+        assert!(
+            line.contains("present"),
+            "must report presence only: {line}"
+        );
+        assert!(
+            !line.contains("fp="),
+            "must not publish a secret fingerprint (R5-08): {line}"
+        );
+    }
+
     #[cfg(all(feature = "jemalloc", unix))]
     struct TempHeapDump(std::path::PathBuf);
     #[cfg(all(feature = "jemalloc", unix))]
@@ -2548,24 +2814,27 @@ mod tests {
         let _ = std::fs::remove_dir_all(&home);
         std::fs::create_dir_all(home.join("bin")).unwrap();
         std::fs::create_dir_all(home.join("downloads")).unwrap();
+        // The managed application path is `$GROK_HOME/bin/<PRODUCT_BIN_NAME>`
+        // (grok-oss after the identity cutover), not the legacy `bin/grok`.
+        let app_name = xai_grok_config::PRODUCT_BIN_NAME;
         assert!(!is_managed_install(
-            Some(home.join("bin").join("grok")),
+            Some(home.join("bin").join(app_name)),
             &home
         ));
         assert!(!is_managed_install(None, &home));
         assert!(!is_managed_install(
-            Some(home.join("bin").join("grok")),
+            Some(home.join("bin").join(app_name)),
             std::path::Path::new("")
         ));
-        let target = home.join("downloads").join("grok-1.2.3");
+        let target = home.join("downloads").join(format!("{}-1.2.3", app_name));
         std::fs::write(&target, b"binary").unwrap();
-        std::os::unix::fs::symlink(&target, home.join("bin").join("grok")).unwrap();
+        std::os::unix::fs::symlink(&target, home.join("bin").join(app_name)).unwrap();
         assert!(is_managed_install(
-            Some(home.join("bin").join("grok")),
+            Some(home.join("bin").join(app_name)),
             &home
         ));
         assert!(is_managed_install(Some(target.clone()), &home));
-        let pinned = home.join("bin").join("grok-9.9.9");
+        let pinned = home.join("bin").join(format!("{}-9.9.9", app_name));
         std::fs::write(&pinned, b"binary").unwrap();
         assert!(!is_managed_install(Some(pinned), &home));
         let _ = std::fs::remove_dir_all(&home);

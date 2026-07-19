@@ -84,6 +84,36 @@ impl JsonlStorageAdapter {
     pub(super) fn updates_file(&self, info: &Info) -> PathBuf {
         self.session_dir(info).join("updates.jsonl")
     }
+    /// Path to the `provider_binding.json` sidecar — a durable, identifier-only
+    /// projection of the `ProviderBinding` carried by `SessionStartParams`
+    /// (C5-C). Contains **no** secret material (no api_key, no tokens, no
+    /// auth headers); only `provider_id` / `credential_id` / `model_id` /
+    /// `backend` / `binding_revision`. Owned by the storage adapter so the
+    /// on-disk layout stays adapter-private. Public so the real port
+    /// (`ShellSessionActorRuntime`) can read/write it without recomputing
+    /// the session-dir path.
+    pub fn provider_binding_file(&self, info: &Info) -> PathBuf {
+        self.session_dir(info).join("provider_binding.json")
+    }
+    /// Path to the reversible archive marker (R6 hide-not-delete).
+    /// Presence means the session is archived (hidden from default lists) but
+    /// the session dir remains intact and resumable — never `remove_dir_all`.
+    pub fn archived_flag_file(&self, info: &Info) -> PathBuf {
+        self.session_dir(info).join("archived.flag")
+    }
+    /// True when the reversible archive marker is present on disk.
+    pub fn is_archived(&self, info: &Info) -> bool {
+        self.archived_flag_file(info).is_file()
+    }
+    /// Write the reversible archive marker (idempotent). Does **not** delete
+    /// session data.
+    pub fn mark_archived(&self, info: &Info) -> std::io::Result<()> {
+        let path = self.archived_flag_file(info);
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::write(path, b"1\n")
+    }
     fn chat_file(&self, info: &Info) -> PathBuf {
         self.session_dir(info).join("chat_history.jsonl")
     }
@@ -992,6 +1022,21 @@ impl JsonlStorageAdapter {
         } else {
             0
         };
+        // C5-C: copy the `provider_binding.json` sidecar if it exists so the
+        // forked session inherits the parent's identifier-only provider
+        // binding (no secrets — the sidecar is identifier-only by contract).
+        // Unconditional: the sidecar is tiny and a fork should retain the
+        // parent's binding unless a future `SessionForkParams` carries an
+        // override (none today).
+        let provider_binding_copied = {
+            let src = self.provider_binding_file(source_info);
+            if src.is_file() {
+                std::fs::write(self.provider_binding_file(target_info), std::fs::read(&src)?)?;
+                true
+            } else {
+                false
+            }
+        };
         Ok(super::CopySessionResult {
             chat_messages_copied: num_chat_messages,
             updates_copied: num_messages,
@@ -1001,6 +1046,7 @@ impl JsonlStorageAdapter {
             tool_state_copied,
             announcement_state_copied,
             compaction_segments_copied,
+            provider_binding_copied,
         })
     }
 }

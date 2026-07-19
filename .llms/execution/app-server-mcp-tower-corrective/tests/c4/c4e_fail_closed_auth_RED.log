@@ -1,0 +1,55 @@
+warning: /home/guilherme/github/grok-goblin/crates/codegen/xai-grok-pager-bin/Cargo.toml: file `/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-pager-bin/src/main.rs` found to be present in multiple build targets:
+  * `bin` target `goblin`
+  * `bin` target `grok-oss`
+  * `bin` target `xai-grok-pager`
+   Compiling xai-grok-mcp-server v0.1.0 (/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-mcp-server)
+warning: unused import: `process_mcp_stdio_batch`
+ --> crates/codegen/xai-grok-mcp-server/src/transport/stdio.rs:9:33
+  |
+9 | use crate::{handle_mcp_jsonrpc, process_mcp_stdio_batch};
+  |                                 ^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `xai-grok-mcp-server` (lib) generated 1 warning (run `cargo fix --lib -p xai-grok-mcp-server` to apply 1 suggestion)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.82s
+     Running unittests src/lib.rs (target/debug/deps/xai_grok_mcp_server-b3977d0cafc15aca)
+
+running 15 tests
+test tests::mcp_lists_exactly_nine_tools ... ok
+test mcp_extra_tests::tool_descriptors_exact_nine ... ok
+test mcp_extra_tests::no_local_self_injection_in_production_source ... ok
+test tests::no_self_mcp_loop_tool_names ... ok
+test transport::http::auth_failures_tests::bearer_header_only_and_auth_failures_are_generic ... ok
+test transport::http::auth_failures_tests::redaction_canary_absent_from_post_response_shape ... ok
+test mcp_extra_tests::adapter_parity_list_start_via_mcp_jsonrpc ... ok
+test transport::http::limits_tests::limits_reject_oversized_body_explicitly ... ok
+test transport::http::streamable_http_tests::streamable_http_bearer_header_only_and_safe_sse_resume ... ok
+test tests::mcp_stdio_tools_call_shares_semantic_core_with_in_process ... ok
+test transport::http_server::fail_closed_auth_canary::require_auth_false_with_empty_bearer_binds ... ok
+test transport::http_server::fail_closed_auth_canary::default_config_refuses_to_bind_with_empty_bearer ... FAILED
+test transport::http_server::fail_closed_auth_canary::empty_bearer_with_require_auth_refuses_to_bind ... FAILED
+test transport::stdio::stdio_tests::stdio_protocol_only_stdout_and_graceful_eof ... ok
+test transport::http_server::self_loop_canary::http_server_does_not_import_outbound_mcp_client ... ok
+
+failures:
+
+---- transport::http_server::fail_closed_auth_canary::default_config_refuses_to_bind_with_empty_bearer stdout ----
+
+thread 'transport::http_server::fail_closed_auth_canary::default_config_refuses_to_bind_with_empty_bearer' (785658) panicked at crates/codegen/xai-grok-mcp-server/src/transport/http_server.rs:772:14:
+default config must not bind (fail-closed): McpHttpHandle { addr: 127.0.0.1:39213, join: JoinHandle { id: Id(1) }, state: McpHttpState { agent_type: "orchestrator", require_auth: true, max_message_bytes: 1048576, tower_instance_id: "default", sessions: [], .. } }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- transport::http_server::fail_closed_auth_canary::empty_bearer_with_require_auth_refuses_to_bind stdout ----
+
+thread 'transport::http_server::fail_closed_auth_canary::empty_bearer_with_require_auth_refuses_to_bind' (785659) panicked at crates/codegen/xai-grok-mcp-server/src/transport/http_server.rs:794:10:
+whitespace-only bearer must not bind: McpHttpHandle { addr: 127.0.0.1:44851, join: JoinHandle { id: Id(3) }, state: McpHttpState { agent_type: "orchestrator", require_auth: true, max_message_bytes: 1048576, tower_instance_id: "default", sessions: [], .. } }
+
+
+failures:
+    transport::http_server::fail_closed_auth_canary::default_config_refuses_to_bind_with_empty_bearer
+    transport::http_server::fail_closed_auth_canary::empty_bearer_with_require_auth_refuses_to_bind
+
+test result: FAILED. 13 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p xai-grok-mcp-server --lib`

@@ -97,6 +97,8 @@ pub(super) async fn make_replay_send_update_fixture() -> ReplaySendUpdateFixture
         pending_interactions: std::sync::Arc::new(std::sync::Mutex::new(
             std::collections::HashMap::new(),
         )),
+        interaction_delivery_hub: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+
         telemetry_enabled: false,
         supports_backend_search: std::cell::Cell::new(false),
         compactions_remaining: std::cell::Cell::new(None),

@@ -1,0 +1,37 @@
+warning: /home/guilherme/github/grok-goblin/crates/codegen/xai-grok-pager-bin/Cargo.toml: file `/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-pager-bin/src/main.rs` found to be present in multiple build targets:
+  * `bin` target `goblin`
+  * `bin` target `grok-oss`
+  * `bin` target `xai-grok-pager`
+   Compiling xai-grok-app-server v0.1.0 (/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-app-server)
+warning: unused import: `Value`
+   --> crates/codegen/xai-grok-app-server/src/lib.rs:171:28
+    |
+171 |     use serde_json::{json, Value};
+    |                            ^^^^^
+    |
+    = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `lease`
+  --> crates/codegen/xai-grok-app-server/src/controller.rs:52:13
+   |
+52 |         let lease = table.grant("s", "ix", "c1", 2);
+   |             ^^^^^ help: if this is intentional, prefix it with an underscore: `_lease`
+   |
+   = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: `xai-grok-app-server` (lib test) generated 2 warnings (run `cargo fix --lib -p xai-grok-app-server --tests` to apply 2 suggestions)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.88s
+     Running unittests src/lib.rs (target/debug/deps/xai_grok_app_server-d51144035c7ef0fc)
+
+running 8 tests
+test interaction_conformance_tests::interaction_conformance_request_envelope_shape_is_stable ... ok
+test interaction_conformance_tests::interaction_conformance_suite_covers_minimum_matrix ... ok
+test interaction_conformance_tests::interaction_conformance_not_initialized_error_shape_matches ... ok
+test interaction_conformance_tests::interaction_conformance_invalid_params_error_shape_matches ... ok
+test interaction_conformance_tests::interaction_conformance_accept_shape_matches_across_transports ... ok
+test interaction_conformance_ws_listener::interaction_conformance_ws_listener_not_initialized_error_matches_stdio ... ok
+test interaction_conformance_ws_listener::interaction_conformance_ws_listener_invalid_params_error_matches_stdio ... ok
+test interaction_conformance_ws_listener::interaction_conformance_ws_listener_accept_shape_matches_stdio ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 50 filtered out; finished in 0.00s
+

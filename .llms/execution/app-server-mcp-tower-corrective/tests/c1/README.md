@@ -1,4 +1,34 @@
-# C1-D test evidence (RED / GREEN)
+# C1-D / C1-G test evidence (RED / GREEN)
+
+## C1-G (turn lifecycle) — captured 2026-07-18
+
+Evidence files in this directory:
+- `c1_turn_lifecycle_RED.log` — turn methods stubbed back to `unsupported`:
+  8/9 `c1_turn_*` fail (the no-resident test still passes). Confirms the
+  tests exercise the real routing path.
+- `c1_turn_lifecycle_GREEN.log` — 9/9 `c1_turn_*` pass with the real
+  `cmd_tx` consumer fixture (NOT FakeRuntime).
+- `c1_turn_lifecycle_GREEN_gate.log` — `./scripts/run-rust-test-gate.sh
+  c1_turn cargo test -p xai-grok-shell --test c1_turn_lifecycle` (exit 0).
+
+Commands (from repo root):
+```bash
+./scripts/run-rust-test-gate.sh c1_turn \
+  cargo test -p xai-grok-shell --test c1_turn_lifecycle
+cargo test -p xai-grok-pager-bin --bins composition
+cargo test -p xai-grok-shell --lib app_server_runtime
+```
+
+Results: 9/9 `c1_turn_*`; 18/18 `c1_real_adapter_*`; 7/7 `app_server_runtime`
+invariants (incl. no-second-SessionActor + no-FakeRuntime); 3/3
+composition-root. Pre-existing unrelated failures (env/`/tmp`-dependent):
+`claude_import::tests::gate_load_claude_env_returns_empty_when_marker_set`,
+`upload::trace::tests::classify_workspace_non_project_for_tmp` — reproduced on
+the C1-G-stashed baseline, not caused by C1-G.
+
+---
+
+## C1-D (storage-backed port) — prior
 
 ## Status: PENDING execution (no command-execution tool in this subagent)
 

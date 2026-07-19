@@ -1,0 +1,33 @@
+warning: /home/guilherme/github/grok-goblin/crates/codegen/xai-grok-pager-bin/Cargo.toml: file `/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-pager-bin/src/main.rs` found to be present in multiple build targets:
+  * `bin` target `goblin`
+  * `bin` target `grok-oss`
+  * `bin` target `xai-grok-pager`
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.39s
+     Running unittests src/lib.rs (target/debug/deps/xai_grok_tower-4fe7ed202afe734d)
+
+running 22 tests
+test budgets::resource_budget_tests::telemetry_peaks_retain_high_water_marks ... ok
+test instance::two_instances_tests::instance_state_root_is_disjoint_per_instance_id ... ok
+test budgets::resource_budget_tests::resource_budget_admission_fails_explicitly_without_product_cap_on_dormant ... ok
+test lifecycle::drain_tests::drain_rejects_new_work_and_restart_bumps_epoch ... ok
+test instance::tests::tower_instance_id_enforces_wire_format ... ok
+test lifecycle::drain_tests::restart_epoch_requires_explicit_resync_signal ... ok
+test lifecycle::stale_metadata_tests::stale_metadata_does_not_delete_on_pid_alone ... ok
+test instance::tests::multi_instance_directory_isolates_handles ... ok
+test lease::lease_tests::interaction_lease_first_writer_wins_stale_rejected ... ok
+test instance::two_instances_tests::instance_contention_duplicate_id_rejected ... ok
+test metadata::session_metadata_tests::session_metadata_points_to_path_not_transcript ... ok
+test registry::one_actor_tests::one_actor_per_session_id_serializes_residency ... ok
+test instance::two_instances_tests::two_instances_have_disjoint_registries ... ok
+test projection::projection_tests::projection_maps_item_delta_and_redacts_secrets ... ok
+test leader_characterization_tests::leader_characterization_tower_has_no_second_actor_type ... ok
+test projection::projection_tests::projection_redaction_unknown_events_become_safe_diagnostics ... ok
+test telemetry::lifecycle_metrics_tests::lifecycle_metrics_are_bounded_and_secret_free ... ok
+test telemetry::lifecycle_metrics_tests::audit_canary_labels_reject_secret_names ... ok
+test registry::one_actor_tests::one_actor_concurrent_get_or_insert_collapses_to_single_token ... ok
+test workspace::workspace_symlink_tests::workspace_symlink_escape_is_fail_closed ... ok
+test fake::fake_conformance_tests::facade_shape_covers_session_turn_interaction_replay ... ok
+test fake::fake_conformance_tests::fake_conformance_session_turn_item_idempotency ... ok
+
+test result: ok. 22 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

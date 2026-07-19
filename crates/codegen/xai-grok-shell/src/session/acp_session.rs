@@ -622,6 +622,11 @@ pub(crate) struct SessionActor {
     /// read it synchronously to surface `NeedsInput`. Mutated by
     /// `PendingInteractionGuard` at each reverse-request site. Never persisted.
     pub(crate) pending_interactions: crate::session::pending_interaction::PendingInteractions,
+    /// Shared with `SessionHandle` / `ResidentHandle` so app-server
+    /// `respond_interaction` can complete parked reverse-requests (R5-09).
+    pub(crate) interaction_delivery_hub: std::sync::Arc<
+        std::sync::Mutex<std::collections::HashMap<String, tokio::sync::oneshot::Sender<String>>>,
+    >,
     /// Gates product analytics, not trace uploads. Resolved at spawn as
     /// `is_telemetry_enabled() && !is_zdr()` — ZDR teams always have this false.
     pub(crate) telemetry_enabled: bool,

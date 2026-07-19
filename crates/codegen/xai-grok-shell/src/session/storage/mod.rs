@@ -292,6 +292,10 @@ pub struct CopySessionResult {
     /// Number of `compaction/segment_*.md` (+ `INDEX.md`) files copied from the
     /// source session's compaction archive. `0` when disabled or none exist.
     pub compaction_segments_copied: usize,
+    /// Whether the `provider_binding.json` sidecar (identifier-only
+    /// `ProviderBinding`, no secrets) was copied from the source session.
+    /// `false` when the source had no binding sidecar (C5-C).
+    pub provider_binding_copied: bool,
 }
 
 /// Options for copying session data during fork

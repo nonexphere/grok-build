@@ -1,0 +1,8 @@
+     Running tests/c1_production_spawn.rs (target/debug/deps/c1_production_spawn-284fd2087db3892d)
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+     Running tests/c1_shell_port.rs (target/debug/deps/c1_shell_port-6a1709930373ea1e)
+test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+     Running tests/c1_turn_lifecycle.rs (target/debug/deps/c1_turn_lifecycle-46a608c57b24aa14)
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+     Running tests/c7_conformance.rs (target/debug/deps/c7_conformance-86e9e4feb69262ba)
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s

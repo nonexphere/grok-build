@@ -13043,9 +13043,11 @@ name = "xai-grok-app-server"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "futures-util",
  "serde",
  "serde_json",
  "tokio",
+ "tokio-tungstenite 0.27.0",
  "xai-grok-app-server-protocol",
  "xai-grok-tower",
 ]
@@ -13256,8 +13258,12 @@ name = "xai-grok-mcp-server"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "axum",
+ "futures-util",
+ "reqwest 0.12.24",
  "serde_json",
  "tokio",
+ "xai-grok-app-server-protocol",
  "xai-grok-tower",
  "xai-grok-tower-tools",
 ]
@@ -13452,8 +13458,10 @@ dependencies = [
  "cryptify",
  "dirs 5.0.1",
  "dunce",
+ "futures-util",
  "libc",
  "obfstr",
+ "reqwest 0.12.24",
  "rustls",
  "semver",
  "serde_json",
@@ -13463,6 +13471,7 @@ dependencies = [
  "tikv-jemalloc-sys",
  "tikv-jemallocator",
  "tokio",
+ "tokio-tungstenite 0.27.0",
  "tokio-util",
  "tracing",
  "tracing-subscriber",
@@ -13473,6 +13482,7 @@ dependencies = [
  "xai-grok-app-server-protocol",
  "xai-grok-auth",
  "xai-grok-config",
+ "xai-grok-mcp-server",
  "xai-grok-multi-auth",
  "xai-grok-pager",
  "xai-grok-pager-minimal",
@@ -14090,6 +14100,7 @@ name = "xai-grok-tower"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "fs2",
  "serde_json",
  "tempfile",
  "tokio",

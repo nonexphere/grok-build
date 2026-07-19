@@ -7,12 +7,26 @@ use std::sync::Arc;
 
 use serde_json::{json, Value};
 use xai_grok_tower::GrokRuntimeFacade;
-use xai_grok_tower_tools::{invoke_tower_tool, TowerToolDescriptor, TOWER_TOOL_DESCRIPTORS};
+use xai_grok_tower_tools::{
+    invoke_tower_tool, TowerToolDescriptor, TOWER_TOOL_DESCRIPTORS,
+};
 
 pub use xai_grok_tower_tools::{
     TowerToolDescriptor as McpToolDescriptor, TOWER_TOOL_DESCRIPTORS as MCP_TOOL_DESCRIPTORS,
     TOWER_TOOL_NAMES as MCP_TOOL_NAMES, TOWER_TOOL_NAMES,
 };
+
+#[cfg(feature = "streamable-http")]
+pub use transport::http_server::{
+    McpHttpConfig, McpHttpHandle, McpHttpState, McpSession, McpSessionEvent,
+    DEFAULT_MAX_MESSAGE_BYTES, DEFAULT_MAX_SESSION_EVENTS, MCP_PROTOCOL_VERSION_HEADER,
+    MCP_SESSION_HEADER, bind_warning, run_mcp_http_server,
+};
+
+/// MCP wire protocol version advertised by `initialize` and enforced by the
+/// Streamable HTTP `protocol-version` gate. Distinct from the App Server
+/// protocol version (`xai_grok_app_server_protocol::PROTOCOL_VERSION`).
+pub const MCP_PROTOCOL_VERSION: &str = "2024-11-05";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum McpTransport {
@@ -26,6 +40,8 @@ pub fn list_tools() -> Vec<TowerToolDescriptor> {
 }
 
 /// Call a tool through the same semantic core as in-process adapters.
+/// Returns a flat `code: message` string for backward compatibility with the
+/// stdio adapter. See [`call_tool_typed`] for structured error codes.
 pub async fn call_tool(
     runtime: Arc<dyn GrokRuntimeFacade>,
     agent_type: &str,
@@ -33,9 +49,22 @@ pub async fn call_tool(
     name: &str,
     arguments: Value,
 ) -> Result<Value, String> {
-    invoke_tower_tool(runtime, agent_type, explicit_opt_in, name, arguments)
+    call_tool_typed(runtime, agent_type, explicit_opt_in, name, arguments)
         .await
         .map_err(|e| format!("{}: {}", e.code, e.message))
+}
+
+/// Typed variant of [`call_tool`] that preserves the stable Tower error code
+/// so the HTTP adapter can emit `isError: true` structured content with the
+/// canonical code (parity with in-process `ToolError`).
+pub async fn call_tool_typed(
+    runtime: Arc<dyn GrokRuntimeFacade>,
+    agent_type: &str,
+    explicit_opt_in: bool,
+    name: &str,
+    arguments: Value,
+) -> Result<Value, xai_grok_tower_tools::ToolError> {
+    invoke_tower_tool(runtime, agent_type, explicit_opt_in, name, arguments).await
 }
 
 /// Minimal MCP-looking JSON-RPC dispatcher for stdio/Streamable HTTP adapters.
@@ -62,16 +91,30 @@ pub async fn handle_mcp_jsonrpc(
         "tools/call" => {
             let name = request["params"]["name"].as_str().unwrap_or("");
             let args = request["params"]["arguments"].clone();
-            match call_tool(runtime, agent_type, explicit_opt_in, name, args).await {
+            match call_tool_typed(runtime, agent_type, explicit_opt_in, name, args).await {
                 Ok(result) => json!({"jsonrpc":"2.0","id":id,"result":{"content":[{"type":"text","text": result.to_string()}],"structuredContent": result}}),
-                Err(message) => json!({"jsonrpc":"2.0","id":id,"error":{"code":-32000,"message":message}}),
+                Err(err) => {
+                    // Parity with in-process ToolError: stable Tower code is
+                    // preserved in structuredContent and `isError: true` so
+                    // clients can branch on the canonical code instead of
+                    // parsing a free-text message. The operation id is echoed
+                    // back via the JSON-RPC `id`.
+                    json!({
+                        "jsonrpc":"2.0","id":id,
+                        "result":{
+                            "content":[{"type":"text","text": format!("{}: {}", err.code, err.message)}],
+                            "structuredContent": {"code": err.code, "message": err.message},
+                            "isError": true
+                        }
+                    })
+                }
             }
         }
         "initialize" => json!({
             "jsonrpc":"2.0",
             "id": id,
             "result": {
-                "protocolVersion": "2024-11-05",
+                "protocolVersion": MCP_PROTOCOL_VERSION,
                 "capabilities": {"tools": {}},
                 "serverInfo": {"name":"grok-oss-mcp-server","version":"0.0.0-experimental"}
             }

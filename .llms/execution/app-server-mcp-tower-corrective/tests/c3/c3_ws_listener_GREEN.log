@@ -1,0 +1,37 @@
+warning: /home/guilherme/github/grok-goblin/crates/codegen/xai-grok-pager-bin/Cargo.toml: file `/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-pager-bin/src/main.rs` found to be present in multiple build targets:
+  * `bin` target `goblin`
+  * `bin` target `grok-oss`
+  * `bin` target `xai-grok-pager`
+   Compiling xai-grok-app-server v0.1.0 (/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-app-server)
+warning: unused variable: `lease`
+  --> crates/codegen/xai-grok-app-server/src/controller.rs:52:13
+   |
+52 |         let lease = table.grant("s", "ix", "c1", 2);
+   |             ^^^^^ help: if this is intentional, prefix it with an underscore: `_lease`
+   |
+   = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: `xai-grok-app-server` (lib test) generated 1 warning (run `cargo fix --lib -p xai-grok-app-server --tests` to apply 1 suggestion)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.03s
+     Running unittests src/lib.rs (target/debug/deps/xai_grok_app_server-1d2dfc8c78103018)
+
+running 16 tests
+test transport::ws_listener::ws_listener_unit_tests::bounded_writer_drops_when_full ... ok
+test ws_listener_blackbox_tests::ws_listener_cleartext_non_loopback_warns_experimental_unsafe ... ok
+test ws_listener_blackbox_tests::ws_listener_default_config_is_loopback ... ok
+test ws_listener_blackbox_tests::ws_listener_rejects_credentials_in_url_at_bind ... ok
+test ws_listener_blackbox_tests::ws_listener_handshake_subprotocol_negotiates_protocol_version ... ok
+test ws_listener_blackbox_tests::ws_listener_disconnect_drains_and_closes ... ok
+test ws_listener_blackbox_tests::ws_conformance_matches_stdio_method_shapes ... ok
+test ws_listener_blackbox_tests::ws_listener_rejects_missing_authorization_header ... ok
+test ws_listener_blackbox_tests::ws_listener_rejects_wrong_bearer ... ok
+test ws_listener_blackbox_tests::ws_listener_ping_pong_keepalive ... ok
+test ws_listener_blackbox_tests::ws_listener_rejects_binary_frame ... ok
+test ws_listener_blackbox_tests::ws_listener_rejects_jsonrpc_batch ... ok
+test ws_listener_blackbox_tests::ws_listener_text_frame_initialize_then_session_start_roundtrip ... ok
+test ws_listener_blackbox_tests::ws_listener_slow_client_resync_via_replay_fake_adapter ... ok
+test ws_listener_blackbox_tests::ws_listener_rejects_oversize_text_frame ... ok
+test ws_listener_blackbox_tests::ws_listener_bounded_writer_survives_burst ... ok
+
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 26 filtered out; finished in 5.09s
+

@@ -323,19 +323,37 @@ pub async fn invoke_tower_tool(
         "tower_agent_wait" => {
             let session_id = arguments["sessionId"].as_str().unwrap_or("").to_owned();
             let after = arguments["afterEventSeq"].as_str().unwrap_or("0").to_owned();
+            let history_epoch = arguments["historyEpoch"]
+                .as_str()
+                .map(str::to_owned);
             let page = runtime
                 .replay(SubscribeParams {
                     session_id: session_id.clone(),
                     after_event_seq: after.parse().unwrap_or_default(),
-                    history_epoch: None,
+                    history_epoch,
                 })
                 .await?;
+            // Schema (`tower_agent_wait_output`) requires `events` to be an
+            // array of objects and `wakeReason` to be one of
+            // `event|terminal|interaction|timeout|resync_required`. The
+            // adapter never reinterprets the facade's events; it forwards the
+            // projected runtime events and reports a schema-valid reason.
+            let events: Vec<Value> = page
+                .events
+                .iter()
+                .map(project_runtime_event_to_json)
+                .collect();
+            let wake_reason = if !page.events.is_empty() {
+                "event"
+            } else {
+                "timeout"
+            };
             Ok(json!({
                 "sessionId": session_id,
                 "historyEpoch": "epoch_1",
-                "events": page.events.len(),
+                "events": events,
                 "nextEventSeq": page.replayed_through,
-                "wakeReason": if page.events.is_empty() { "timeout" } else { "events" },
+                "wakeReason": wake_reason,
             }))
         }
         "tower_agent_interrupt" => {
@@ -399,6 +417,50 @@ pub async fn invoke_tower_tool(
         other => Err(ToolError {
             code: "method_not_found",
             message: format!("unknown tower tool: {other}"),
+        }),
+    }
+}
+
+/// Projects a [`RuntimeEvent`] into a structured JSON object for the
+/// `tower_agent_wait` output. The adapter never reinterprets the facade's
+/// events; it forwards the projected runtime events as opaque objects so the
+/// MCP and in-process adapters emit identical structured content.
+fn project_runtime_event_to_json(event: &xai_grok_tower::RuntimeEvent) -> Value {
+    use xai_grok_tower::RuntimeEvent;
+    match event {
+        RuntimeEvent::SessionChanged(session) => json!({
+            "type": "sessionChanged",
+            "session": session,
+        }),
+        RuntimeEvent::TurnChanged(turn) => json!({
+            "type": "turnChanged",
+            "turn": turn,
+        }),
+        RuntimeEvent::ItemStarted(item) => json!({
+            "type": "itemStarted",
+            "item": item,
+        }),
+        RuntimeEvent::ItemCompleted(item) => json!({
+            "type": "itemCompleted",
+            "item": item,
+        }),
+        RuntimeEvent::ItemDelta {
+            session_id,
+            turn_id,
+            item_id,
+            revision,
+            delta,
+        } => json!({
+            "type": "itemDelta",
+            "sessionId": session_id,
+            "turnId": turn_id,
+            "itemId": item_id,
+            "revision": revision,
+            "delta": delta,
+        }),
+        RuntimeEvent::InteractionRequested(request) => json!({
+            "type": "interactionRequested",
+            "request": request,
         }),
     }
 }

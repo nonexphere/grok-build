@@ -1,6 +1,6 @@
 //! Instance identity scaffold for `20-tower-core/v1-03`.
 
-use std::{fmt, str::FromStr, sync::Arc};
+use std::{fmt, path::PathBuf, str::FromStr, sync::Arc};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct TowerInstanceId(String);
@@ -83,6 +83,25 @@ impl InstanceDirectory {
     }
 }
 
+/// Directory segment under a Tower home that holds per-instance state roots.
+///
+/// Matches the lifecycle contract: `~/.grok-oss/towers/<instance-id>/`.
+pub const TOWER_INSTANCES_DIR: &str = "towers";
+
+/// Derive the canonical state root for a Tower instance under a product home.
+///
+/// Returns `<home>/towers/<instance-id>`. This is a pure path computation: it
+/// does not create directories, follow symlinks, or acquire locks. Callers
+/// that materialize the directory MUST separately validate ownership/permissions
+/// and reject symlinked components per the Tower lifecycle contract.
+///
+/// Distinct [`TowerInstanceId`]s yield disjoint state roots, which is the
+/// foundation of multi-instance isolation (disjoint endpoints, locks, tokens,
+/// registries, projections and logs).
+pub fn instance_state_root(home: &std::path::Path, id: &TowerInstanceId) -> PathBuf {
+    home.join(TOWER_INSTANCES_DIR).join(id.as_str())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -145,5 +164,20 @@ mod two_instances_tests {
         let mut dir = InstanceDirectory::default();
         dir.insert(TowerHandle::scaffold(id.clone())).unwrap();
         assert!(dir.insert(TowerHandle::scaffold(id)).is_err());
+    }
+
+    #[test]
+    fn instance_state_root_is_disjoint_per_instance_id() {
+        let home = std::path::Path::new("/home/u/.grok-oss");
+        let a: TowerInstanceId = "default".parse().unwrap();
+        let b: TowerInstanceId = "worktree-1".parse().unwrap();
+        let root_a = instance_state_root(home, &a);
+        let root_b = instance_state_root(home, &b);
+        assert_ne!(root_a, root_b);
+        assert!(root_a.ends_with("towers/default"));
+        assert!(root_b.ends_with("towers/worktree-1"));
+        // Neither root is a prefix of the other (no lexical containment leak).
+        assert!(!root_a.starts_with(&root_b));
+        assert!(!root_b.starts_with(&root_a));
     }
 }

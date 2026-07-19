@@ -1,0 +1,141 @@
+warning: /home/guilherme/github/grok-goblin/crates/codegen/xai-grok-pager-bin/Cargo.toml: file `/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-pager-bin/src/main.rs` found to be present in multiple build targets:
+  * `bin` target `goblin`
+  * `bin` target `grok-oss`
+  * `bin` target `xai-grok-pager`
+warning: function `build_responses_input` is never used
+    --> crates/codegen/xai-grok-sampling-types/src/conversation.rs:2719:4
+     |
+2719 | fn build_responses_input(req: &ConversationRequest) -> rs::InputParam {
+     |    ^^^^^^^^^^^^^^^^^^^^^
+     |
+     = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `easy_input_content_text` is never used
+    --> crates/codegen/xai-grok-sampling-types/src/conversation.rs:2927:4
+     |
+2927 | fn easy_input_content_text(content: &rs::EasyInputContent) -> Option<String> {
+     |    ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: `xai-grok-sampling-types` (lib) generated 2 warnings
+warning: `xai-grok-sampling-types` (lib) generated 2 warnings (2 duplicates)
+warning: unused import: `AuthProvider`
+ --> crates/codegen/xai-grok-multi-auth/src/registry.rs:5:21
+  |
+5 | use xai_grok_auth::{AuthProvider, ProviderRegistry};
+  |                     ^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `AuthProvider`
+ --> crates/codegen/xai-grok-multi-auth/src/cli.rs:9:5
+  |
+9 |     AuthProvider, CredentialStore, ModelListRequest, ProviderId, ProviderModel, ProviderRegistry,
+  |     ^^^^^^^^^^^^
+
+warning: unused import: `AuthProvider`
+  --> crates/codegen/xai-grok-multi-auth/src/token_manager.rs:24:5
+   |
+24 |     AuthProvider, CredentialBinding, CredentialKey, CredentialLockPurpose, CredentialSecret,
+   |     ^^^^^^^^^^^^
+
+warning: unused import: `AuthProvider`
+  --> crates/codegen/xai-grok-multi-auth/src/request_auth.rs:10:5
+   |
+10 |     AuthProvider, CredentialBinding, CredentialKey, CredentialStore, ModelBinding,
+   |     ^^^^^^^^^^^^
+
+warning: `xai-grok-multi-auth` (lib) generated 4 warnings (run `cargo fix --lib -p xai-grok-multi-auth` to apply 1 suggestion)
+   Compiling xai-grok-shell v0.2.102 (/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-shell)
+warning: `xai-grok-multi-auth` (lib) generated 4 warnings (4 duplicates)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 14s
+     Running tests/c3_history_projection.rs (target/debug/deps/c3_history_projection-9a658f1edeb61e3f)
+
+running 16 tests
+test c3_read_session_include_flags_respected ... FAILED
+test c3_replay_honest_partial_skips_xai_extension_updates ... ok
+test c3_read_session_empty_updates_returns_empty_turns_and_items ... ok
+test c3_read_session_crash_mid_turn_inferred_completed_partial ... FAILED
+test c3_read_session_items_include_plan_body ... FAILED
+test c3_replay_cursor_beyond_end_returns_empty_page ... ok
+test c3_read_session_projects_turns_and_items_from_updates_jsonl ... FAILED
+test c3_replay_honest_partial_no_interaction_requested_emitted ... ok
+test c3_read_session_turn_boundaries_on_each_user_message ... FAILED
+test c3_replay_projects_plan_as_item_completed ... FAILED
+test c3_replay_projects_agent_message_chunk_as_item_delta ... ok
+test c3_replay_snapshot_always_event_zero ... ok
+test c3_replay_honest_partial_no_turn_changed_emitted ... ok
+test c3_replay_projects_agent_thought_chunk_as_item_completed ... FAILED
+test c3_replay_projects_tool_call_lifecycle_correlated_via_tool_call_id ... FAILED
+test c3_read_session_items_include_tool_call_and_reasoning_bodies ... FAILED
+
+failures:
+
+---- c3_read_session_include_flags_respected stdout ----
+
+thread 'c3_read_session_include_flags_respected' (907399) panicked at crates/codegen/xai-grok-shell/tests/c3_history_projection.rs:277:5:
+assertion failed: !turns_only.turns.is_empty()
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- c3_read_session_crash_mid_turn_inferred_completed_partial stdout ----
+
+thread 'c3_read_session_crash_mid_turn_inferred_completed_partial' (907397) panicked at crates/codegen/xai-grok-shell/tests/c3_history_projection.rs:645:5:
+assertion `left == right` failed
+  left: 0
+ right: 1
+
+---- c3_read_session_items_include_plan_body stdout ----
+
+thread 'c3_read_session_items_include_plan_body' (907400) panicked at crates/codegen/xai-grok-shell/tests/c3_history_projection.rs:238:5:
+plan projected to Plan body
+
+---- c3_read_session_projects_turns_and_items_from_updates_jsonl stdout ----
+
+thread 'c3_read_session_projects_turns_and_items_from_updates_jsonl' (907402) panicked at crates/codegen/xai-grok-shell/tests/c3_history_projection.rs:130:5:
+assertion `left == right` failed: one turn per user message
+  left: 0
+ right: 1
+
+---- c3_read_session_turn_boundaries_on_each_user_message stdout ----
+
+thread 'c3_read_session_turn_boundaries_on_each_user_message' (907403) panicked at crates/codegen/xai-grok-shell/tests/c3_history_projection.rs:157:5:
+assertion `left == right` failed: two turns bounded on user messages
+  left: 0
+ right: 2
+
+---- c3_replay_projects_plan_as_item_completed stdout ----
+
+thread 'c3_replay_projects_plan_as_item_completed' (907418) panicked at crates/codegen/xai-grok-shell/tests/c3_history_projection.rs:438:5:
+Plan → ItemCompleted(Plan)
+
+---- c3_replay_projects_agent_thought_chunk_as_item_completed stdout ----
+
+thread 'c3_replay_projects_agent_thought_chunk_as_item_completed' (907417) panicked at crates/codegen/xai-grok-shell/tests/c3_history_projection.rs:381:5:
+AgentThoughtChunk → ItemCompleted(ReasoningSummary)
+
+---- c3_replay_projects_tool_call_lifecycle_correlated_via_tool_call_id stdout ----
+
+thread 'c3_replay_projects_tool_call_lifecycle_correlated_via_tool_call_id' (907425) panicked at crates/codegen/xai-grok-shell/tests/c3_history_projection.rs:333:10:
+ItemStarted for tc-42
+
+---- c3_read_session_items_include_tool_call_and_reasoning_bodies stdout ----
+
+thread 'c3_read_session_items_include_tool_call_and_reasoning_bodies' (907401) panicked at crates/codegen/xai-grok-shell/tests/c3_history_projection.rs:190:5:
+assertion `left == right` failed
+  left: 0
+ right: 3
+
+
+failures:
+    c3_read_session_crash_mid_turn_inferred_completed_partial
+    c3_read_session_include_flags_respected
+    c3_read_session_items_include_plan_body
+    c3_read_session_items_include_tool_call_and_reasoning_bodies
+    c3_read_session_projects_turns_and_items_from_updates_jsonl
+    c3_read_session_turn_boundaries_on_each_user_message
+    c3_replay_projects_agent_thought_chunk_as_item_completed
+    c3_replay_projects_plan_as_item_completed
+    c3_replay_projects_tool_call_lifecycle_correlated_via_tool_call_id
+
+test result: FAILED. 7 passed; 9 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+error: test failed, to rerun pass `-p xai-grok-shell --test c3_history_projection`

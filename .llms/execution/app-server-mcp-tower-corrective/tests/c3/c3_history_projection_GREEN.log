@@ -1,0 +1,73 @@
+warning: /home/guilherme/github/grok-goblin/crates/codegen/xai-grok-pager-bin/Cargo.toml: file `/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-pager-bin/src/main.rs` found to be present in multiple build targets:
+  * `bin` target `goblin`
+  * `bin` target `grok-oss`
+  * `bin` target `xai-grok-pager`
+    Blocking waiting for file lock on build directory
+warning: function `build_responses_input` is never used
+    --> crates/codegen/xai-grok-sampling-types/src/conversation.rs:2719:4
+     |
+2719 | fn build_responses_input(req: &ConversationRequest) -> rs::InputParam {
+     |    ^^^^^^^^^^^^^^^^^^^^^
+     |
+     = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `easy_input_content_text` is never used
+    --> crates/codegen/xai-grok-sampling-types/src/conversation.rs:2927:4
+     |
+2927 | fn easy_input_content_text(content: &rs::EasyInputContent) -> Option<String> {
+     |    ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: `xai-grok-sampling-types` (lib) generated 2 warnings
+warning: `xai-grok-sampling-types` (lib) generated 2 warnings (2 duplicates)
+warning: unused import: `AuthProvider`
+ --> crates/codegen/xai-grok-multi-auth/src/registry.rs:5:21
+  |
+5 | use xai_grok_auth::{AuthProvider, ProviderRegistry};
+  |                     ^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `AuthProvider`
+ --> crates/codegen/xai-grok-multi-auth/src/cli.rs:9:5
+  |
+9 |     AuthProvider, CredentialStore, ModelListRequest, ProviderId, ProviderModel, ProviderRegistry,
+  |     ^^^^^^^^^^^^
+
+warning: unused import: `AuthProvider`
+  --> crates/codegen/xai-grok-multi-auth/src/token_manager.rs:24:5
+   |
+24 |     AuthProvider, CredentialBinding, CredentialKey, CredentialLockPurpose, CredentialSecret,
+   |     ^^^^^^^^^^^^
+
+warning: unused import: `AuthProvider`
+  --> crates/codegen/xai-grok-multi-auth/src/request_auth.rs:10:5
+   |
+10 |     AuthProvider, CredentialBinding, CredentialKey, CredentialStore, ModelBinding,
+   |     ^^^^^^^^^^^^
+
+warning: `xai-grok-multi-auth` (lib) generated 4 warnings (run `cargo fix --lib -p xai-grok-multi-auth` to apply 1 suggestion)
+   Compiling xai-grok-shell v0.2.102 (/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-shell)
+warning: `xai-grok-multi-auth` (lib) generated 4 warnings (4 duplicates)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2m 20s
+     Running tests/c3_history_projection.rs (target/debug/deps/c3_history_projection-9a658f1edeb61e3f)
+
+running 16 tests
+test c3_read_session_empty_updates_returns_empty_turns_and_items ... ok
+test c3_read_session_crash_mid_turn_inferred_completed_partial ... ok
+test c3_replay_cursor_beyond_end_returns_empty_page ... ok
+test c3_replay_honest_partial_skips_xai_extension_updates ... ok
+test c3_read_session_projects_turns_and_items_from_updates_jsonl ... ok
+test c3_replay_projects_agent_message_chunk_as_item_delta ... ok
+test c3_replay_projects_agent_thought_chunk_as_item_completed ... ok
+test c3_replay_snapshot_always_event_zero ... ok
+test c3_replay_projects_plan_as_item_completed ... ok
+test c3_replay_honest_partial_no_interaction_requested_emitted ... ok
+test c3_replay_honest_partial_no_turn_changed_emitted ... ok
+test c3_read_session_turn_boundaries_on_each_user_message ... ok
+test c3_read_session_items_include_plan_body ... ok
+test c3_read_session_items_include_tool_call_and_reasoning_bodies ... ok
+test c3_read_session_include_flags_respected ... ok
+test c3_replay_projects_tool_call_lifecycle_correlated_via_tool_call_id ... ok
+
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+

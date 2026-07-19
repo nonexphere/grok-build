@@ -1,0 +1,46 @@
+warning: /home/guilherme/github/grok-goblin/crates/codegen/xai-grok-pager-bin/Cargo.toml: file `/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-pager-bin/src/main.rs` found to be present in multiple build targets:
+  * `bin` target `goblin`
+  * `bin` target `grok-oss`
+  * `bin` target `xai-grok-pager`
+   Compiling xai-grok-app-server v0.1.0 (/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-app-server)
+warning: unused variable: `lease`
+  --> crates/codegen/xai-grok-app-server/src/controller.rs:52:13
+   |
+52 |         let lease = table.grant("s", "ix", "c1", 2);
+   |             ^^^^^ help: if this is intentional, prefix it with an underscore: `_lease`
+   |
+   = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: `xai-grok-app-server` (lib test) generated 1 warning (run `cargo fix --lib -p xai-grok-app-server --tests` to apply 1 suggestion)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.17s
+     Running unittests src/lib.rs (target/debug/deps/xai_grok_app_server-1d2dfc8c78103018)
+
+running 6 tests
+test ws_listener_blackbox_tests::ws_listener_rejects_credentials_in_url_at_bind ... ok
+test ws_listener_blackbox_tests::ws_listener_rejects_missing_authorization_header ... FAILED
+test ws_listener_blackbox_tests::ws_listener_rejects_wrong_bearer ... FAILED
+test ws_listener_blackbox_tests::ws_listener_rejects_jsonrpc_batch ... ok
+test ws_listener_blackbox_tests::ws_listener_rejects_binary_frame ... ok
+test ws_listener_blackbox_tests::ws_listener_rejects_oversize_text_frame ... ok
+
+failures:
+
+---- ws_listener_blackbox_tests::ws_listener_rejects_missing_authorization_header stdout ----
+
+thread 'ws_listener_blackbox_tests::ws_listener_rejects_missing_authorization_header' (742707) panicked at crates/codegen/xai-grok-app-server/src/lib.rs:379:44:
+called `Result::unwrap_err()` on an `Ok` value: (WebSocketStream { inner: WebSocket { socket: AllowStd { inner: Plain(TcpStream { addr: 127.0.0.1:57632, peer: 127.0.0.1:43511, fd: 36 }), write_waker_proxy: WakerProxy { read_waker: AtomicWaker, write_waker: AtomicWaker }, read_waker_proxy: WakerProxy { read_waker: AtomicWaker, write_waker: AtomicWaker } }, context: WebSocketContext { role: Client, frame: FrameCodec { in_buffer: b"", in_buf_max_read: 131072, out_buffer: [], max_out_buffer_len: 18446744073709551615, out_buffer_write_len: 131072, header: None }, state: Active, incomplete: None, additional_send: None, unflushed_additional: false, config: WebSocketConfig { read_buffer_size: 131072, write_buffer_size: 131072, max_write_buffer_size: 18446744073709551615, max_message_size: Some(67108864), max_frame_size: Some(16777216), accept_unmasked_frames: false } } }, closing: false, ended: false, ready: true }, Response { status: 101, version: HTTP/1.1, headers: {"connection": "Upgrade", "upgrade": "websocket", "sec-websocket-accept": "FYzDtrC0HJBp473nOjT9qAtcUTg="}, body: None })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- ws_listener_blackbox_tests::ws_listener_rejects_wrong_bearer stdout ----
+
+thread 'ws_listener_blackbox_tests::ws_listener_rejects_wrong_bearer' (742709) panicked at crates/codegen/xai-grok-app-server/src/lib.rs:392:9:
+assertion failed: connect_async(req).await.is_err()
+
+
+failures:
+    ws_listener_blackbox_tests::ws_listener_rejects_missing_authorization_header
+    ws_listener_blackbox_tests::ws_listener_rejects_wrong_bearer
+
+test result: FAILED. 4 passed; 2 failed; 0 ignored; 0 measured; 36 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p xai-grok-app-server --lib`

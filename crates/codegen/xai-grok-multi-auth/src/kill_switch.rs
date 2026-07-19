@@ -63,6 +63,14 @@ fn env_enabled(var: &str) -> bool {
     }
 }
 
+/// Whether the BYOK API-key providers (OpenRouter / Groq / Cloudflare) are
+/// disabled. Fail-open by default (BYOK is offline-safe: no OAuth, no
+/// refresh, no remote revoke). Set `GROK_DISABLE_BYOK_AUTH=1` to remove
+/// them from the default registry.
+pub fn byok_auth_disabled() -> bool {
+    env_enabled("GROK_DISABLE_BYOK_AUTH")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

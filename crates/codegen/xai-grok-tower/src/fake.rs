@@ -428,22 +428,30 @@ impl GrokRuntimeFacade for FakeRuntime {
         );
 
         // Complete turn immediately in the fake (deterministic vertical slice).
+        // Return the *completed* snapshot so Fake and real adapters agree on
+        // the start_turn status (C7-B F-2). The earlier TurnChanged event still
+        // carries InProgress for replay lifecycle fidelity.
+        let completed_at = self.now();
         if let Some(t) = state
             .turns
             .get_mut(&params.session_id)
             .and_then(|turns| turns.iter_mut().find(|t| t.turn_id == turn_id))
         {
             t.status = TurnStatus::Completed;
-            t.completed_at_ms = Some(self.now());
+            t.completed_at_ms = Some(completed_at);
             t.revision = WireCounter::new(2);
         }
         if let Some(session) = state.sessions.get_mut(&params.session_id) {
             session.status = SessionStatus::Ready;
             session.active_turn_id = None;
-            session.updated_at_ms = self.now();
+            session.updated_at_ms = completed_at;
         }
         state.usage.record_turn(-1);
-        Ok(turn)
+        let mut completed_turn = turn;
+        completed_turn.status = TurnStatus::Completed;
+        completed_turn.completed_at_ms = Some(completed_at);
+        completed_turn.revision = WireCounter::new(2);
+        Ok(completed_turn)
     }
 
     async fn steer_turn(&self, params: TurnSteerParams) -> Result<Item, RuntimeError> {

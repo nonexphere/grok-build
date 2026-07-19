@@ -10,14 +10,23 @@ async-trait = { workspace = true }
 serde_json = { workspace = true }
 xai-grok-tower = { path = "../xai-grok-tower" }
 xai-grok-tower-tools = { path = "../xai-grok-tower-tools" }
+xai-grok-app-server-protocol = { path = "../xai-grok-app-server-protocol" }
+# Streamable HTTP transport (POST/GET/DELETE /mcp). Gated behind the
+# `streamable-http` feature so stdio/in-process adapters stay zero-network.
+# The workspace already vendors axum/tokio (the shell and app-server use the
+# same versions), so this adds no new external supply-chain.
+axum = { workspace = true, optional = true }
+tokio = { workspace = true, features = ["net", "io-util", "time", "sync", "rt"], optional = true }
+futures-util = { workspace = true, optional = true }
 
 [dev-dependencies]
-tokio = { workspace = true, features = ["macros", "rt"] }
+tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread", "time"] }
+reqwest = { workspace = true }
 
 [features]
 default = ["stdio"]
 stdio = []
-streamable-http = []
+streamable-http = ["dep:axum", "dep:tokio", "dep:futures-util"]
 
 [lints]
 workspace = true

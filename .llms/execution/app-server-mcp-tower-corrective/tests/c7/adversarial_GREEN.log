@@ -1,0 +1,418 @@
+=== C7-E Hermetic Adversarial Local Suite — GREEN master log ===
+Date: 2026-07-19T05:18:16Z
+Host: debian-zfs
+Branch: goblin-implement-epic-tree
+
+Scope: hermetic adversarial tests possible without HUMAN TLS/creds:
+  1. Malformed JSON-RPC / oversize / batch rejection (WS + MCP + stdio)
+  2. Secret canaries (app-server security module)
+  3. Path/symlink fail-closed (tower workspace)
+  4. Cancellation + concurrent session starts (shell c1)
+  5. Multi-instance lock contention (C2-B flock)
+HUMAN-deferred: live remote TLS, live provider smoke.
+
+============================================================
+## Gate 1: cargo test -p xai-grok-app-server --features websocket
+  (malformed JSON-RPC, oversize, batch, secret canaries, WS layer)
+============================================================
+warning: /home/guilherme/github/grok-goblin/crates/codegen/xai-grok-pager-bin/Cargo.toml: file `/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-pager-bin/src/main.rs` found to be present in multiple build targets:
+  * `bin` target `goblin`
+  * `bin` target `grok-oss`
+  * `bin` target `xai-grok-pager`
+warning: unused import: `Value`
+   --> crates/codegen/xai-grok-app-server/src/lib.rs:171:28
+    |
+171 |     use serde_json::{json, Value};
+    |                            ^^^^^
+    |
+    = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `lease`
+  --> crates/codegen/xai-grok-app-server/src/controller.rs:52:13
+   |
+52 |         let lease = table.grant("s", "ix", "c1", 2);
+   |             ^^^^^ help: if this is intentional, prefix it with an underscore: `_lease`
+   |
+   = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: `xai-grok-app-server` (lib test) generated 2 warnings (run `cargo fix --lib -p xai-grok-app-server --tests` to apply 2 suggestions)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.33s
+     Running unittests src/lib.rs (target/debug/deps/xai_grok_app_server-d51144035c7ef0fc)
+
+running 50 tests
+test adversarial_rejection_tests::remote_cleartext_bind_is_labeled_experimental_unsafe ... ok
+test adversarial_rejection_tests::ws_layer_accepts_well_formed_single_object ... ok
+test adversarial_rejection_tests::processor_rejects_batch_array_with_invalid_request ... ok
+test adversarial_rejection_tests::processor_rejects_malformed_json_with_parse_error ... ok
+test adversarial_rejection_tests::secret_canaries_are_detected_across_canonical_shapes ... ok
+test adversarial_rejection_tests::ws_layer_rejects_batch_text_frame ... ok
+test co_start_tests::co_start_rejects_dual_stdio_accepts_stdio_plus_ws_matrix ... ok
+test adversarial_rejection_tests::stdio_batch_helper_propagates_parse_error_for_malformed_line ... ok
+test controller::controller_lease_tests::controller_lease_revisioned_exactly_one_controller ... ok
+test controller::controller_policy_tests::controller_disconnect_never_auto_allows ... ok
+test controller::controller_lease_tests::interaction_identity_distinct_from_request_ids ... ok
+test controller::controller_policy_tests::interaction_idempotency_second_resolve_fails ... ok
+test conformance_tests::runtime_facade_end_to_end_via_processor ... ok
+test processor::processor_tests::composition_processor_depends_on_facade_trait_not_shell ... ok
+test security::security_tests::secret_canaries_detect_common_leaks ... ok
+test replay::cursor_semantics_tests::projection_rebuild_via_replay_is_stable_for_fake ... ok
+test processor::processor_tests::processor_rejects_methods_before_initialize ... ok
+test security::remote_bind_tests::remote_bind_warning_exact_only_for_non_loopback ... ok
+test security::control_plane_security_tests::control_plane_security_canary_matrix ... ok
+test replay::cursor_semantics_tests::cursor_semantics_epoch_mismatch_and_bounded_pages ... ok
+test security::control_plane_security_tests::redaction_canary_lengths ... ok
+test adversarial_rejection_tests::ws_layer_rejects_oversized_text_frame ... ok
+test snapshot_then_live_tests::snapshot_then_live_no_gap_on_fake ... ok
+test transport::websocket::websocket_tests::bearer_auth_rejects_prefix_and_length_mismatches_identically ... ok
+test security::security_tests::remote_cleartext_is_labeled_experimental_unsafe ... ok
+test transport::websocket::websocket_tests::websocket_auth_header_only_rejects_missing_and_url_tokens ... ok
+test ws_listener_blackbox_tests::ws_listener_cleartext_non_loopback_warns_experimental_unsafe ... ok
+test transport::ws_listener::ws_listener_unit_tests::bounded_writer_drops_when_full ... ok
+test transport::websocket::websocket_tests::websocket_reuses_processor_parity_with_stdio ... ok
+test conformance_tests::conformance_in_process_and_stdio_normalized_outputs_match ... ok
+test websocket_conformance_tests::websocket_conformance_initialize_matches_stdio_shape ... ok
+test processor::processor_tests::processor_initialize_session_turn_vertical_slice ... ok
+test ws_listener_blackbox_tests::ws_listener_default_config_is_loopback ... ok
+test transport::stdio::stdio_tests::stdio_ndjson_one_json_object_per_line_vertical_slice ... ok
+test ws_listener_blackbox_tests::ws_listener_rejects_credentials_in_url_at_bind ... ok
+test transport::in_process::in_process_tests::in_process_initialize_session_turn_item_stream ... ok
+test transport::websocket::websocket_tests::websocket_transport_rejects_batch_and_oversized_frames ... ok
+test conformance_tests::backpressure_subscribe_is_bounded_page ... ok
+test ws_listener_blackbox_tests::ws_listener_rejects_missing_authorization_header ... ok
+test ws_listener_blackbox_tests::ws_listener_handshake_subprotocol_negotiates_protocol_version ... ok
+test ws_listener_blackbox_tests::ws_listener_rejects_wrong_bearer ... ok
+test ws_listener_blackbox_tests::ws_listener_ping_pong_keepalive ... ok
+test ws_listener_blackbox_tests::ws_listener_rejects_binary_frame ... ok
+test ws_listener_blackbox_tests::ws_listener_rejects_jsonrpc_batch ... ok
+test ws_listener_blackbox_tests::ws_conformance_matches_stdio_method_shapes ... ok
+test ws_listener_blackbox_tests::ws_listener_text_frame_initialize_then_session_start_roundtrip ... ok
+test ws_listener_blackbox_tests::ws_listener_slow_client_resync_via_replay_fake_adapter ... ok
+test ws_listener_blackbox_tests::ws_listener_disconnect_drains_and_closes ... ok
+test ws_listener_blackbox_tests::ws_listener_rejects_oversize_text_frame ... ok
+test ws_listener_blackbox_tests::ws_listener_bounded_writer_survives_burst ... ok
+
+test result: ok. 50 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.05s
+
+   Doc-tests xai_grok_app_server
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+============================================================
+## Gate 2: cargo test -p xai-grok-mcp-server --features streamable-http
+  (HTTP body limit, auth fail-closed, batch/oversize, stdio malformed)
+============================================================
+warning: /home/guilherme/github/grok-goblin/crates/codegen/xai-grok-pager-bin/Cargo.toml: file `/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-pager-bin/src/main.rs` found to be present in multiple build targets:
+  * `bin` target `goblin`
+  * `bin` target `grok-oss`
+  * `bin` target `xai-grok-pager`
+warning: unused import: `process_mcp_stdio_batch`
+ --> crates/codegen/xai-grok-mcp-server/src/transport/stdio.rs:9:33
+  |
+9 | use crate::{handle_mcp_jsonrpc, process_mcp_stdio_batch};
+  |                                 ^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `xai-grok-mcp-server` (lib) generated 1 warning (run `cargo fix --lib -p xai-grok-mcp-server` to apply 1 suggestion)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.44s
+     Running unittests src/lib.rs (target/debug/deps/xai_grok_mcp_server-55fc3966afeb35f9)
+
+running 16 tests
+test mcp_extra_tests::tool_descriptors_exact_nine ... ok
+test tests::mcp_lists_exactly_nine_tools ... ok
+test mcp_extra_tests::no_local_self_injection_in_production_source ... ok
+test transport::http::auth_failures_tests::bearer_header_only_and_auth_failures_are_generic ... ok
+test tests::no_self_mcp_loop_tool_names ... ok
+test mcp_extra_tests::adapter_parity_list_start_via_mcp_jsonrpc ... ok
+test transport::http::auth_failures_tests::redaction_canary_absent_from_post_response_shape ... ok
+test transport::http::limits_tests::limits_reject_oversized_body_explicitly ... ok
+test transport::http::streamable_http_tests::streamable_http_bearer_header_only_and_safe_sse_resume ... ok
+test transport::http_server::fail_closed_auth_canary::default_config_refuses_to_bind_with_empty_bearer ... ok
+test tests::mcp_stdio_tools_call_shares_semantic_core_with_in_process ... ok
+test transport::http_server::fail_closed_auth_canary::empty_bearer_with_require_auth_refuses_to_bind ... ok
+test transport::http_server::fail_closed_auth_canary::require_auth_false_with_empty_bearer_binds ... ok
+test transport::stdio::stdio_tests::stdio_batch_drops_malformed_line_gracefully ... ok
+test transport::stdio::stdio_tests::stdio_protocol_only_stdout_and_graceful_eof ... ok
+test transport::http_server::self_loop_canary::http_server_does_not_import_outbound_mcp_client ... ok
+
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/streamable_http.rs (target/debug/deps/streamable_http-2c16a2ddabc36154)
+
+running 27 tests
+test composition_source_does_not_register_local_mcp_self_loop ... ok
+test delete_without_session_header_is_bad_request ... ok
+test healthz_returns_ok_without_auth ... ok
+test non_initialize_request_without_session_header_is_bad_request ... ok
+test get_sse_requires_accept_event_stream ... ok
+test post_initialize_negotiates_session_header ... ok
+test get_sse_foreign_last_event_id_returns_resumption_error ... ok
+test delete_session_terminates_and_rejects_subsequent_post ... ok
+test get_sse_does_not_replay_another_clients_events ... ok
+test auth_failures_are_indistinguishable_401 ... ok
+test get_sse_streams_events_after_tools_call ... ok
+test post_rejects_token_in_query_string ... ok
+test get_sse_resume_from_last_event_id ... ok
+test post_rejects_non_json_content_type ... ok
+test post_tools_call_deny_path_emits_iserror_with_forbidden_code ... ok
+test post_notification_returns_202_no_body ... ok
+test run_mcp_http_server_refuses_empty_bearer_when_require_auth_true ... ok
+test post_tools_call_does_not_reenter_via_managed_mcp_client ... ok
+test run_mcp_http_server_binds_when_require_auth_false_empty_bearer ... ok
+test body_limit_rejects_oversized_post_before_dispatch ... ok
+test protocol_version_gate_rejects_unsupported_before_dispatch ... ok
+test post_tools_lists_exactly_nine_descriptors_matching_in_process ... ok
+test post_tools_call_start_returns_structured_content_with_session_id ... ok
+test session_bearer_fingerprint_match_accepts ... ok
+test stdio_and_http_produce_identical_tools_list_and_error_shapes ... ok
+test session_id_from_tower_a_rejected_by_tower_b ... ok
+test session_bearer_fingerprint_mismatch_rejects ... ok
+
+test result: ok. 27 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+   Doc-tests xai_grok_mcp_server
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+============================================================
+## Gate 3: cargo test -p xai-grok-tower --test tower_instance_isolation
+  (multi-instance lock contention, disjoint state roots, single-winner flock)
+============================================================
+warning: /home/guilherme/github/grok-goblin/crates/codegen/xai-grok-pager-bin/Cargo.toml: file `/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-pager-bin/src/main.rs` found to be present in multiple build targets:
+  * `bin` target `goblin`
+  * `bin` target `grok-oss`
+  * `bin` target `xai-grok-pager`
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.32s
+     Running tests/tower_instance_isolation.rs (target/debug/deps/tower_instance_isolation-a2c01c7614c90d77)
+
+running 10 tests
+test default_instance_is_distinct_from_named_instances ... ok
+test invalid_instance_id_is_rejected_before_path_derivation ... ok
+test flock_isolation_tests::instance_contention_second_claimer_fails_while_held ... ok
+test flock_isolation_tests::instance_lock_probe_reports_held_state ... ok
+test flock_isolation_tests::instance_lock_scaffold_files_under_root ... ok
+test two_instances_have_disjoint_registries_and_directories ... ok
+test two_instances_have_disjoint_state_roots ... ok
+test flock_isolation_tests::two_instances_take_disjoint_flock_concurrently ... ok
+test flock_isolation_tests::instance_lock_records_holder_pid ... ok
+test flock_isolation_tests::instance_contention_single_winner_among_many ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+
+============================================================
+## Gate 4: security canaries (app-server security module)
+============================================================
+warning: /home/guilherme/github/grok-goblin/crates/codegen/xai-grok-pager-bin/Cargo.toml: file `/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-pager-bin/src/main.rs` found to be present in multiple build targets:
+  * `bin` target `goblin`
+  * `bin` target `grok-oss`
+  * `bin` target `xai-grok-pager`
+warning: unused import: `Value`
+   --> crates/codegen/xai-grok-app-server/src/lib.rs:171:28
+    |
+171 |     use serde_json::{json, Value};
+    |                            ^^^^^
+    |
+    = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `lease`
+  --> crates/codegen/xai-grok-app-server/src/controller.rs:52:13
+   |
+52 |         let lease = table.grant("s", "ix", "c1", 2);
+   |             ^^^^^ help: if this is intentional, prefix it with an underscore: `_lease`
+   |
+   = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: `xai-grok-app-server` (lib test) generated 2 warnings (run `cargo fix --lib -p xai-grok-app-server --tests` to apply 2 suggestions)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.33s
+     Running unittests src/lib.rs (target/debug/deps/xai_grok_app_server-7b49723015ab4ae2)
+
+running 5 tests
+test security::control_plane_security_tests::control_plane_security_canary_matrix ... ok
+test security::control_plane_security_tests::redaction_canary_lengths ... ok
+test security::security_tests::remote_cleartext_is_labeled_experimental_unsafe ... ok
+test security::remote_bind_tests::remote_bind_warning_exact_only_for_non_loopback ... ok
+test security::security_tests::secret_canaries_detect_common_leaks ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 29 filtered out; finished in 0.00s
+
+
+============================================================
+## Gate 5: cargo build -p xai-grok-pager-bin --bin grok-oss
+============================================================
+warning: /home/guilherme/github/grok-goblin/crates/codegen/xai-grok-pager-bin/Cargo.toml: file `/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-pager-bin/src/main.rs` found to be present in multiple build targets:
+  * `bin` target `goblin`
+  * `bin` target `grok-oss`
+  * `bin` target `xai-grok-pager`
+warning: function `build_responses_input` is never used
+    --> crates/codegen/xai-grok-sampling-types/src/conversation.rs:2719:4
+     |
+2719 | fn build_responses_input(req: &ConversationRequest) -> rs::InputParam {
+     |    ^^^^^^^^^^^^^^^^^^^^^
+     |
+     = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `easy_input_content_text` is never used
+    --> crates/codegen/xai-grok-sampling-types/src/conversation.rs:2927:4
+     |
+2927 | fn easy_input_content_text(content: &rs::EasyInputContent) -> Option<String> {
+     |    ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: `xai-grok-sampling-types` (lib) generated 2 warnings
+warning: unused import: `AuthProvider`
+ --> crates/codegen/xai-grok-multi-auth/src/registry.rs:5:21
+  |
+5 | use xai_grok_auth::{AuthProvider, ProviderRegistry};
+  |                     ^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `AuthProvider`
+ --> crates/codegen/xai-grok-multi-auth/src/cli.rs:9:5
+  |
+9 |     AuthProvider, CredentialStore, ModelListRequest, ProviderId, ProviderModel, ProviderRegistry,
+  |     ^^^^^^^^^^^^
+
+warning: unused import: `AuthProvider`
+  --> crates/codegen/xai-grok-multi-auth/src/token_manager.rs:24:5
+   |
+24 |     AuthProvider, CredentialBinding, CredentialKey, CredentialLockPurpose, CredentialSecret,
+   |     ^^^^^^^^^^^^
+
+warning: unused import: `AuthProvider`
+  --> crates/codegen/xai-grok-multi-auth/src/request_auth.rs:10:5
+   |
+10 |     AuthProvider, CredentialBinding, CredentialKey, CredentialStore, ModelBinding,
+   |     ^^^^^^^^^^^^
+
+warning: `xai-grok-multi-auth` (lib) generated 4 warnings (run `cargo fix --lib -p xai-grok-multi-auth` to apply 1 suggestion)
+   Compiling xai-grok-shell v0.2.102 (/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-shell)
+   Compiling xai-grok-pager v0.2.102 (/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-pager)
+   Compiling xai-grok-pager-bin v0.2.102 (/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-pager-bin)
+   Compiling xai-grok-update v0.1.220-alpha.4 (/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-update)
+   Compiling xai-grok-pager-minimal v0.1.0 (/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-pager-minimal)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 2m 18s
+GATE5_EXIT=0
+
+============================================================
+## Gate 6: tower workspace symlink fail-closed
+============================================================
+warning: /home/guilherme/github/grok-goblin/crates/codegen/xai-grok-pager-bin/Cargo.toml: file `/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-pager-bin/src/main.rs` found to be present in multiple build targets:
+  * `bin` target `goblin`
+  * `bin` target `grok-oss`
+  * `bin` target `xai-grok-pager`
+    Blocking waiting for file lock on build directory
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 20s
+     Running unittests src/lib.rs (target/debug/deps/xai_grok_tower-a50d31fd75d30bf0)
+
+running 1 test
+test workspace::workspace_symlink_tests::workspace_symlink_escape_is_fail_closed ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 28 filtered out; finished in 0.00s
+
+     Running tests/tower_instance_isolation.rs (target/debug/deps/tower_instance_isolation-a2c01c7614c90d77)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 10 filtered out; finished in 0.00s
+
+
+============================================================
+## Gate 7: c1 cancellation + concurrent session starts
+  (cargo test -p xai-grok-shell --test c1_turn_lifecycle)
+============================================================
+warning: /home/guilherme/github/grok-goblin/crates/codegen/xai-grok-pager-bin/Cargo.toml: file `/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-pager-bin/src/main.rs` found to be present in multiple build targets:
+  * `bin` target `goblin`
+  * `bin` target `grok-oss`
+  * `bin` target `xai-grok-pager`
+warning: function `build_responses_input` is never used
+    --> crates/codegen/xai-grok-sampling-types/src/conversation.rs:2719:4
+     |
+2719 | fn build_responses_input(req: &ConversationRequest) -> rs::InputParam {
+     |    ^^^^^^^^^^^^^^^^^^^^^
+     |
+     = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `easy_input_content_text` is never used
+    --> crates/codegen/xai-grok-sampling-types/src/conversation.rs:2927:4
+     |
+2927 | fn easy_input_content_text(content: &rs::EasyInputContent) -> Option<String> {
+     |    ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: `xai-grok-sampling-types` (lib) generated 2 warnings
+warning: `xai-grok-sampling-types` (lib) generated 2 warnings (2 duplicates)
+warning: unused import: `AuthProvider`
+ --> crates/codegen/xai-grok-multi-auth/src/registry.rs:5:21
+  |
+5 | use xai_grok_auth::{AuthProvider, ProviderRegistry};
+  |                     ^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `AuthProvider`
+ --> crates/codegen/xai-grok-multi-auth/src/cli.rs:9:5
+  |
+9 |     AuthProvider, CredentialStore, ModelListRequest, ProviderId, ProviderModel, ProviderRegistry,
+  |     ^^^^^^^^^^^^
+
+warning: unused import: `AuthProvider`
+  --> crates/codegen/xai-grok-multi-auth/src/token_manager.rs:24:5
+   |
+24 |     AuthProvider, CredentialBinding, CredentialKey, CredentialLockPurpose, CredentialSecret,
+   |     ^^^^^^^^^^^^
+
+warning: unused import: `AuthProvider`
+  --> crates/codegen/xai-grok-multi-auth/src/request_auth.rs:10:5
+   |
+10 |     AuthProvider, CredentialBinding, CredentialKey, CredentialStore, ModelBinding,
+   |     ^^^^^^^^^^^^
+
+warning: `xai-grok-multi-auth` (lib) generated 4 warnings (run `cargo fix --lib -p xai-grok-multi-auth` to apply 1 suggestion)
+warning: `xai-grok-multi-auth` (lib) generated 4 warnings (4 duplicates)
+   Compiling xai-grok-shell v0.2.102 (/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-shell)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 8.63s
+     Running tests/c1_turn_lifecycle.rs (target/debug/deps/c1_turn_lifecycle-46a608c57b24aa14)
+
+running 9 tests
+test c1_turn_start_turn_without_resident_returns_unsupported ... ok
+test c1_turn_interrupt_turn_turn_id_mismatch_returns_turn_not_found ... ok
+test c1_turn_steer_turn_turn_id_mismatch_returns_turn_not_found ... ok
+test c1_turn_start_turn_routes_prompt_through_real_cmd_tx_and_persists ... ok
+test c1_turn_concurrent_starts_serialize_through_single_mailbox ... ok
+test c1_turn_resume_re_residents_actor_and_routes_turn ... ok
+test c1_turn_steer_turn_targets_running_turn_and_returns_item ... ok
+test c1_turn_interrupt_turn_cancels_running_turn_only ... ok
+test c1_turn_steer_turn_against_running_turn_returns_item ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+GATE7_EXIT=0
+
+============================================================
+## Gate 8: multi-instance lock contention (C2-B flock subset)
+============================================================
+warning: /home/guilherme/github/grok-goblin/crates/codegen/xai-grok-pager-bin/Cargo.toml: file `/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-pager-bin/src/main.rs` found to be present in multiple build targets:
+  * `bin` target `goblin`
+  * `bin` target `grok-oss`
+  * `bin` target `xai-grok-pager`
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.36s
+     Running tests/tower_instance_isolation.rs (target/debug/deps/tower_instance_isolation-a2c01c7614c90d77)
+
+running 6 tests
+test flock_isolation_tests::instance_contention_second_claimer_fails_while_held ... ok
+test flock_isolation_tests::instance_lock_probe_reports_held_state ... ok
+test flock_isolation_tests::instance_lock_scaffold_files_under_root ... ok
+test flock_isolation_tests::two_instances_take_disjoint_flock_concurrently ... ok
+test flock_isolation_tests::instance_lock_records_holder_pid ... ok
+test flock_isolation_tests::instance_contention_single_winner_among_many ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.06s
+
+
+=== END C7-E adversarial GREEN master log ===

@@ -1135,6 +1135,8 @@ fn make_test_handle(
         pending_interactions: std::sync::Arc::new(std::sync::Mutex::new(
             std::collections::HashMap::new(),
         )),
+        interaction_delivery_hub: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+
         info: crate::session::info::Info {
             id: acp::SessionId::new("test"),
             cwd: "/tmp".to_string(),

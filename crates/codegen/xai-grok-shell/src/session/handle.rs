@@ -53,6 +53,12 @@ pub struct SessionHandle {
     /// resolve. The roster reads this synchronously to surface `NeedsInput`
     /// Never persisted.
     pub pending_interactions: crate::session::pending_interaction::PendingInteractions,
+    /// Delivery hub for app-server `respond_interaction`: maps `tool_call_id`
+    /// → oneshot parked by reverse-request sites. Shared with the actor so
+    /// the facade and the live park use the same map (R5-09).
+    pub interaction_delivery_hub: std::sync::Arc<
+        std::sync::Mutex<std::collections::HashMap<String, tokio::sync::oneshot::Sender<String>>>,
+    >,
     /// Session info (id, cwd) - cached for quick access without querying persistence
     pub info: crate::session::info::Info,
     /// Resolved turn limit for this session; lets a spawned subagent inherit

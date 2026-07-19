@@ -1222,6 +1222,7 @@ fn dummy_tracker(
         pending_interactions: Arc::new(
             std::sync::Mutex::new(std::collections::HashMap::new()),
         ),
+        interaction_delivery_hub: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
         info: Info {
             id: acp::SessionId::new(subagent_id),
             cwd: "/tmp".into(),

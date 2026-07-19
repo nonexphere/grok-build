@@ -8,6 +8,7 @@ pub mod fake;
 pub mod instance;
 pub mod lease;
 pub mod lifecycle;
+pub mod lock;
 pub mod metadata;
 pub mod projection;
 pub mod registry;
@@ -17,9 +18,16 @@ pub use budgets::{
     admit_resident, admit_turn, ResourceBudgets, ResourceUsage,
 };
 pub use fake::FakeRuntime;
-pub use instance::{InstanceDirectory, TowerHandle, TowerInstanceId, TowerInstanceIdError};
+pub use instance::{
+    instance_state_root, InstanceDirectory, TowerHandle, TowerInstanceId, TowerInstanceIdError,
+    TOWER_INSTANCES_DIR,
+};
 pub use lease::{ControllerLease, LeaseTable};
 pub use lifecycle::{DrainController, DrainState};
+pub use lock::{
+    InstanceLock, InstanceLockError, INSTANCE_ENDPOINT_FILE, INSTANCE_LOCK_FILE,
+    INSTANCE_METADATA_FILE, INSTANCE_TOKEN_FILE,
+};
 pub use telemetry::LifecycleMetrics;
 pub use metadata::{Residency, SessionMetadata};
 pub use projection::{

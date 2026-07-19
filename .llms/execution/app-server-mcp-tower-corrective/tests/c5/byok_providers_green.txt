@@ -1,0 +1,56 @@
+warning: /home/guilherme/github/grok-goblin/crates/codegen/xai-grok-pager-bin/Cargo.toml: file `/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-pager-bin/src/main.rs` found to be present in multiple build targets:
+  * `bin` target `goblin`
+  * `bin` target `grok-oss`
+  * `bin` target `xai-grok-pager`
+warning: unused import: `AuthProvider`
+ --> crates/codegen/xai-grok-multi-auth/src/registry.rs:5:21
+  |
+5 | use xai_grok_auth::{AuthProvider, ProviderRegistry};
+  |                     ^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `AuthProvider`
+ --> crates/codegen/xai-grok-multi-auth/src/cli.rs:9:5
+  |
+9 |     AuthProvider, CredentialStore, ModelListRequest, ProviderId, ProviderModel, ProviderRegistry,
+  |     ^^^^^^^^^^^^
+
+warning: unused import: `AuthProvider`
+  --> crates/codegen/xai-grok-multi-auth/src/token_manager.rs:24:5
+   |
+24 |     AuthProvider, CredentialBinding, CredentialKey, CredentialLockPurpose, CredentialSecret,
+   |     ^^^^^^^^^^^^
+
+warning: unused import: `AuthProvider`
+  --> crates/codegen/xai-grok-multi-auth/src/request_auth.rs:10:5
+   |
+10 |     AuthProvider, CredentialBinding, CredentialKey, CredentialStore, ModelBinding,
+   |     ^^^^^^^^^^^^
+
+warning: `xai-grok-multi-auth` (lib) generated 4 warnings (run `cargo fix --lib -p xai-grok-multi-auth` to apply 1 suggestion)
+warning: `xai-grok-multi-auth` (lib) generated 4 warnings (4 duplicates)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.17s
+     Running tests/byok_providers.rs (target/debug/deps/byok_providers-c4363dbbcc6eb6ad)
+
+running 17 tests
+test byok_openrouter_endpoint_resolution ... ok
+test byok_api_key_login_rejects_unknown_provider ... ok
+test byok_api_key_login_rejects_provider_without_api_key_capability ... ok
+test byok_groq_endpoint_resolution ... ok
+test byok_get_valid_token_returns_stored_key_without_refresh ... ok
+test byok_logout_does_not_claim_remote_revoke ... ok
+test byok_cloudflare_endpoint_resolution_requires_account_id ... ok
+test byok_openrouter_request_auth_is_static_bearer ... ok
+test byok_groq_request_auth_is_static_bearer ... ok
+test byok_cloudflare_request_auth_is_static_bearer ... ok
+test byok_kill_switch_disables_registration ... ok
+test byok_reject_xai_api_key_fallback_for_third_party ... ok
+test byok_providers_advertise_only_api_key_login ... ok
+test byok_supports_credential_only_for_own_provider ... ok
+test byok_registry_registers_three_verticals_with_api_key_login ... ok
+test byok_api_key_login_persists_for_registered_byok_providers ... ok
+test byok_api_key_login_persists_to_file_store ... ok
+
+test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+

@@ -1,0 +1,15 @@
+warning: /home/guilherme/github/grok-goblin/crates/codegen/xai-grok-pager-bin/Cargo.toml: file `/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-pager-bin/src/main.rs` found to be present in multiple build targets:
+  * `bin` target `goblin`
+  * `bin` target `grok-oss`
+  * `bin` target `xai-grok-pager`
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.29s
+     Running tests/tower_instance_isolation.rs (target/debug/deps/tower_instance_isolation-fef62a87a36f04ab)
+
+running 4 tests
+test default_instance_is_distinct_from_named_instances ... ok
+test invalid_instance_id_is_rejected_before_path_derivation ... ok
+test two_instances_have_disjoint_state_roots ... ok
+test two_instances_have_disjoint_registries_and_directories ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

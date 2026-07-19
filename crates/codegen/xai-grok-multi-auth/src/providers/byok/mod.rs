@@ -1,5 +1,9 @@
-//! BYOK provider descriptors for OpenRouter, Groq, and Cloudflare.
-//! Login uses `LoginCoordinator::run_api_key_login`; request auth is static bearer.
+//! BYOK provider descriptors and API-key `AuthProvider` for OpenRouter,
+//! Groq, and Cloudflare. Login uses
+//! `LoginCoordinator::run_api_key_login` (which validates the registry and
+//! the `API_KEY_LOGIN` capability); request auth is a static bearer header.
+
+pub mod auth_provider;
 
 use xai_grok_auth::ProviderId;
 
@@ -37,6 +41,8 @@ pub const ALL: &[ByokProviderSpec] = &[OPENROUTER, GROQ, CLOUDFLARE];
 pub fn provider_id(spec: &ByokProviderSpec) -> ProviderId {
     ProviderId::new_unchecked(spec.id)
 }
+
+pub use auth_provider::{ByokAuthProvider, resolve_byok_endpoint};
 
 /// Catalog key format: `{provider}/{credential_id}/{slug}` — never embeds secrets.
 pub fn catalog_model_key(provider: &str, credential_id: &str, slug: &str) -> String {

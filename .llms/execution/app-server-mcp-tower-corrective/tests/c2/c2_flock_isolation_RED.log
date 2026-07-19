@@ -1,0 +1,22 @@
+warning: /home/guilherme/github/grok-goblin/crates/codegen/xai-grok-pager-bin/Cargo.toml: file `/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-pager-bin/src/main.rs` found to be present in multiple build targets:
+  * `bin` target `goblin`
+  * `bin` target `grok-oss`
+  * `bin` target `xai-grok-pager`
+   Compiling xai-grok-tower v0.1.0 (/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-tower)
+error[E0432]: unresolved imports `xai_grok_tower::InstanceLock`, `xai_grok_tower::InstanceLockError`
+  --> crates/codegen/xai-grok-tower/tests/tower_instance_isolation.rs:17:45
+   |
+17 |     instance_state_root, InstanceDirectory, InstanceLock, InstanceLockError, SessionRegistry,
+   |                                             ^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^ no `InstanceLockError` in the root
+   |                                             |
+   |                                             no `InstanceLock` in the root
+
+error[E0282]: type annotations needed
+   --> crates/codegen/xai-grok-tower/tests/tower_instance_isolation.rs:279:21
+    |
+279 |             assert!(p.starts_with(lock.state_root()));
+    |                     ^ cannot infer type
+
+Some errors have detailed explanations: E0282, E0432.
+For more information about an error, try `rustc --explain E0282`.
+error: could not compile `xai-grok-tower` (test "tower_instance_isolation") due to 2 previous errors

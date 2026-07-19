@@ -75,4 +75,23 @@ mod stdio_tests {
         .await;
         assert!(empty.is_empty());
     }
+
+    /// C7-E adversarial: a malformed JSON line in the stdio batch is dropped
+    /// gracefully — no panic, no output, and well-formed neighbors still
+    /// produce responses. This mirrors `run_mcp_stdio`'s `Err(err)` branch
+    /// (parse error → stderr only, stdout stays clean).
+    #[tokio::test]
+    async fn stdio_batch_drops_malformed_line_gracefully() {
+        let rt = Arc::new(FakeRuntime::new());
+        let input = format!(
+            "not-json{{\n{}\ngarbage[\n",
+            json!({"jsonrpc":"2.0","id":1,"method":"tools/list"})
+        );
+        let out = process_mcp_stdio_batch(rt, "orchestrator", false, &input).await;
+        // Only the well-formed line produces a response; malformed lines are
+        // silently dropped (the loop writes a stderr diagnostic, not stdout).
+        assert_eq!(out.len(), 1, "malformed lines must not produce stdout: {out:?}");
+        let v: Value = serde_json::from_str(&out[0]).unwrap();
+        assert_eq!(v["result"]["tools"].as_array().unwrap().len(), 9);
+    }
 }

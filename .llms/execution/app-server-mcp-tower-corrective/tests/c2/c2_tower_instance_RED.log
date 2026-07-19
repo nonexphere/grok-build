@@ -1,0 +1,97 @@
+warning: /home/guilherme/github/grok-goblin/crates/codegen/xai-grok-pager-bin/Cargo.toml: file `/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-pager-bin/src/main.rs` found to be present in multiple build targets:
+  * `bin` target `goblin`
+  * `bin` target `grok-oss`
+  * `bin` target `xai-grok-pager`
+    Blocking waiting for file lock on build directory
+warning: function `build_responses_input` is never used
+    --> crates/codegen/xai-grok-sampling-types/src/conversation.rs:2719:4
+     |
+2719 | fn build_responses_input(req: &ConversationRequest) -> rs::InputParam {
+     |    ^^^^^^^^^^^^^^^^^^^^^
+     |
+     = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `easy_input_content_text` is never used
+    --> crates/codegen/xai-grok-sampling-types/src/conversation.rs:2927:4
+     |
+2927 | fn easy_input_content_text(content: &rs::EasyInputContent) -> Option<String> {
+     |    ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: `xai-grok-sampling-types` (lib) generated 2 warnings
+warning: unused import: `AuthProvider`
+ --> crates/codegen/xai-grok-multi-auth/src/registry.rs:5:21
+  |
+5 | use xai_grok_auth::{AuthProvider, ProviderRegistry};
+  |                     ^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `AuthProvider`
+ --> crates/codegen/xai-grok-multi-auth/src/cli.rs:9:5
+  |
+9 |     AuthProvider, CredentialStore, ModelListRequest, ProviderId, ProviderModel, ProviderRegistry,
+  |     ^^^^^^^^^^^^
+
+warning: unused import: `AuthProvider`
+  --> crates/codegen/xai-grok-multi-auth/src/token_manager.rs:24:5
+   |
+24 |     AuthProvider, CredentialBinding, CredentialKey, CredentialLockPurpose, CredentialSecret,
+   |     ^^^^^^^^^^^^
+
+warning: unused import: `AuthProvider`
+  --> crates/codegen/xai-grok-multi-auth/src/request_auth.rs:10:5
+   |
+10 |     AuthProvider, CredentialBinding, CredentialKey, CredentialStore, ModelBinding,
+   |     ^^^^^^^^^^^^
+
+warning: `xai-grok-multi-auth` (lib) generated 4 warnings (run `cargo fix --lib -p xai-grok-multi-auth` to apply 1 suggestion)
+   Compiling xai-grok-shell v0.2.102 (/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-shell)
+   Compiling xai-grok-pager v0.2.102 (/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-pager)
+   Compiling xai-grok-pager-bin v0.2.102 (/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-pager-bin)
+   Compiling xai-grok-update v0.1.220-alpha.4 (/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-update)
+   Compiling xai-grok-pager-minimal v0.1.0 (/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-pager-minimal)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 56s
+     Running unittests src/main.rs (target/debug/deps/goblin-b7df7cbbb319bc6e)
+
+running 9 tests
+test app_server_composition::tower_selection_tests::tower_selection_legacy_used_when_canonical_absent ... ok
+test app_server_composition::tower_selection_tests::select_tower_instance_id_falls_back_to_default_on_invalid ... ok
+test app_server_composition::tower_selection_tests::tower_selection_canonical_env_preferred_over_legacy ... FAILED
+test app_server_composition::tower_selection_tests::tower_selection_does_not_read_other_env_vars ... ok
+test app_server_composition::tower_selection_tests::tower_selection_empty_env_falls_through ... ok
+test app_server_composition::tower_selection_tests::tower_selection_explicit_wins_over_env_and_default ... FAILED
+test app_server_composition::tower_selection_tests::tower_selection_validates_via_tower_instance_id_wire_format ... ok
+test app_server_composition::tower_selection_tests::tower_selection_default_when_nothing_set ... ok
+test app_server_composition::tower_selection_tests::tower_selection_invalid_explicit_returns_error_fail_closed ... FAILED
+
+failures:
+
+---- app_server_composition::tower_selection_tests::tower_selection_canonical_env_preferred_over_legacy stdout ----
+
+thread 'app_server_composition::tower_selection_tests::tower_selection_canonical_env_preferred_over_legacy' (827570) panicked at crates/codegen/xai-grok-pager-bin/src/app_server_composition.rs:203:9:
+assertion `left == right` failed: GROK_OSS_TOWER must beat legacy
+  left: "env-legacy"
+ right: "env-oss"
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- app_server_composition::tower_selection_tests::tower_selection_explicit_wins_over_env_and_default stdout ----
+
+thread 'app_server_composition::tower_selection_tests::tower_selection_explicit_wins_over_env_and_default' (827574) panicked at crates/codegen/xai-grok-pager-bin/src/app_server_composition.rs:193:9:
+assertion `left == right` failed
+  left: "env-legacy"
+ right: "env-oss"
+
+---- app_server_composition::tower_selection_tests::tower_selection_invalid_explicit_returns_error_fail_closed stdout ----
+
+thread 'app_server_composition::tower_selection_tests::tower_selection_invalid_explicit_returns_error_fail_closed' (827575) panicked at crates/codegen/xai-grok-pager-bin/src/app_server_composition.rs:241:9:
+assertion failed: resolve_tower_instance_id(None).is_err()
+
+
+failures:
+    app_server_composition::tower_selection_tests::tower_selection_canonical_env_preferred_over_legacy
+    app_server_composition::tower_selection_tests::tower_selection_explicit_wins_over_env_and_default
+    app_server_composition::tower_selection_tests::tower_selection_invalid_explicit_returns_error_fail_closed
+
+test result: FAILED. 6 passed; 3 failed; 0 ignored; 0 measured; 31 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p xai-grok-pager-bin --bin goblin`

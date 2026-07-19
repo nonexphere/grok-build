@@ -1,0 +1,165 @@
+warning: /home/guilherme/github/grok-goblin/crates/codegen/xai-grok-pager-bin/Cargo.toml: file `/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-pager-bin/src/main.rs` found to be present in multiple build targets:
+  * `bin` target `goblin`
+  * `bin` target `grok-oss`
+  * `bin` target `xai-grok-pager`
+warning: function `build_responses_input` is never used
+    --> crates/codegen/xai-grok-sampling-types/src/conversation.rs:2719:4
+     |
+2719 | fn build_responses_input(req: &ConversationRequest) -> rs::InputParam {
+     |    ^^^^^^^^^^^^^^^^^^^^^
+     |
+     = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `easy_input_content_text` is never used
+    --> crates/codegen/xai-grok-sampling-types/src/conversation.rs:2927:4
+     |
+2927 | fn easy_input_content_text(content: &rs::EasyInputContent) -> Option<String> {
+     |    ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: `xai-grok-sampling-types` (lib) generated 2 warnings
+warning: `xai-grok-sampling-types` (lib) generated 2 warnings (2 duplicates)
+warning: unused import: `AuthProvider`
+ --> crates/codegen/xai-grok-multi-auth/src/registry.rs:5:21
+  |
+5 | use xai_grok_auth::{AuthProvider, ProviderRegistry};
+  |                     ^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `AuthProvider`
+ --> crates/codegen/xai-grok-multi-auth/src/cli.rs:9:5
+  |
+9 |     AuthProvider, CredentialStore, ModelListRequest, ProviderId, ProviderModel, ProviderRegistry,
+  |     ^^^^^^^^^^^^
+
+warning: unused import: `AuthProvider`
+  --> crates/codegen/xai-grok-multi-auth/src/token_manager.rs:24:5
+   |
+24 |     AuthProvider, CredentialBinding, CredentialKey, CredentialLockPurpose, CredentialSecret,
+   |     ^^^^^^^^^^^^
+
+warning: unused import: `AuthProvider`
+  --> crates/codegen/xai-grok-multi-auth/src/request_auth.rs:10:5
+   |
+10 |     AuthProvider, CredentialBinding, CredentialKey, CredentialStore, ModelBinding,
+   |     ^^^^^^^^^^^^
+
+warning: `xai-grok-multi-auth` (lib) generated 4 warnings (run `cargo fix --lib -p xai-grok-multi-auth` to apply 1 suggestion)
+warning: `xai-grok-multi-auth` (lib) generated 4 warnings (4 duplicates)
+   Compiling xai-grok-shell v0.2.102 (/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-shell)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 16.14s
+     Running tests/c1_production_spawn.rs (target/debug/deps/c1_production_spawn-284fd2087db3892d)
+
+running 7 tests
+test c1_prod_spawn_seam_without_spawn_fn_returns_unsupported_with_missing_deps ... ok
+test c1_f3_dead_actor_clears_stale_current_prompt_id_and_returns_session_closed ... ok
+test c1_prod_spawn_seam_resume_re_residents_and_routes_turn ... ok
+test c1_prod_spawn_seam_routes_real_resident_when_spawn_fn_injected ... ok
+test c1_f4_concurrent_ensure_resident_does_not_double_spawn ... ok
+test c1_f2_next_ordinal_seeds_from_summary_on_resume ... ok
+test c1_f1_steer_turn_event_seq_is_monotonic_not_wall_clock ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/c1_shell_port.rs (target/debug/deps/c1_shell_port-6a1709930373ea1e)
+
+running 19 tests
+test c1_real_adapter_archive_session_returns_unsupported_not_delete ... ok
+test c1_real_adapter_list_sessions_reads_jsonl_summaries_not_dormant_stub ... ok
+test c1_real_adapter_interrupt_turn_returns_unsupported_actor_gap ... ok
+test c1_real_adapter_respond_interaction_unknown_session_not_found ... ok
+test c1_real_adapter_read_session_projects_session_row_from_summary ... ok
+test c1_real_adapter_resume_session_unknown_returns_not_found ... ok
+test c1_real_adapter_shell_runtime_adapter_wraps_real_port ... ok
+test c1_real_adapter_start_session_idempotency_conflict_on_different_input ... ok
+test c1_real_adapter_replay_epoch_mismatch_returns_error ... ok
+test c1_real_adapter_steer_turn_returns_unsupported_actor_gap ... ok
+test c1_real_adapter_respond_interaction_returns_unsupported_without_resident ... ok
+test c1_real_adapter_no_hybrid_authority_real_list_with_fake_mutation_rejected ... ok
+test c1_real_adapter_start_session_persists_summary_and_returns_real_id ... ok
+test c1_real_adapter_start_turn_returns_unsupported_actor_gap ... ok
+test c1_real_adapter_start_session_idempotency_key_dedups_same_session_id ... ok
+test c1_real_adapter_replay_projects_updates_jsonl_into_runtime_events ... ok
+test c1_real_adapter_replay_cursor_pagination_advances_after_event_seq ... ok
+test c1_real_adapter_fork_session_copies_history_to_new_cwd ... ok
+test c1_real_adapter_resume_session_loads_persisted_summary ... ok
+
+test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+     Running tests/c1_turn_lifecycle.rs (target/debug/deps/c1_turn_lifecycle-46a608c57b24aa14)
+
+running 9 tests
+test c1_turn_start_turn_without_resident_returns_unsupported ... ok
+test c1_turn_interrupt_turn_turn_id_mismatch_returns_turn_not_found ... ok
+test c1_turn_steer_turn_turn_id_mismatch_returns_turn_not_found ... ok
+test c1_turn_start_turn_routes_prompt_through_real_cmd_tx_and_persists ... ok
+test c1_turn_steer_turn_targets_running_turn_and_returns_item ... ok
+test c1_turn_concurrent_starts_serialize_through_single_mailbox ... ok
+test c1_turn_resume_re_residents_actor_and_routes_turn ... ok
+test c1_turn_steer_turn_against_running_turn_returns_item ... ok
+test c1_turn_interrupt_turn_cancels_running_turn_only ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/c3_history_projection.rs (target/debug/deps/c3_history_projection-5b60e99a47dfc556)
+
+running 16 tests
+test c3_read_session_empty_updates_returns_empty_turns_and_items ... ok
+test c3_read_session_crash_mid_turn_inferred_completed_partial ... ok
+test c3_replay_honest_partial_no_interaction_requested_emitted ... ok
+test c3_replay_projects_tool_call_lifecycle_correlated_via_tool_call_id ... ok
+test c3_replay_snapshot_always_event_zero ... ok
+test c3_read_session_items_include_tool_call_and_reasoning_bodies ... ok
+test c3_replay_projects_agent_thought_chunk_as_item_completed ... ok
+test c3_replay_projects_plan_as_item_completed ... ok
+test c3_read_session_include_flags_respected ... ok
+test c3_replay_cursor_beyond_end_returns_empty_page ... ok
+test c3_read_session_items_include_plan_body ... ok
+test c3_replay_honest_partial_skips_xai_extension_updates ... ok
+test c3_read_session_projects_turns_and_items_from_updates_jsonl ... ok
+test c3_read_session_turn_boundaries_on_each_user_message ... ok
+test c3_replay_honest_partial_no_turn_changed_emitted ... ok
+test c3_replay_projects_agent_message_chunk_as_item_delta ... ok
+
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+     Running tests/c6_respond_interaction.rs (target/debug/deps/c6_respond_interaction-b8022d9a6216c379)
+
+running 10 tests
+test interaction_facade_production_source_has_no_second_permission_engine ... ok
+test interaction_facade_delivers_for_question_kind ... ok
+test interaction_facade_delivers_decision_to_parked_oneshot ... ok
+test interaction_facade_no_resident_unsupported ... ok
+test interaction_facade_unknown_session_not_found ... ok
+test interaction_facade_does_not_re_evaluate_policy ... ok
+test interaction_facade_suite_covers_minimum_scenarios ... ok
+test interaction_facade_delivers_deny_decision_verbatim ... ok
+test interaction_facade_unknown_interaction_not_found ... ok
+test interaction_facade_second_call_is_interaction_not_found ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/c7_conformance.rs (target/debug/deps/c7_conformance-86e9e4feb69262ba)
+
+running 18 tests
+test c7_conformance_invalid_workspace_rejected_by_both ... ok
+test c7_conformance_interrupt_unknown_turn_rejected_by_both ... ok
+test c7_conformance_archive_session_honest_divergence ... ok
+test c7_conformance_resume_unknown_session_not_found_by_both ... ok
+test c7_conformance_read_session_fresh_conforms_on_empty_projection ... ok
+test c7_conformance_replay_epoch_mismatch_rejected_by_both ... ok
+test c7_conformance_list_sessions_count_and_workspace_conform ... ok
+test c7_conformance_start_session_shape_matches_modulo_fresh_status ... ok
+test c7_conformance_fork_session_creates_distinct_session_with_workspace ... ok
+test c7_conformance_resume_session_returns_same_session_id ... ok
+test c7_conformance_start_turn_without_resident_real_returns_unsupported ... ok
+test c7_conformance_replay_fresh_session_projects_session_changed_snapshot ... ok
+test c7_conformance_start_session_idempotency_conforms ... ok
+test c7_conformance_replay_after_turn_projects_events_on_both ... ok
+test c7_conformance_start_turn_returns_turn_with_matching_kind ... ok
+test c7_conformance_suite_covers_all_minimum_scenarios ... ok
+test c7_conformance_interrupt_turn_running_turn_conforms ... ok
+test c7_conformance_steer_turn_returns_item_against_running_turn ... ok
+
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+

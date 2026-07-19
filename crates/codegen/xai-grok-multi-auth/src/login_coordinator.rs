@@ -16,8 +16,8 @@ use url::Url;
 use xai_grok_auth::{
     CredentialKey, CredentialMetadata, CredentialSecret, CredentialStore, LoginCompletion,
     LoginFlowId, LoginInput, LoginRequest, LoginStart, LoginTransport, NewCredentialRecord,
-    ProviderAccountInfo, ProviderError, ProviderId, ProviderRegistry, SecretBackendKind,
-    SecretString,
+    ProviderAccountInfo, ProviderCapabilities, ProviderError, ProviderId, ProviderRegistry,
+    SecretBackendKind, SecretString,
 };
 
 use crate::providers::codex::callback::{self, CallbackError};
@@ -201,23 +201,47 @@ impl LoginCoordinator {
     /// Secret source precedence: explicit `api_key` argument, then
     /// `GROK_BYOK_API_KEY` env (non-TTY). The secret never appears in argv
     /// of this function's return value or UI events.
+    ///
+    /// **Registry contract:** the provider must be registered in the
+    /// coordinator's registry and advertise
+    /// [`ProviderCapabilities::API_KEY_LOGIN`]. Unknown/unregistered ids and
+    /// registered-but-non-API-key providers (e.g. xAI, Codex) are rejected.
+    /// Third-party BYOK never falls back to `XAI_API_KEY`.
     pub async fn run_api_key_login(
         &self,
         provider_id: &ProviderId,
         api_key: Option<SecretString>,
     ) -> Result<CredentialMetadata, LoginCoordinatorError> {
-        // Prefer registered descriptor when present; BYOK foundation also allows
-        // well-formed provider ids so openrouter/groq/cloudflare can land before
-        // their full AuthProvider impls.
-        let _ = self.registry.get(provider_id);
+        // Honor the registry: reject unknown/unregistered provider ids and
+        // providers that do not advertise API_KEY_LOGIN. This closes the
+        // foundation gap that previously accepted any well-formed id.
+        let provider = self.registry.get(provider_id).map_err(|e| {
+            LoginCoordinatorError::Provider(ProviderError::InvalidConfig(e.to_string()))
+        })?;
+        let caps = provider.descriptor().capabilities;
+        if !caps.contains(ProviderCapabilities::API_KEY_LOGIN) {
+            return Err(LoginCoordinatorError::Provider(ProviderError::InvalidConfig(
+                format!(
+                    "provider `{}` does not support API-key login \
+                     (missing API_KEY_LOGIN capability)",
+                    provider_id.as_str()
+                ),
+            )));
+        }
 
-        let key = match api_key {
-            Some(s) => s.expose().to_owned(),
-            None => std::env::var("GROK_BYOK_API_KEY").map_err(|_| {
-                LoginCoordinatorError::Message(
-                    "API key login requires GROK_BYOK_API_KEY or an explicit secret".into(),
-                )
-            })?,
+        // Track which env var supplied the secret so the xAI fallback guard
+        // can reject third-party use of XAI_API_KEY. Explicit args use an
+        // opaque sentinel that never matches a real env name.
+        let (key, used_env) = match api_key {
+            Some(s) => (s.expose().to_owned(), "<explicit>"),
+            None => match std::env::var("GROK_BYOK_API_KEY") {
+                Ok(v) => (v, "GROK_BYOK_API_KEY"),
+                Err(_) => {
+                    return Err(LoginCoordinatorError::Message(
+                        "API key login requires GROK_BYOK_API_KEY or an explicit secret".into(),
+                    ));
+                }
+            },
         };
         if key.trim().is_empty() {
             return Err(LoginCoordinatorError::Message(
@@ -225,12 +249,8 @@ impl LoginCoordinator {
             ));
         }
         // Never allow third-party bindings to fall back to XAI_API_KEY.
-        if std::env::var_os("XAI_API_KEY").is_some()
-            && provider_id.as_str() != "xai"
-            && std::env::var("GROK_BYOK_API_KEY").ok().as_deref() == Some(key.as_str())
-        {
-            // still fine — BYOK uses GROK_BYOK_API_KEY, not XAI_API_KEY
-        }
+        crate::providers::byok::reject_xai_api_key_fallback(provider_id.as_str(), used_env)
+            .map_err(LoginCoordinatorError::Message)?;
 
         let mut secret_fields = std::collections::BTreeMap::new();
         secret_fields.insert("api_key".to_string(), SecretString::from_str(&key));
@@ -431,12 +451,13 @@ fn redirect_port_from_auth_url(auth_url: &Url) -> Option<u16> {
 #[cfg(test)]
 mod api_key_login_tests {
     use super::*;
+    use crate::registry;
     use crate::store::ephemeral::EphemeralCredentialStore;
 
     #[tokio::test]
     async fn api_key_login_persists_without_leaking_secret() {
         let store = Arc::new(EphemeralCredentialStore::new());
-        let registry = Arc::new(ProviderRegistry::new());
+        let registry = Arc::new(registry::build_default_registry());
         let coord = LoginCoordinator::new(store.clone(), registry);
         let provider = ProviderId::new_unchecked("openrouter");
         let secret = SecretString::from_str("sk-test-secret-value-never-log");
@@ -457,7 +478,7 @@ mod api_key_login_tests {
     #[tokio::test]
     async fn api_key_login_rejects_empty_and_missing_env() {
         let store = Arc::new(EphemeralCredentialStore::new());
-        let coord = LoginCoordinator::new(store, Arc::new(ProviderRegistry::new()));
+        let coord = LoginCoordinator::new(store, Arc::new(registry::build_default_registry()));
         let provider = ProviderId::new_unchecked("groq");
         let err = coord
             .run_api_key_login(&provider, Some(SecretString::from_str("")))
@@ -467,5 +488,41 @@ mod api_key_login_tests {
         // clear env and require explicit secret or env
         let err2 = coord.run_api_key_login(&provider, None).await.unwrap_err();
         assert!(format!("{err2}").contains("GROK_BYOK_API_KEY") || format!("{err2}").contains("API key"));
+    }
+
+    #[tokio::test]
+    async fn api_key_login_rejects_unregistered_provider() {
+        let store = Arc::new(EphemeralCredentialStore::new());
+        let coord = LoginCoordinator::new(store, Arc::new(registry::build_default_registry()));
+        let unknown = ProviderId::new_unchecked("unknown-byok-provider");
+        let err = coord
+            .run_api_key_login(&unknown, Some(SecretString::from_str("sk-test")))
+            .await
+            .expect_err("unregistered provider must be rejected");
+        assert!(
+            format!("{err}").to_lowercase().contains("not registered")
+                || format!("{err}").to_lowercase().contains("unknown"),
+            "expected registry rejection, got: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn api_key_login_rejects_provider_without_api_key_capability() {
+        let store = Arc::new(EphemeralCredentialStore::new());
+        let coord = LoginCoordinator::new(store, Arc::new(registry::build_default_registry()));
+        // xAI advertises empty capabilities.
+        let err = coord
+            .run_api_key_login(
+                &ProviderId::new_unchecked("xai"),
+                Some(SecretString::from_str("sk-test")),
+            )
+            .await
+            .expect_err("xAI must be rejected for API-key login");
+        assert!(
+            format!("{err}").to_lowercase().contains("api-key")
+                || format!("{err}").to_lowercase().contains("api_key")
+                || format!("{err}").to_lowercase().contains("does not support"),
+            "expected capability rejection, got: {err}"
+        );
     }
 }

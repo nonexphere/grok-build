@@ -36,6 +36,21 @@ xai-grok-shell = { workspace = true }
 xai-grok-tower = { path = "../xai-grok-tower" }
 xai-grok-app-server = { path = "../xai-grok-app-server" }
 xai-grok-app-server-protocol = { path = "../xai-grok-app-server-protocol" }
+# MCP Streamable HTTP server (POST/GET/DELETE /mcp). Optional, gated by the
+# `mcp-streamable-http` feature so the default build stays zero-network on the
+# MCP side (the listener itself lives in `xai-grok-mcp-server` behind its
+# `streamable-http` feature).
+xai-grok-mcp-server = { path = "../xai-grok-mcp-server", optional = true }
+# HTTP client used by the composition black-box test for the experimental
+# MCP Streamable HTTP listener. Optional, gated by the `mcp-streamable-http`
+# feature (same pattern as the WS test client above).
+reqwest = { workspace = true, optional = true }
+# WebSocket client used by the composition black-box test for the experimental
+# app-server WS listener. Optional, gated by the `app-server-ws` feature so the
+# default build stays zero-network on the app-server side (the listener itself
+# lives in `xai-grok-app-server` behind its `websocket` feature).
+tokio-tungstenite = { workspace = true, optional = true }
+futures-util = { workspace = true, optional = true }
 xai-grok-auth = { workspace = true }
 xai-grok-multi-auth = { workspace = true }
 xai-grok-update = { path = "../xai-grok-update" }
@@ -112,3 +127,27 @@ default-bazel = [
 jemalloc = ["dep:tikv-jemallocator", "dep:tikv-jemalloc-sys", "dep:tikv-jemalloc-ctl"]
 sandbox-enforce = ["xai-grok-pager/sandbox-enforce"]
 release-dist = ["xai-grok-pager/release-dist"]
+# Experimental App Server WebSocket listener product path. Enables the
+# `websocket` feature on `xai-grok-app-server` (which pulls `tokio-tungstenite`
+# + `tokio` net/io/time there) and the WS test client in this binary. The
+# default build does NOT enable this: the stdio/in-process product path stays
+# zero-network. Cleartext non-loopback bind stays `experimental/unsafe`;
+# TLS remains a HUMAN gate (D-SEC.13).
+app-server-ws = [
+    "xai-grok-app-server/websocket",
+    "dep:tokio-tungstenite",
+    "dep:futures-util",
+]
+# Experimental MCP Streamable HTTP listener product path. Enables the
+# `streamable-http` feature on `xai-grok-mcp-server` (which pulls `axum` +
+# `tokio` net there) and the HTTP test client in this binary. The default
+# build does NOT enable this: the stdio/in-process product path stays
+# zero-network on the MCP side. Cleartext non-loopback bind stays
+# `experimental/unsafe`; TLS remains a HUMAN gate (D-SEC.13 / MCP102-HUMAN).
+# Fail-closed bearer: the listener refuses to bind when `require_auth` is
+# true and the bearer is empty (F-2).
+mcp-streamable-http = [
+    "dep:xai-grok-mcp-server",
+    "xai-grok-mcp-server/streamable-http",
+    "dep:reqwest",
+]

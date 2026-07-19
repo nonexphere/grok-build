@@ -20,6 +20,8 @@ pub enum LoginProviderArg {
     Xai,
     /// Codex / ChatGPT (native multi-provider path).
     Codex,
+    /// BYOK API-key provider (OpenRouter / Groq / Cloudflare).
+    Byok(String),
     /// Interactive selection (no explicit provider).
     Interactive,
 }
@@ -27,15 +29,20 @@ pub enum LoginProviderArg {
 /// Parse a login provider argument string.
 ///
 /// Accepts: `xai`, `grok` → `Xai`; `codex`, `chatgpt` → `Codex`;
+/// `openrouter`, `groq`, `cloudflare` → `Byok(id)`;
 /// `None` → `Interactive`; anything else → error.
 pub fn parse_login_provider(arg: Option<&str>) -> Result<LoginProviderArg, String> {
     match arg {
         None => Ok(LoginProviderArg::Interactive),
-        Some(s) => match s.to_ascii_lowercase().as_str() {
-            "xai" | "grok" => Ok(LoginProviderArg::Xai),
-            "codex" | "chatgpt" => Ok(LoginProviderArg::Codex),
-            other => Err(format!("unknown provider: {other}")),
-        },
+        Some(s) => {
+            let lower = s.to_ascii_lowercase();
+            match lower.as_str() {
+                "xai" | "grok" => Ok(LoginProviderArg::Xai),
+                "codex" | "chatgpt" => Ok(LoginProviderArg::Codex),
+                "openrouter" | "groq" | "cloudflare" => Ok(LoginProviderArg::Byok(lower)),
+                other => Err(format!("unknown provider: {other}")),
+            }
+        }
     }
 }
 
@@ -431,6 +438,18 @@ mod tests {
         assert_eq!(
             parse_login_provider(Some("CODEX")).unwrap(),
             LoginProviderArg::Codex
+        );
+        assert_eq!(
+            parse_login_provider(Some("openrouter")).unwrap(),
+            LoginProviderArg::Byok("openrouter".into())
+        );
+        assert_eq!(
+            parse_login_provider(Some("Groq")).unwrap(),
+            LoginProviderArg::Byok("groq".into())
+        );
+        assert_eq!(
+            parse_login_provider(Some("cloudflare")).unwrap(),
+            LoginProviderArg::Byok("cloudflare".into())
         );
         assert!(parse_login_provider(Some("unknown")).is_err());
     }

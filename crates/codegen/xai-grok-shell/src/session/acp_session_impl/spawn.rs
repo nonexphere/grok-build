@@ -1004,6 +1004,11 @@ pub(crate) async fn spawn_session_actor(
     let current_prompt_id = std::sync::Arc::new(std::sync::Mutex::new(None));
     let pending_interactions: crate::session::pending_interaction::PendingInteractions =
         std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new()));
+    let interaction_delivery_hub: std::sync::Arc<
+        std::sync::Mutex<
+            std::collections::HashMap<String, tokio::sync::oneshot::Sender<String>>,
+        >,
+    > = std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new()));
     let permissions_for_handle = permissions.clone();
     let (event_tx, event_rx) = mpsc::unbounded_channel::<SessionEvent>();
     let mut sampler_config_initial = sampling_config.clone();
@@ -1125,6 +1130,7 @@ pub(crate) async fn spawn_session_actor(
         chat_state_handle,
         current_prompt_id: current_prompt_id.clone(),
         pending_interactions: pending_interactions.clone(),
+        interaction_delivery_hub: interaction_delivery_hub.clone(),
         telemetry_enabled,
         supports_backend_search: std::cell::Cell::new(sampling_config.supports_backend_search),
         compactions_remaining: std::cell::Cell::new(sampling_config.compactions_remaining),
@@ -1481,6 +1487,7 @@ pub(crate) async fn spawn_session_actor(
         let session_id = session.session_info.id.clone();
         let current_prompt_mode = session.current_prompt_mode.clone();
         let pending_interactions = session.pending_interactions.clone();
+        let delivery_hub = session.interaction_delivery_hub.clone();
         let session_for_hooks = session.clone();
         let mut user_question_rx = user_question_rx;
         tokio::task::spawn_local(async move {
@@ -1525,19 +1532,70 @@ pub(crate) async fn spawn_session_actor(
                             tool_call_id.clone(),
                             crate::session::pending_interaction::PendingKind::Question,
                         );
-                    tokio::select! {
-                        biased; () = request.result_tx.closed() => { tracing::info!(%
-                        tool_call_id,
-                        "ask_user_question tool receiver closed (timeout or cancel); abandoning ACP wait");
-                        Ok(UserQuestionResponse::Cancelled) } acp_result = gateway
-                        .ext_method(ext_request) => { match acp_result { Ok(raw) => {
-                        match serde_json::from_str::< AskUserQuestionExtResponse > (raw.0
-                        .get(),) { Ok(typed) => { Ok(typed
-                        .into_response(questions_for_response)) } Err(e) =>
-                        Err(UserQuestionError::MalformedResponse(e.to_string(),)), } }
-                        Err(e) => Err(UserQuestionError::TransportError(e.to_string())),
-                        } }
+                    // R5-09: park a oneshot on the shared delivery hub so
+                    // app-server `respond_interaction` can complete this wait
+                    // without going through the ACP client path.
+                    let (hub_tx, hub_rx) = tokio::sync::oneshot::channel::<String>();
+                    {
+                        let mut hub = delivery_hub.lock().unwrap_or_else(|e| e.into_inner());
+                        hub.insert(tool_call_id.clone(), hub_tx);
                     }
+                    let hub_for_cleanup = delivery_hub.clone();
+                    let tool_call_id_cleanup = tool_call_id.clone();
+                    let result = tokio::select! {
+                        biased;
+                        () = request.result_tx.closed() => {
+                            tracing::info!(
+                                %tool_call_id,
+                                "ask_user_question tool receiver closed (timeout or cancel); abandoning ACP wait"
+                            );
+                            Ok(UserQuestionResponse::Cancelled)
+                        }
+                        decision = hub_rx => {
+                            // App-server respond_interaction delivered a decision
+                            // string. Map it to an Accepted response so the tool
+                            // loop unblocks without an ACP client (R5-09).
+                            match decision {
+                                Ok(d) => {
+                                    let mut answers = indexmap::IndexMap::new();
+                                    answers.insert(
+                                        "respond_interaction".to_string(),
+                                        vec![d],
+                                    );
+                                    Ok(UserQuestionResponse::Accepted {
+                                        answers,
+                                        annotations: None,
+                                    })
+                                }
+                                Err(_) => Ok(UserQuestionResponse::Cancelled),
+                            }
+                        }
+                        acp_result = gateway.ext_method(ext_request) => {
+                            match acp_result {
+                                Ok(raw) => {
+                                    match serde_json::from_str::<AskUserQuestionExtResponse>(
+                                        raw.0.get(),
+                                    ) {
+                                        Ok(typed) => {
+                                            Ok(typed.into_response(questions_for_response))
+                                        }
+                                        Err(e) => Err(UserQuestionError::MalformedResponse(
+                                            e.to_string(),
+                                        )),
+                                    }
+                                }
+                                Err(e) => {
+                                    Err(UserQuestionError::TransportError(e.to_string()))
+                                }
+                            }
+                        }
+                    };
+                    {
+                        let mut hub =
+                            hub_for_cleanup.lock().unwrap_or_else(|e| e.into_inner());
+                        hub.remove(&tool_call_id_cleanup);
+                    }
+                    result
                 };
                 let _ = request.result_tx.send(result);
             }
@@ -1589,6 +1647,7 @@ pub(crate) async fn spawn_session_actor(
             persistence_tx: persistence.tx.clone(),
             current_prompt_id,
             pending_interactions,
+            interaction_delivery_hub,
             info: session_info,
             max_turns,
             hunk_tracker_handle,

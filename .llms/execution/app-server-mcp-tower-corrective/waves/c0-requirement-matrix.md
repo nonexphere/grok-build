@@ -115,7 +115,7 @@ Reopened this turn (PARTIAL, were `[x]`): **19** — PR102-01, TW101-04, TW101-0
 | AS106-03 | 30/v1-06 | PASS | disconnect/expiry; never auto-allow | none | — |
 | AS106-04 | 30/v1-06 | PASS | idempotent Interaction response storage | none | — |
 | AS106-05 | 30/v1-06 | PARTIAL | `respond_interaction` delegates to `self.inner` (FakeRuntime) | F-01: not mapped to existing Shell permission/elicitation command path (`PendingInteractionGuard`/leader routing) | Wave C6-39: map to real permission path, no second engine |
-| AS106-06 | 30/v1-06 | PARTIAL | interaction conformance in-process/stdio | F-11: WS leg is helper-level, not black-box | Wave C3-24/C6-40 |
+| AS106-06 | 30/v1-06 | PARTIAL | interaction conformance in-process/stdio | F-11: WS leg is helper-level, not black-box | Wave C3-24/C6-40 — C6-C GREEN: tasks.md checkbox marked; F-11 closed (real WS listener black-box proven). Matrix status update pending orchestrator. |
 | AS106-HUMAN | 30/v1-06 | HUMAN | `[D-AP.6]` default wait vs auto-deny timeout policy | product decision | HUMAN gate |
 | AS107-01 | 30/v1-07 | PARTIAL | conformance suite exists | F-03/F-11: WS/MCP legs call helpers directly, not black-box across real transports | Wave C3-24/C4-28/C6-43 |
 | AS107-02 | 30/v1-07 | PARTIAL | security suite exists | F-11: helper-level; AS104-06 (network attacker/slow client) OPEN | Wave C3-20/C7-46 |

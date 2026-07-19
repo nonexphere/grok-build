@@ -1,0 +1,80 @@
+warning: /home/guilherme/github/grok-goblin/crates/codegen/xai-grok-pager-bin/Cargo.toml: file `/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-pager-bin/src/main.rs` found to be present in multiple build targets:
+  * `bin` target `goblin`
+  * `bin` target `grok-oss`
+  * `bin` target `xai-grok-pager`
+    Blocking waiting for file lock on build directory
+warning: function `build_responses_input` is never used
+    --> crates/codegen/xai-grok-sampling-types/src/conversation.rs:2719:4
+     |
+2719 | fn build_responses_input(req: &ConversationRequest) -> rs::InputParam {
+     |    ^^^^^^^^^^^^^^^^^^^^^
+     |
+     = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `easy_input_content_text` is never used
+    --> crates/codegen/xai-grok-sampling-types/src/conversation.rs:2927:4
+     |
+2927 | fn easy_input_content_text(content: &rs::EasyInputContent) -> Option<String> {
+     |    ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: `xai-grok-sampling-types` (lib) generated 2 warnings
+warning: unused import: `AuthProvider`
+ --> crates/codegen/xai-grok-multi-auth/src/registry.rs:5:21
+  |
+5 | use xai_grok_auth::{AuthProvider, ProviderRegistry};
+  |                     ^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `AuthProvider`
+ --> crates/codegen/xai-grok-multi-auth/src/cli.rs:9:5
+  |
+9 |     AuthProvider, CredentialStore, ModelListRequest, ProviderId, ProviderModel, ProviderRegistry,
+  |     ^^^^^^^^^^^^
+
+warning: unused import: `AuthProvider`
+  --> crates/codegen/xai-grok-multi-auth/src/token_manager.rs:24:5
+   |
+24 |     AuthProvider, CredentialBinding, CredentialKey, CredentialLockPurpose, CredentialSecret,
+   |     ^^^^^^^^^^^^
+
+warning: unused import: `AuthProvider`
+  --> crates/codegen/xai-grok-multi-auth/src/request_auth.rs:10:5
+   |
+10 |     AuthProvider, CredentialBinding, CredentialKey, CredentialStore, ModelBinding,
+   |     ^^^^^^^^^^^^
+
+warning: `xai-grok-multi-auth` (lib) generated 4 warnings (run `cargo fix --lib -p xai-grok-multi-auth` to apply 1 suggestion)
+   Compiling xai-grok-shell v0.2.102 (/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-shell)
+   Compiling xai-grok-pager v0.2.102 (/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-pager)
+   Compiling xai-grok-pager-bin v0.2.102 (/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-pager-bin)
+   Compiling xai-grok-update v0.1.220-alpha.4 (/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-update)
+   Compiling xai-grok-pager-minimal v0.1.0 (/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-pager-minimal)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2m 29s
+     Running unittests src/main.rs (target/debug/deps/goblin-506db80201849a3d)
+
+running 3 tests
+test app_server_composition::app_server_ws_composition_tests::app_server_serve_env_gate_default_is_off ... ok
+test app_server_composition::app_server_ws_composition_tests::app_server_ws_config_requires_auth_by_default ... ok
+test app_server_composition::app_server_ws_composition_tests::app_server_ws_composition_bind_auth_and_handle_line_roundtrip ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 40 filtered out; finished in 0.01s
+
+     Running unittests src/main.rs (target/debug/deps/grok_oss-92d0fe9679832971)
+
+running 3 tests
+test app_server_composition::app_server_ws_composition_tests::app_server_serve_env_gate_default_is_off ... ok
+test app_server_composition::app_server_ws_composition_tests::app_server_ws_config_requires_auth_by_default ... ok
+test app_server_composition::app_server_ws_composition_tests::app_server_ws_composition_bind_auth_and_handle_line_roundtrip ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 40 filtered out; finished in 0.01s
+
+     Running unittests src/main.rs (target/debug/deps/xai_grok_pager-d4d6c6c765bf7908)
+
+running 3 tests
+test app_server_composition::app_server_ws_composition_tests::app_server_serve_env_gate_default_is_off ... ok
+test app_server_composition::app_server_ws_composition_tests::app_server_ws_config_requires_auth_by_default ... ok
+test app_server_composition::app_server_ws_composition_tests::app_server_ws_composition_bind_auth_and_handle_line_roundtrip ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 40 filtered out; finished in 0.01s
+

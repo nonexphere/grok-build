@@ -1,0 +1,74 @@
+warning: /home/guilherme/github/grok-goblin/crates/codegen/xai-grok-pager-bin/Cargo.toml: file `/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-pager-bin/src/main.rs` found to be present in multiple build targets:
+  * `bin` target `goblin`
+  * `bin` target `grok-oss`
+  * `bin` target `xai-grok-pager`
+   Compiling xai-grok-app-server v0.1.0 (/home/guilherme/github/grok-goblin/crates/codegen/xai-grok-app-server)
+warning: unused import: `Value`
+   --> crates/codegen/xai-grok-app-server/src/lib.rs:171:28
+    |
+171 |     use serde_json::{json, Value};
+    |                            ^^^^^
+    |
+    = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `lease`
+  --> crates/codegen/xai-grok-app-server/src/controller.rs:52:13
+   |
+52 |         let lease = table.grant("s", "ix", "c1", 2);
+   |             ^^^^^ help: if this is intentional, prefix it with an underscore: `_lease`
+   |
+   = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: `xai-grok-app-server` (lib test) generated 2 warnings (run `cargo fix --lib -p xai-grok-app-server --tests` to apply 2 suggestions)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.92s
+     Running unittests src/lib.rs (target/debug/deps/xai_grok_app_server-7b49723015ab4ae2)
+
+running 39 tests
+test adversarial_rejection_tests::remote_cleartext_bind_is_labeled_experimental_unsafe ... ok
+test adversarial_rejection_tests::secret_canaries_are_detected_across_canonical_shapes ... ok
+test adversarial_rejection_tests::ws_layer_accepts_well_formed_single_object ... ok
+test adversarial_rejection_tests::ws_layer_rejects_batch_text_frame ... ok
+test adversarial_rejection_tests::stdio_batch_helper_propagates_parse_error_for_malformed_line ... ok
+test adversarial_rejection_tests::processor_rejects_malformed_json_with_parse_error ... ok
+test adversarial_rejection_tests::processor_rejects_batch_array_with_invalid_request ... ok
+test co_start_tests::co_start_rejects_dual_stdio_accepts_stdio_plus_ws_matrix ... ok
+test controller::controller_lease_tests::interaction_identity_distinct_from_request_ids ... ok
+test controller::controller_lease_tests::controller_lease_revisioned_exactly_one_controller ... ok
+test controller::controller_policy_tests::interaction_idempotency_second_resolve_fails ... ok
+test conformance_tests::runtime_facade_end_to_end_via_processor ... ok
+test interaction_conformance_tests::interaction_conformance_request_envelope_shape_is_stable ... ok
+test controller::controller_policy_tests::controller_disconnect_never_auto_allows ... ok
+test processor::processor_tests::composition_processor_depends_on_facade_trait_not_shell ... ok
+test processor::processor_tests::processor_rejects_methods_before_initialize ... ok
+test interaction_conformance_tests::interaction_conformance_not_initialized_error_shape_matches ... ok
+test adversarial_rejection_tests::ws_layer_rejects_oversized_text_frame ... ok
+test interaction_conformance_tests::interaction_conformance_suite_covers_minimum_matrix ... ok
+test interaction_conformance_tests::interaction_conformance_invalid_params_error_shape_matches ... ok
+test security::control_plane_security_tests::control_plane_security_canary_matrix ... ok
+test security::control_plane_security_tests::redaction_canary_lengths ... ok
+test security::security_tests::remote_cleartext_is_labeled_experimental_unsafe ... ok
+test security::security_tests::secret_canaries_detect_common_leaks ... ok
+test replay::cursor_semantics_tests::projection_rebuild_via_replay_is_stable_for_fake ... ok
+test transport::websocket::websocket_tests::bearer_auth_rejects_prefix_and_length_mismatches_identically ... ok
+test conformance_tests::conformance_in_process_and_stdio_normalized_outputs_match ... ok
+test security::remote_bind_tests::remote_bind_warning_exact_only_for_non_loopback ... ok
+test replay::cursor_semantics_tests::cursor_semantics_epoch_mismatch_and_bounded_pages ... ok
+test snapshot_then_live_tests::snapshot_then_live_no_gap_on_fake ... ok
+test interaction_conformance_tests::interaction_conformance_accept_shape_matches_across_transports ... ok
+test transport::websocket::websocket_tests::websocket_reuses_processor_parity_with_stdio ... ok
+test transport::websocket::websocket_tests::websocket_transport_rejects_batch_and_oversized_frames ... ok
+test websocket_conformance_tests::websocket_conformance_initialize_matches_stdio_shape ... ok
+test processor::processor_tests::processor_initialize_session_turn_vertical_slice ... ok
+test transport::stdio::stdio_tests::stdio_ndjson_one_json_object_per_line_vertical_slice ... ok
+test transport::in_process::in_process_tests::in_process_initialize_session_turn_item_stream ... ok
+test transport::websocket::websocket_tests::websocket_auth_header_only_rejects_missing_and_url_tokens ... ok
+test conformance_tests::backpressure_subscribe_is_bounded_page ... ok
+
+test result: ok. 39 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests xai_grok_app_server
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

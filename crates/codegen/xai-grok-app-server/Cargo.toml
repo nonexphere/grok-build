@@ -11,6 +11,14 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 xai-grok-app-server-protocol = { path = "../xai-grok-app-server-protocol" }
 xai-grok-tower = { path = "../xai-grok-tower" }
+# WebSocket listener deps — gated behind the `websocket` feature. The workspace
+# already vendors these crates (the shell crate uses the same versions), so
+# this adds no new external supply-chain. Only the listener needs them; the
+# pure helpers in `transport/websocket.rs` (auth + frame validation) compile
+# without the feature so stdio/in-process transports stay zero-network.
+tokio = { workspace = true, features = ["net", "io-util", "time", "sync", "rt"], optional = true }
+tokio-tungstenite = { workspace = true, optional = true }
+futures-util = { workspace = true, optional = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread"] }
@@ -19,7 +27,7 @@ tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread"] }
 default = ["in-process", "stdio"]
 in-process = []
 stdio = []
-websocket = []
+websocket = ["dep:tokio", "dep:tokio-tungstenite", "dep:futures-util"]
 remote-control = ["websocket"]
 
 [lints]
