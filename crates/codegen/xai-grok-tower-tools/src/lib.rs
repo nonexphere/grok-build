@@ -78,6 +78,23 @@ pub const TOWER_TOOL_DESCRIPTORS: [TowerToolDescriptor; 9] = [
     ),
 ];
 
+/// Return the canonical, self-contained JSON Schema for one tool boundary.
+///
+/// MCP clients must not be required to resolve repository-relative `$ref`
+/// values. The protocol schema remains the single source of truth; adapters
+/// project the selected `$defs` entry as an independent schema document.
+pub fn tool_schema(name: &str, output: bool) -> Option<serde_json::Value> {
+    let schema: serde_json::Value = serde_json::from_str(include_str!(
+        "../../xai-grok-app-server-protocol/schemas/tower-tools.schema.json"
+    ))
+    .ok()?;
+    let suffix = if output { "_output" } else { "_input" };
+    schema
+        .get("$defs")?
+        .get(format!("{name}{suffix}"))
+        .cloned()
+}
+
 const fn descriptor(
     name: &'static str,
     description: &'static str,
@@ -99,6 +116,30 @@ pub fn is_authorized(agent_type: &str, explicit_opt_in: bool) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn structured_error_projection_is_stable_and_fail_closed() {
+        let invalid = tool_error_json(&ToolError {
+            code: "invalid_params",
+            message: "bad input".into(),
+        });
+        assert_eq!(invalid["code"], "invalid_arguments");
+        assert_eq!(invalid["retryable"], false);
+        assert!(invalid["operationId"].is_null());
+        let transient = tool_error_json(&ToolError {
+            code: "runtime_unavailable",
+            message: "temporarily unavailable".into(),
+        });
+        assert_eq!(transient["retryable"], true);
+        assert_eq!(
+            tool_error_json(&ToolError {
+                code: "forbidden",
+                message: "denied".into(),
+            })["code"],
+            "tower_acl_denied"
+        );
+    }
+
     #[test]
     fn acl_is_fail_closed_by_default() {
         assert!(!is_authorized("build", false));
@@ -134,6 +175,8 @@ mod tests {
             );
             assert!(definitions.contains_key(&format!("{}_input", descriptor.name)));
             assert!(definitions.contains_key(&format!("{}_output", descriptor.name)));
+            assert!(tool_schema(descriptor.name, false).is_some());
+            assert!(tool_schema(descriptor.name, true).is_some());
         }
     }
 }
@@ -150,6 +193,32 @@ use xai_grok_tower::{GrokRuntimeFacade, RuntimeError};
 pub struct ToolError {
     pub code: &'static str,
     pub message: String,
+}
+
+/// Stable structured error projection shared by MCP transports.
+///
+/// Retryability is derived only for errors that are explicitly transient in
+/// the public runtime catalog. Unknown/validation/authorization errors are
+/// fail-closed as non-retryable; operation identity is absent because failed
+/// operations do not have a canonical operation id yet.
+pub fn tool_error_json(error: &ToolError) -> Value {
+    let code = match error.code {
+        "forbidden" => "tower_acl_denied",
+        "invalid_params" => "invalid_arguments",
+        "unsupported" => "runtime_unavailable",
+        "method_not_found" => "internal_error",
+        other => other,
+    };
+    let retryable = matches!(
+        code,
+        "operation_timeout" | "runtime_unavailable" | "tower_draining" | "resync_required"
+    );
+    json!({
+        "code": code,
+        "message": error.message,
+        "retryable": retryable,
+        "operationId": null,
+    })
 }
 
 impl From<RuntimeError> for ToolError {
@@ -177,23 +246,59 @@ pub async fn invoke_tower_tool(
     }
     match name {
         "tower_agent_list" => {
-            let sessions = runtime.list_sessions().await?;
-            let rows: Vec<Value> = sessions
-                .into_iter()
+            let mut sessions = runtime.list_sessions().await?;
+            if let Some(agent_type) = arguments.get("agentType")
+                && !agent_type.is_null()
+            {
+                return Err(ToolError {
+                    code: "invalid_params",
+                    message: "agentType filtering is unavailable until canonical session metadata is wired".into(),
+                });
+            }
+            if let Some(workspace_root) = arguments.get("workspaceRoot").and_then(Value::as_str) {
+                sessions.retain(|session| session.workspace_root == workspace_root);
+            }
+            if !arguments.get("includeArchived").and_then(Value::as_bool).unwrap_or(false) {
+                sessions.retain(|session| session.status != xai_grok_app_server_protocol::SessionStatus::Archived);
+            }
+            if let Some(status) = arguments.get("status").and_then(Value::as_str) {
+                sessions.retain(|session| session_status_name(&session.status) == status);
+            }
+            sessions.sort_by(|left, right| {
+                right.updated_at_ms.cmp(&left.updated_at_ms).then_with(|| left.session_id.cmp(&right.session_id))
+            });
+            let page_size = arguments.get("pageSize").and_then(Value::as_u64).unwrap_or(50);
+            if !(1..=100).contains(&page_size) {
+                return Err(ToolError {
+                    code: "invalid_params",
+                    message: "pageSize must be between 1 and 100".into(),
+                });
+            }
+            let offset = parse_list_cursor(arguments.get("cursor"))?;
+            if offset > sessions.len() {
+                return Err(ToolError {
+                    code: "invalid_params",
+                    message: "cursor is outside the filtered session set".into(),
+                });
+            }
+            let end = (offset + page_size as usize).min(sessions.len());
+            let next_cursor = (end < sessions.len()).then(|| end.to_string());
+            let rows: Vec<Value> = sessions[offset..end]
+                .iter()
                 .map(|s| {
                     json!({
                         "sessionId": s.session_id,
                         "agentType": "unknown",
                         "workspaceRoot": s.workspace_root,
                         "status": s.status,
-                        "residency": "resident",
+                        "residency": session_residency(s),
                         "activeTurnId": s.active_turn_id,
                         "updatedAtMs": s.updated_at_ms,
                         "safeSummary": s.title,
                     })
                 })
                 .collect();
-            Ok(json!({"sessions": rows, "nextCursor": null}))
+            Ok(json!({"sessions": rows, "nextCursor": next_cursor}))
         }
         "tower_agent_start" => {
             let workspace_root = arguments["workspaceRoot"]
@@ -203,15 +308,45 @@ pub async fn invoke_tower_tool(
                     message: "workspaceRoot required".into(),
                 })?
                 .to_owned();
-            let idempotency_key = arguments["idempotencyKey"]
+            if workspace_root.is_empty() || workspace_root.len() > 4096 {
+                return Err(ToolError {
+                    code: "invalid_params",
+                    message: "workspaceRoot must contain 1..=4096 characters".into(),
+                });
+            }
+            let agent_type = arguments["agentType"]
                 .as_str()
-                .unwrap_or("tool-start")
+                .filter(|value| !value.is_empty())
+                .ok_or_else(|| ToolError {
+                    code: "invalid_params",
+                    message: "agentType required".into(),
+                })?
                 .to_owned();
+            if agent_type.len() > 128 {
+                return Err(ToolError {
+                    code: "invalid_params",
+                    message: "agentType must contain 1..=128 characters".into(),
+                });
+            }
+            let idempotency_key = required_idempotency_key(&arguments, "tool-start")?;
+            let provider_binding = arguments
+                .get("providerBinding")
+                .filter(|value| !value.is_null())
+                .map(|value| {
+                    serde_json::from_value::<xai_grok_app_server_protocol::ProviderBinding>(
+                        value.clone(),
+                    )
+                    .map_err(|error| ToolError {
+                        code: "invalid_params",
+                        message: format!("invalid providerBinding: {error}"),
+                    })
+                })
+                .transpose()?;
             let session = runtime
                 .start_session(SessionStartParams {
                     workspace_root,
-                    agent_type: arguments["agentType"].as_str().map(str::to_owned),
-                    provider_binding: None,
+                    agent_type: Some(agent_type),
+                    provider_binding,
                     idempotency_key,
                 })
                 .await?;
@@ -223,19 +358,13 @@ pub async fn invoke_tower_tool(
             }))
         }
         "tower_agent_send" => {
-            let session_id = arguments["sessionId"].as_str().unwrap_or("").to_owned();
-            let mode = arguments["mode"].as_str().unwrap_or("new_turn");
-            let text = arguments["input"]
-                .as_array()
-                .and_then(|a| a.first())
-                .and_then(|b| b["text"].as_str())
-                .unwrap_or("")
-                .to_owned();
-            let idempotency_key = arguments["idempotencyKey"]
-                .as_str()
-                .unwrap_or("tool-send")
-                .to_owned();
-            let input = vec![InputBlock::Text { text }];
+            let session_id = required_string(&arguments, "sessionId")?;
+            let mode = arguments["mode"].as_str().ok_or_else(|| ToolError {
+                code: "invalid_params",
+                message: "mode required".into(),
+            })?;
+            let input = parse_input_blocks(&arguments)?;
+            let idempotency_key = required_idempotency_key(&arguments, "tool-send")?;
             match mode {
                 "new_turn" => {
                     if arguments.get("turnId").and_then(Value::as_str).is_some() {
@@ -285,7 +414,27 @@ pub async fn invoke_tower_tool(
             }
         }
         "tower_agent_history" => {
-            let session_id = arguments["sessionId"].as_str().unwrap_or("").to_owned();
+            let session_id = required_string(&arguments, "sessionId")?;
+            let mode = arguments["mode"].as_str().ok_or_else(|| ToolError {
+                code: "invalid_params",
+                message: "mode must be full or last".into(),
+            })?;
+            if !matches!(mode, "full" | "last") {
+                return Err(ToolError {
+                    code: "invalid_params",
+                    message: "mode must be full or last".into(),
+                });
+            }
+            let max_bytes = arguments["maxBytes"].as_u64().ok_or_else(|| ToolError {
+                code: "invalid_params",
+                message: "maxBytes must be between 1 and 1048576".into(),
+            })?;
+            if !(1..=1_048_576).contains(&max_bytes) {
+                return Err(ToolError {
+                    code: "invalid_params",
+                    message: "maxBytes must be between 1 and 1048576".into(),
+                });
+            }
             let read = runtime
                 .read_session(SessionReadParams {
                     session_id: session_id.clone(),
@@ -293,24 +442,43 @@ pub async fn invoke_tower_tool(
                     include_items: true,
                 })
                 .await?;
+            if let Some(epoch) = arguments["historyEpoch"].as_str()
+                && epoch != read.session.history_epoch
+            {
+                return Err(ToolError {
+                    code: "epoch_mismatch",
+                    message: "historyEpoch does not match the session history".into(),
+                });
+            }
+            if arguments["afterEventSeq"].as_str().is_some_and(|cursor| cursor != "0") {
+                return Err(ToolError {
+                    code: "unsupported",
+                    message: "afterEventSeq history projection is not available yet".into(),
+                });
+            }
+            let last_items = arguments["lastItems"].as_u64().unwrap_or(20);
+            if !(1..=100).contains(&last_items) {
+                return Err(ToolError {
+                    code: "invalid_params",
+                    message: "lastItems must be between 1 and 100".into(),
+                });
+            }
+            let (items, truncated) = limit_history_items(read.items, mode, last_items as usize, max_bytes as usize);
             Ok(json!({
                 "sessionId": session_id,
                 "historyEpoch": read.session.history_epoch,
-                "items": read.items,
+                "items": items,
                 "nextEventSeq": "0",
-                "truncated": false,
+                "truncated": truncated,
                 "redacted": true,
             }))
         }
         "tower_agent_resume" => {
-            let session_id = arguments["sessionId"].as_str().unwrap_or("").to_owned();
+            let session_id = required_string(&arguments, "sessionId")?;
             let session = runtime
                 .resume_session(SessionResumeParams {
                     session_id: session_id.clone(),
-                    idempotency_key: arguments["idempotencyKey"]
-                        .as_str()
-                        .unwrap_or("tool-resume")
-                        .to_owned(),
+                    idempotency_key: required_idempotency_key(&arguments, "tool-resume")?,
                 })
                 .await?;
             Ok(json!({
@@ -321,15 +489,44 @@ pub async fn invoke_tower_tool(
             }))
         }
         "tower_agent_wait" => {
-            let session_id = arguments["sessionId"].as_str().unwrap_or("").to_owned();
-            let after = arguments["afterEventSeq"].as_str().unwrap_or("0").to_owned();
+            let session_id = required_string(&arguments, "sessionId")?;
+            let after = arguments["afterEventSeq"].as_str().ok_or_else(|| ToolError {
+                code: "invalid_params",
+                message: "afterEventSeq must be a non-negative decimal string".into(),
+            })?;
+            let after_event_seq = after.parse::<u64>().map_err(|_| ToolError {
+                code: "invalid_params",
+                message: "afterEventSeq must be a non-negative decimal string".into(),
+            })?;
+            let timeout_ms = arguments["timeoutMs"].as_u64().ok_or_else(|| ToolError {
+                code: "invalid_params",
+                message: "timeoutMs must be between 1 and 300000".into(),
+            })?;
+            if !(1..=300_000).contains(&timeout_ms) {
+                return Err(ToolError {
+                    code: "invalid_params",
+                    message: "timeoutMs must be between 1 and 300000".into(),
+                });
+            }
             let history_epoch = arguments["historyEpoch"]
                 .as_str()
                 .map(str::to_owned);
+            // The wait response must echo the runtime's canonical epoch. Do
+            // not synthesize a process-wide/test-only `epoch_1` value: the
+            // replay cursor is scoped to the persisted session identity.
+            let response_epoch = runtime
+                .read_session(SessionReadParams {
+                    session_id: session_id.clone(),
+                    include_turns: false,
+                    include_items: false,
+                })
+                .await?
+                .session
+                .history_epoch;
             let page = runtime
                 .replay(SubscribeParams {
                     session_id: session_id.clone(),
-                    after_event_seq: after.parse().unwrap_or_default(),
+                    after_event_seq: after_event_seq.into(),
                     history_epoch,
                 })
                 .await?;
@@ -350,23 +547,20 @@ pub async fn invoke_tower_tool(
             };
             Ok(json!({
                 "sessionId": session_id,
-                "historyEpoch": "epoch_1",
+                "historyEpoch": response_epoch,
                 "events": events,
                 "nextEventSeq": page.replayed_through,
                 "wakeReason": wake_reason,
             }))
         }
         "tower_agent_interrupt" => {
-            let session_id = arguments["sessionId"].as_str().unwrap_or("").to_owned();
-            let turn_id = arguments["turnId"].as_str().unwrap_or("").to_owned();
+            let session_id = required_string(&arguments, "sessionId")?;
+            let turn_id = required_string(&arguments, "turnId")?;
             runtime
                 .interrupt_turn(TurnInterruptParams {
                     session_id: session_id.clone(),
                     turn_id: turn_id.clone(),
-                    idempotency_key: arguments["idempotencyKey"]
-                        .as_str()
-                        .unwrap_or("tool-int")
-                        .to_owned(),
+                    idempotency_key: required_idempotency_key(&arguments, "tool-int")?,
                 })
                 .await?;
             Ok(json!({
@@ -377,14 +571,11 @@ pub async fn invoke_tower_tool(
             }))
         }
         "tower_agent_archive" => {
-            let session_id = arguments["sessionId"].as_str().unwrap_or("").to_owned();
+            let session_id = required_string(&arguments, "sessionId")?;
             runtime
                 .archive_session(SessionArchiveParams {
                     session_id: session_id.clone(),
-                    idempotency_key: arguments["idempotencyKey"]
-                        .as_str()
-                        .unwrap_or("tool-arch")
-                        .to_owned(),
+                    idempotency_key: required_idempotency_key(&arguments, "tool-arch")?,
                 })
                 .await?;
             Ok(json!({
@@ -395,7 +586,7 @@ pub async fn invoke_tower_tool(
             }))
         }
         "tower_agent_status" => {
-            let session_id = arguments["sessionId"].as_str().unwrap_or("").to_owned();
+            let session_id = required_string(&arguments, "sessionId")?;
             let read = runtime
                 .read_session(SessionReadParams {
                     session_id: session_id.clone(),
@@ -408,7 +599,7 @@ pub async fn invoke_tower_tool(
                 "agentType": "unknown",
                 "workspaceRoot": read.session.workspace_root,
                 "status": read.session.status,
-                "residency": "resident",
+                "residency": session_residency(&read.session),
                 "activeTurnId": read.session.active_turn_id,
                 "updatedAtMs": read.session.updated_at_ms,
                 "safeSummary": read.session.title,
@@ -419,6 +610,140 @@ pub async fn invoke_tower_tool(
             message: format!("unknown tower tool: {other}"),
         }),
     }
+}
+
+fn parse_list_cursor(cursor: Option<&Value>) -> Result<usize, ToolError> {
+    let Some(cursor) = cursor.and_then(Value::as_str) else {
+        return Ok(0);
+    };
+    cursor.parse::<usize>().map_err(|_| ToolError {
+        code: "invalid_params",
+        message: "cursor must be an opaque pagination cursor returned by list".into(),
+    })
+}
+
+fn session_status_name(status: &xai_grok_app_server_protocol::SessionStatus) -> &'static str {
+    match status {
+        xai_grok_app_server_protocol::SessionStatus::Starting => "starting",
+        xai_grok_app_server_protocol::SessionStatus::Ready => "ready",
+        xai_grok_app_server_protocol::SessionStatus::Running => "running",
+        xai_grok_app_server_protocol::SessionStatus::WaitingForInput => "waiting_for_input",
+        xai_grok_app_server_protocol::SessionStatus::Dormant => "dormant",
+        xai_grok_app_server_protocol::SessionStatus::Completed => "completed",
+        xai_grok_app_server_protocol::SessionStatus::Archived => "archived",
+        xai_grok_app_server_protocol::SessionStatus::Failed => "failed",
+    }
+}
+
+fn session_residency(session: &xai_grok_app_server_protocol::Session) -> &'static str {
+    use xai_grok_app_server_protocol::SessionStatus;
+    if session.status == SessionStatus::Archived {
+        "archived"
+    } else if session.active_turn_id.is_some() {
+        "resident"
+    } else {
+        // A storage-only session has no observable live actor. Do not claim
+        // residency merely because the session row exists.
+        "dormant"
+    }
+}
+
+fn limit_history_items(
+    mut items: Vec<xai_grok_app_server_protocol::Item>,
+    mode: &str,
+    last_items: usize,
+    max_bytes: usize,
+) -> (Vec<Value>, bool) {
+    let mut truncated = false;
+    if mode == "last" && items.len() > last_items {
+        let keep_from = items.len() - last_items;
+        items.drain(..keep_from);
+        truncated = true;
+    }
+    let mut output = Vec::new();
+    let mut bytes = 0usize;
+    for item in items {
+        let value = serde_json::to_value(item).unwrap_or_else(|_| json!({}));
+        let item_bytes = serde_json::to_vec(&value).map_or(0, |bytes| bytes.len());
+        if !output.is_empty() && bytes.saturating_add(item_bytes) > max_bytes {
+            truncated = true;
+            break;
+        }
+        if output.is_empty() && item_bytes > max_bytes {
+            truncated = true;
+            break;
+        }
+        bytes = bytes.saturating_add(item_bytes);
+        output.push(value);
+    }
+    (output, truncated)
+}
+
+fn required_string(arguments: &Value, field: &str) -> Result<String, ToolError> {
+    arguments[field]
+        .as_str()
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned)
+        .ok_or_else(|| ToolError {
+            code: "invalid_params",
+            message: format!("{field} required"),
+        })
+}
+
+fn required_idempotency_key(arguments: &Value, fallback: &str) -> Result<String, ToolError> {
+    let _ = fallback;
+    let key = arguments["idempotencyKey"].as_str().ok_or_else(|| ToolError {
+        code: "invalid_params",
+        message: "idempotencyKey required".into(),
+    })?;
+    if key.len() < 8 || key.len() > 128 {
+        return Err(ToolError {
+            code: "invalid_params",
+            message: "idempotencyKey must contain 8..=128 characters".into(),
+        });
+    }
+    Ok(key.to_owned())
+}
+
+fn parse_input_blocks(arguments: &Value) -> Result<Vec<InputBlock>, ToolError> {
+    let blocks = arguments["input"].as_array().ok_or_else(|| ToolError {
+        code: "invalid_params",
+        message: "input must be a non-empty array".into(),
+    })?;
+    if blocks.is_empty() || blocks.len() > 128 {
+        return Err(ToolError {
+            code: "invalid_params",
+            message: "input must contain 1..=128 blocks".into(),
+        });
+    }
+    let total_text_bytes: usize = blocks
+        .iter()
+        .filter_map(|block| block.get("text").and_then(Value::as_str))
+        .map(str::len)
+        .sum();
+    if total_text_bytes > 1_048_576 {
+        return Err(ToolError {
+            code: "invalid_params",
+            message: "input exceeds the 1 MiB total text limit".into(),
+        });
+    }
+    for block in blocks {
+        if let Some(text) = block.get("text").and_then(Value::as_str)
+            && (text.is_empty() || text.len() > 1_048_576)
+        {
+            return Err(ToolError {
+                code: "invalid_params",
+                message: "text blocks must contain 1..=1048576 characters".into(),
+            });
+        }
+    }
+    blocks
+        .iter()
+        .map(|block| serde_json::from_value(block.clone()).map_err(|error| ToolError {
+            code: "invalid_params",
+            message: format!("invalid input block: {error}"),
+        }))
+        .collect()
 }
 
 /// Projects a [`RuntimeEvent`] into a structured JSON object for the
@@ -494,7 +819,7 @@ mod invoke_tests {
             "orchestrator",
             false,
             "tower_agent_start",
-            json!({"workspaceRoot":"/work","agentType":"build","idempotencyKey":"ts1"}),
+            json!({"workspaceRoot":"/work","agentType":"build","idempotencyKey":"ts1-0001"}),
         )
         .await
         .unwrap();
@@ -503,13 +828,13 @@ mod invoke_tests {
         for name in TOWER_TOOL_NAMES {
             let args = match name {
                 "tower_agent_list" => json!({}),
-                "tower_agent_start" => json!({"workspaceRoot":"/work","idempotencyKey": format!("k-{name}")}),
-                "tower_agent_send" => json!({"sessionId": sid, "input":[{"type":"text","text":"hi"}],"mode":"new_turn","idempotencyKey":"send1"}),
+                "tower_agent_start" => json!({"workspaceRoot":"/work","agentType":"build","idempotencyKey": format!("k-{name}-0001")}),
+                "tower_agent_send" => json!({"sessionId": sid, "input":[{"type":"text","text":"hi"}],"mode":"new_turn","idempotencyKey":"send1-0001"}),
                 "tower_agent_history" => json!({"sessionId": sid, "mode":"last","maxBytes":4096}),
-                "tower_agent_resume" => json!({"sessionId": sid, "idempotencyKey":"resume1"}),
+                "tower_agent_resume" => json!({"sessionId": sid, "idempotencyKey":"resume1-0001"}),
                 "tower_agent_wait" => json!({"sessionId": sid, "afterEventSeq":"0","timeoutMs":1}),
-                "tower_agent_interrupt" => json!({"sessionId": sid, "turnId":"turn_missing","idempotencyKey":"int1"}),
-                "tower_agent_archive" => json!({"sessionId": sid, "idempotencyKey":"arch1"}),
+                "tower_agent_interrupt" => json!({"sessionId": sid, "turnId":"turn_missing","idempotencyKey":"int1-0001"}),
+                "tower_agent_archive" => json!({"sessionId": sid, "idempotencyKey":"arch1-0001"}),
                 "tower_agent_status" => json!({"sessionId": sid}),
                 _ => unreachable!(),
             };
@@ -524,6 +849,79 @@ mod invoke_tests {
                 // status after archive may fail
                 let _ = result;
             }
+        }
+    }
+
+    #[tokio::test]
+    async fn send_preserves_all_structured_input_blocks() {
+        let rt = Arc::new(FakeRuntime::new());
+        let start = invoke_tower_tool(
+            rt.clone(),
+            "orchestrator",
+            false,
+            "tower_agent_start",
+            json!({
+                "workspaceRoot":"/work",
+                "agentType":"build",
+                "idempotencyKey":"blocks-0001"
+            }),
+        )
+        .await
+        .unwrap();
+        let sid = start["sessionId"].as_str().unwrap();
+        let result = invoke_tower_tool(
+            rt.clone(),
+            "orchestrator",
+            false,
+            "tower_agent_send",
+            json!({
+                "sessionId": sid,
+                "input": [
+                    {"type":"text", "text":"first"},
+                    {"type":"mention", "name":"docs", "path":null},
+                    {"type":"skill", "name":"review", "path":"skills/review"}
+                ],
+                "mode":"new_turn",
+                "idempotencyKey":"blocks-send-0001"
+            }),
+        )
+        .await
+        .unwrap();
+        assert!(result["turnId"].is_string());
+        let read = rt
+            .read_session(xai_grok_app_server_protocol::SessionReadParams {
+                session_id: sid.to_owned(),
+                include_turns: true,
+                include_items: true,
+            })
+            .await
+            .unwrap();
+        let user_content = read.items.iter().find_map(|item| match &item.body {
+            xai_grok_app_server_protocol::ItemBody::UserMessage { content } => Some(content),
+            _ => None,
+        });
+        assert_eq!(user_content.map(Vec::len), Some(3));
+    }
+
+    #[tokio::test]
+    async fn send_rejects_empty_or_oversized_input_before_runtime_lookup() {
+        let rt = Arc::new(FakeRuntime::new());
+        for input in [json!([]), json!([{"type":"text", "text":""}])] {
+            let error = invoke_tower_tool(
+                rt.clone(),
+                "orchestrator",
+                false,
+                "tower_agent_send",
+                json!({
+                    "sessionId":"missing",
+                    "input":input,
+                    "mode":"new_turn",
+                    "idempotencyKey":"invalid-input-0001"
+                }),
+            )
+            .await
+            .unwrap_err();
+            assert_eq!(error.code, "invalid_params");
         }
     }
 }
@@ -556,7 +954,7 @@ mod acl_parity_tests {
     #[tokio::test]
     async fn adapter_parity_mcp_and_in_process_normalized() {
         let rt = Arc::new(FakeRuntime::new());
-        let start_args = json!({"workspaceRoot":"/work","idempotencyKey":"parity-1"});
+        let start_args = json!({"workspaceRoot":"/work","agentType":"build","idempotencyKey":"parity-1"});
         let in_process = invoke_tower_tool(
             rt.clone(),
             "orchestrator",
@@ -577,7 +975,7 @@ mod acl_parity_tests {
         .await
         .unwrap();
         assert!(in_process["sessionId"].is_string());
-        assert!(via_core["sessions"].as_array().unwrap().len() >= 1);
+        assert!(!via_core["sessions"].as_array().unwrap().is_empty());
         // ACL deny identical for missing target
         let deny_existing = invoke_tower_tool(
             rt.clone(),
@@ -609,7 +1007,7 @@ mod acl_parity_tests {
             "orchestrator",
             false,
             "tower_agent_start",
-            json!({"workspaceRoot":"/work","idempotencyKey":"idem-1"}),
+            json!({"workspaceRoot":"/work","agentType":"build","idempotencyKey":"idem-0001"}),
         )
         .await
         .unwrap();
@@ -618,11 +1016,162 @@ mod acl_parity_tests {
             "orchestrator",
             false,
             "tower_agent_start",
-            json!({"workspaceRoot":"/work","idempotencyKey":"idem-1"}),
+            json!({"workspaceRoot":"/work","agentType":"build","idempotencyKey":"idem-0001"}),
         )
         .await
         .unwrap();
         assert_eq!(a["sessionId"], b["sessionId"]);
+    }
+
+    #[tokio::test]
+    async fn list_applies_workspace_filter_and_cursor_pagination() {
+        let rt = Arc::new(FakeRuntime::new());
+        for (workspace, key) in [("/a", "list-a-0001"), ("/a", "list-a-0002"), ("/b", "list-b-0001")] {
+            invoke_tower_tool(
+                rt.clone(),
+                "orchestrator",
+                false,
+                "tower_agent_start",
+                json!({"workspaceRoot":workspace,"agentType":"build","idempotencyKey":key}),
+            )
+            .await
+            .unwrap();
+        }
+        let first = invoke_tower_tool(
+            rt.clone(),
+            "orchestrator",
+            false,
+            "tower_agent_list",
+            json!({"workspaceRoot":"/a","pageSize":1}),
+        )
+        .await
+        .unwrap();
+        assert_eq!(first["sessions"].as_array().unwrap().len(), 1);
+        assert_eq!(first["sessions"][0]["residency"], "dormant");
+        let cursor = first["nextCursor"].as_str().expect("second page cursor");
+        let second = invoke_tower_tool(
+            rt,
+            "orchestrator",
+            false,
+            "tower_agent_list",
+            json!({"workspaceRoot":"/a","pageSize":1,"cursor":cursor}),
+        )
+        .await
+        .unwrap();
+        assert_eq!(second["sessions"].as_array().unwrap().len(), 1);
+        assert!(second["nextCursor"].is_null());
+    }
+
+    #[tokio::test]
+    async fn status_does_not_claim_resident_without_active_turn() {
+        let rt = Arc::new(FakeRuntime::new());
+        let start = invoke_tower_tool(
+            rt.clone(),
+            "orchestrator",
+            false,
+            "tower_agent_start",
+            json!({"workspaceRoot":"/status","agentType":"build","idempotencyKey":"status-0001"}),
+        )
+        .await
+        .unwrap();
+        let status = invoke_tower_tool(
+            rt,
+            "orchestrator",
+            false,
+            "tower_agent_status",
+            json!({"sessionId":start["sessionId"]}),
+        )
+        .await
+        .unwrap();
+        assert_eq!(status["residency"], "dormant");
+    }
+
+    #[tokio::test]
+    async fn list_rejects_unsupported_agent_filter_and_invalid_cursor() {
+        let rt = Arc::new(FakeRuntime::new());
+        for args in [json!({"agentType":"build"}), json!({"cursor":"not-a-cursor"})] {
+            let error = invoke_tower_tool(rt.clone(), "orchestrator", false, "tower_agent_list", args)
+                .await
+                .unwrap_err();
+            assert_eq!(error.code, "invalid_params");
+        }
+    }
+
+    #[tokio::test]
+    async fn wait_rejects_malformed_cursor_and_timeout_before_runtime_lookup() {
+        let rt = Arc::new(FakeRuntime::new());
+        for args in [
+            json!({"sessionId":"missing","afterEventSeq":"bad","timeoutMs":1}),
+            json!({"sessionId":"missing","afterEventSeq":"0","timeoutMs":0}),
+            json!({"sessionId":"missing","afterEventSeq":"0","timeoutMs":300001}),
+        ] {
+            let error = invoke_tower_tool(rt.clone(), "orchestrator", false, "tower_agent_wait", args)
+                .await
+                .unwrap_err();
+            assert_eq!(error.code, "invalid_params");
+        }
+    }
+
+    #[tokio::test]
+    async fn status_rejects_missing_session_id_before_lookup() {
+        let error = invoke_tower_tool(
+            Arc::new(FakeRuntime::new()),
+            "orchestrator",
+            false,
+            "tower_agent_status",
+            json!({}),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(error.code, "invalid_params");
+    }
+
+    #[tokio::test]
+    async fn start_rejects_oversized_workspace_and_agent_type_before_runtime() {
+        let rt = Arc::new(FakeRuntime::new());
+        for args in [
+            json!({"workspaceRoot":"x".repeat(4097),"agentType":"build","idempotencyKey":"start-size-0001"}),
+            json!({"workspaceRoot":"/work","agentType":"x".repeat(129),"idempotencyKey":"start-type-0001"}),
+        ] {
+            let error = invoke_tower_tool(rt.clone(), "orchestrator", false, "tower_agent_start", args)
+                .await
+                .unwrap_err();
+            assert_eq!(error.code, "invalid_params");
+        }
+    }
+
+    #[tokio::test]
+    async fn start_preserves_provider_binding_through_facade() {
+        let rt = Arc::new(FakeRuntime::new());
+        let out = invoke_tower_tool(
+            rt.clone(),
+            "orchestrator",
+            false,
+            "tower_agent_start",
+            json!({
+                "workspaceRoot":"/binding",
+                "agentType":"build",
+                "providerBinding": {
+                    "providerId":"xai",
+                    "credentialId":"cred-1",
+                    "modelId":"grok-test",
+                    "backend":"chat",
+                    "bindingRevision":"1"
+                },
+                "idempotencyKey":"binding-0001"
+            }),
+        )
+        .await
+        .unwrap();
+        let read = rt
+            .read_session(xai_grok_app_server_protocol::SessionReadParams {
+                session_id: out["sessionId"].as_str().unwrap().into(),
+                include_turns: false,
+                include_items: false,
+            })
+            .await
+            .unwrap();
+        assert_eq!(read.session.provider_binding.as_ref().unwrap().provider_id, "xai");
     }
 }
 
@@ -641,7 +1190,7 @@ mod swarm_limits_tests {
                 "orchestrator",
                 false,
                 "tower_agent_start",
-                serde_json::json!({"workspaceRoot":"/work","idempotencyKey": format!("swarm-{i}")}),
+                serde_json::json!({"workspaceRoot":"/work","agentType":"build","idempotencyKey": format!("swarm-{i:04}" )}),
             )
             .await
             .unwrap();
@@ -661,7 +1210,7 @@ mod swarm_limits_tests {
             "orchestrator",
             false,
             "tower_agent_start",
-            serde_json::json!({"workspaceRoot":"/work","idempotencyKey":"mut-1"}),
+            serde_json::json!({"workspaceRoot":"/work","agentType":"build","idempotencyKey":"mut-0001"}),
         )
         .await
         .unwrap();
@@ -671,7 +1220,7 @@ mod swarm_limits_tests {
             "orchestrator",
             false,
             "tower_agent_send",
-            serde_json::json!({"sessionId": sid, "mode":"new_turn", "input":[{"type":"text","text":"x"}], "idempotencyKey":"mut-s"}),
+            serde_json::json!({"sessionId": sid, "mode":"new_turn", "input":[{"type":"text","text":"x"}], "idempotencyKey":"mut-s-0001"}),
         )
         .await
         .unwrap();
@@ -681,7 +1230,7 @@ mod swarm_limits_tests {
             "orchestrator",
             false,
             "tower_agent_archive",
-            serde_json::json!({"sessionId": sid, "idempotencyKey":"mut-a"}),
+            serde_json::json!({"sessionId": sid, "idempotencyKey":"mut-a-0001"}),
         )
         .await
         .unwrap();
@@ -702,7 +1251,7 @@ mod history_parity_tests {
             "orchestrator",
             false,
             "tower_agent_start",
-            serde_json::json!({"workspaceRoot":"/work","idempotencyKey":"hist-1"}),
+            serde_json::json!({"workspaceRoot":"/work","agentType":"build","idempotencyKey":"hist-0001"}),
         )
         .await
         .unwrap();

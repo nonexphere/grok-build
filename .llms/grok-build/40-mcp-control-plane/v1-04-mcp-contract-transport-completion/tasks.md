@@ -1,0 +1,12 @@
+# Tasks — MCP contract and transport completion
+
+- [ ] MCP104-01 [F-06] Inline or publish resolvable input/output schemas in tools/list; run ./scripts/run-rust-test-gate.sh resolvable_tool_schemas cargo test -p xai-grok-mcp-server resolvable_tool_schemas; accept independent JSON Schema compilation for all nine.
+- [ ] MCP104-02 [F-02,F-05] Validate tool arguments before lookup/effect and structured output after dispatch; run ./scripts/run-rust-test-gate.sh mcp_schema_validation cargo test -p xai-grok-mcp-server mcp_schema_validation; accept missing/unknown/conditional/oversize errors.
+- [~] MCP104-03 [F-05] Map canonical errors with retryable and operationId in stdio/HTTP; run ./scripts/run-rust-test-gate.sh mcp_error_parity cargo test -p xai-grok-mcp-server -p xai-grok-tower-tools mcp_error_parity; accept identical semantic errors. MCP stdio/HTTP now share public catalog code mapping, structured `code`, `message`, `retryable`, and null `operationId`; operation identity for failed calls and full App Server catalog convergence remain pending.
+- [ ] MCP104-04 [STDIO] Add grok-oss Tower MCP stdio product launcher with one stdout framing owner; run real subprocess smoke; accept initialize/tools/list/call/EOF and zero diagnostic bytes on stdout.
+- [ ] MCP104-05 [HTTP] Complete real POST/GET/DELETE and protocol-version/content-negotiation matrix; run cargo test -p xai-grok-mcp-server --features streamable-http --test streamable_http; accept all named lifecycle cases.
+- [ ] MCP104-06 [SSE] Test real actor events, Last-Event-ID, expired cursor, epoch mismatch, rebind, TTL and slow subscriber; run ./scripts/run-rust-test-gate.sh product_sse cargo test -p xai-grok-mcp-server product_sse; accept resumption error without leak/gap.
+- [ ] MCP104-07 [BINDING] Specify and test one MCP connection controlling multiple Tower Sessions without implicit destructive rebind; run ./scripts/run-rust-test-gate.sh multi_session_binding cargo test -p xai-grok-mcp-server multi_session_binding; accept subscription identity explicit per session.
+- [ ] MCP104-08 [INTEROP] Drive stdio and HTTP with an independent MCP SDK/client; accept schemas, structuredContent and errors without repository-private resolver.
+- [ ] MCP104-09 [DEAD] Remove or justify unused process_mcp_stdio_batch/imports and helper-only adapters; cargo check -p xai-grok-mcp-server must be warning-free.
+- [ ] MCP104-10 [TD] Capture RED/GREEN, packet-level fixtures and product smoke evidence.

@@ -18,6 +18,7 @@ xai-grok-app-server-protocol = { path = "../xai-grok-app-server-protocol" }
 axum = { workspace = true, optional = true }
 tokio = { workspace = true, features = ["net", "io-util", "time", "sync", "rt"], optional = true }
 futures-util = { workspace = true, optional = true }
+url = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt", "rt-multi-thread", "time"] }

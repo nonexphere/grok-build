@@ -28,6 +28,19 @@ granulares vivem nos `tasks.md` de cada epic.
 | TDD | `TDD.md`, `scripts/run-rust-test-gate.sh` | todos | RED/GREEN + gate que falha com zero testes |
 | gateways/voice só backlog | project docs | `80/v1-01`, `90/v1-01` | nenhum dependency inverso/core code task |
 
+## Corrective completion coverage — 2026-07-19
+
+| Gap auditado | Contrato | Epic owner | Prova |
+|---|---|---|---|
+| actor product-wired | `_shared/product-runtime-readiness.md` | `20/v1-06` | binary vertical + exactly-one actor |
+| lifecycle/metadata truth | lifecycle contract | `20/v1-07` | transition/property/crash suite |
+| capability/error truth | conformance contract | `30/v1-09` | product-backed transport matrix |
+| nove tools completas | tower tools contract | `50/v1-03` | all cases × all tools × adapters |
+| MCP schema/stdio/HTTP | MCP + conformance contracts | `40/v1-04` | independent MCP client black-box |
+| scopes/tokens/TLS | security contract | `40/v1-05` | revoke/scope/TLS remote smoke |
+| SDK gerado/black-box | TypeScript contract | `60/v1-02` | clean generation + real listeners |
+| release total | `COMPLETION_COVERAGE.md` | `30/v1-07` | final evidence gate sem partial |
+
 ## Deepening de contratos e scaffolds (2026-07-18)
 
 | Review | Artefato | Verificação |

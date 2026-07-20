@@ -49,7 +49,7 @@ mod controller_policy_tests {
     #[test]
     fn interaction_idempotency_second_resolve_fails() {
         let table = LeaseTable::new();
-        let lease = table.grant("s", "ix", "c1", 2);
+        let _lease = table.grant("s", "ix", "c1", 2);
         table
             .resolve("s", "ix", "c1", &WireCounter::new(2))
             .unwrap();

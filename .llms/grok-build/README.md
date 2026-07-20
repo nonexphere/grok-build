@@ -5,9 +5,9 @@
 
 | Campo | Valor |
 |---|---|
-| Snapshot | `967161f5623b891611fc581a77008d29e9d4d87d` |
-| Data | 2026-07-18 (`America/Sao_Paulo`) |
-| Branch | `goblin-multi-provider-codex` |
+| Snapshot | `d0ea385c9d0e7335da9f831a3031fca6e3f2bd67` + dirty audited worktree |
+| Data | 2026-07-19 (`America/Sao_Paulo`) |
+| Branch | `goblin-implement-epic-tree` |
 | Produto público | `grok-oss` · `~/.grok-oss` · `@brasalabs/grok-oss` |
 | Fontes humanas | handoff §13–14 + transcrição de 2026-07-18 |
 
@@ -22,11 +22,11 @@ segundo runtime. [provenance: user-input, code, inferred]
 | Ordem | Programa | Papel | Estado do código | Release core |
 |---:|---|---|---|---|
 | 10 | [Providers](./10-providers/) | Codex/multi-auth + BYOK | Codex avançado; BYOK manual | paralelo controlado |
-| 20 | [Tower Core](./20-tower-core/) | daemon, registry e instâncias | proto-Tower no leader | **MUST** |
-| 30 | [App Server](./30-app-server/) | Session/Turn/Item + stdio/WS | planejado, não implementado | **MUST** |
-| 40 | [MCP Control Plane](./40-mcp-control-plane/) | MCP stdio + Streamable HTTP/SSE | crate atual é client | **MUST** |
-| 50 | [Tower Agent Tools](./50-tower-agent-tools/) | `tower_agent_*` e ACL | não implementado | **MUST** |
-| 60 | [SDK TypeScript](./60-sdk-typescript/) | schema, client e scripts | seeds apenas | **MUST** |
+| 20 | [Tower Core](./20-tower-core/) | daemon, registry e instâncias | supervisor existe; actor product-wired falta | **MUST** |
+| 30 | [App Server](./30-app-server/) | Session/Turn/Item + stdio/WS | protocol/listeners existem; capabilities reais parciais | **MUST** |
+| 40 | [MCP Control Plane](./40-mcp-control-plane/) | MCP stdio + Streamable HTTP/SSE | HTTP existe; schema/stdio/auth release incompletos | **MUST** |
+| 50 | [Tower Agent Tools](./50-tower-agent-tools/) | `tower_agent_*` e ACL | nove tools existem; semântica product incompleta | **MUST** |
+| 60 | [SDK TypeScript](./60-sdk-typescript/) | schema, client e scripts | package/interim mirror existe; black-box falta | **MUST** |
 | 70 | [Goal Runtime](./70-goal-runtime/) | goal legado v1 + runtime v2 | v1 existe; v2 é plano | futuro |
 | 80 | [Channel Gateways](./80-channel-gateways/) | Telegram primeiro | backlog | fora do core |
 | 90 | [Realtime Voice](./90-realtime-voice/) | full duplex + barge-in | ditado/STT parcial | fora do core |
@@ -44,6 +44,17 @@ segundo runtime. [provenance: user-input, code, inferred]
 | 6 | `30/v1-07`, `40/v1-02`, `20/v1-04` | hardening conjunto | remote/TLS classification, conformance, runbooks e release evidence |
 | 7+ | Goal v2, dashboard client, gateways e voz | fora do MVP core | programas separados e explicitamente aprovados |
 
+### Corrective completion waves (2026-07-19)
+
+| Wave | Epics | Gate |
+|---|---|---|
+| C1 | `20/v1-06` | actor real, shared runtime, readiness truth |
+| C2 | `20/v1-07`, `30/v1-05..06` | lifecycle/metadata/replay/interactions canônicos |
+| C3 | `50/v1-03`, `30/v1-09` | nove tools e capabilities sem placeholders |
+| C4 | `40/v1-04`, `60/v1-02` | MCP/SDK por clientes black-box reais |
+| C5 | `40/v1-05` | token lifecycle, scopes e TLS remote GA |
+| C6 | `30/v1-07`, `20/v1-04` | conformance/load/security/cleanup/release final |
+
 ## Status e estimativas dos epics
 
 | Programa | Epic | Status | Estimativa |
@@ -57,6 +68,9 @@ segundo runtime. [provenance: user-input, code, inferred]
 | 20 | `v1-02-multi-session-workspace-registry` | rascunho | 2–4 sem. |
 | 20 | `v1-03-multi-instance-daemon-modes` | rascunho | 2–3 sem. |
 | 20 | `v1-04-operations-hardening` | rascunho | 1–3 sem. |
+| 20 | `v1-05-tower-supervisor` | concluído localmente | entregue |
+| 20 | `v1-06-canonical-session-actor-runtime` | rascunho/P0 | 2–4 sem. |
+| 20 | `v1-07-lifecycle-metadata-recovery` | rascunho/P0 | 2–3 sem. |
 | 30 | `v1-01-session-protocol` | rascunho | 2–3 sem. |
 | 30 | `v1-02-runtime-facade-projection` | rascunho | 2–4 sem. |
 | 30 | `v1-03-core-in-process-stdio` | rascunho | 2–4 sem. |
@@ -64,13 +78,20 @@ segundo runtime. [provenance: user-input, code, inferred]
 | 30 | `v1-05-history-replay` | rascunho | 2–4 sem. |
 | 30 | `v1-06-approvals-control` | rascunho | 2–3 sem. |
 | 30 | `v1-07-release-hardening` | rascunho | 2–4 sem. |
+| 30 | `v1-08-tower-product-runtime` | concluído localmente | entregue |
+| 30 | `v1-09-capability-contract-product-conformance` | rascunho/P0 | 2–4 sem. |
 | 30 | `v2-01-dashboard-client-migration` | rascunho/backlog | 2–4 sem. |
 | 40 | `v1-01-server-transports` | rascunho | 2–4 sem. |
 | 40 | `v1-02-remote-security-conformance` | rascunho | 1–3 sem. |
+| 40 | `v1-03-tower-product-runtime` | concluído localmente | entregue |
+| 40 | `v1-04-mcp-contract-transport-completion` | rascunho/P0 | 2–4 sem. |
+| 40 | `v1-05-token-scopes-tls-release` | rascunho/P1 | 2–4 sem. |
 | 50 | `v1-01-tool-contract-and-facade` | rascunho | 2–3 sem. |
 | 50 | `v1-02-in-process-acl-mcp-parity` | rascunho | 2–3 sem. |
+| 50 | `v1-03-nine-tool-semantic-completion` | rascunho/P0 | 2–4 sem. |
 | 50 | `v2-01-peer-messaging-study` | rascunho/backlog | 1–2 sem. |
 | 60 | `v1-01-generated-sdk-client-examples` | rascunho | 2–3 sem. |
+| 60 | `v1-02-generated-sdk-black-box-ga` | rascunho/P1 | 2–3 sem. |
 | 70 | `v1-01-legacy-characterization` | rascunho/backlog | 1–3 sem. |
 | 70 | `v2-01-domain-foundation` | rascunho/backlog | 2–4 sem. |
 | 70 | `v2-02-persistence-leases-accounting` | rascunho/backlog | 2–4 sem. |
@@ -81,6 +102,16 @@ segundo runtime. [provenance: user-input, code, inferred]
 | 70 | `v2-07-recovery-rollout` | rascunho/backlog | 2–4 sem. |
 | 80 | `v1-01-telegram-bridge-backlog` | rascunho/backlog | 2–4 sem. |
 | 90 | `v1-01-full-duplex-backlog` | rascunho/backlog | 3–4 sem. |
+
+### Corrective completion chain
+
+- [20/v1-06 canonical SessionActor](20-tower-core/v1-06-canonical-session-actor-runtime/)
+- [20/v1-07 lifecycle, metadata and recovery](20-tower-core/v1-07-lifecycle-metadata-recovery/)
+- [30/v1-09 capability and product conformance](30-app-server/v1-09-capability-contract-product-conformance/)
+- [40/v1-04 MCP contract and transports](40-mcp-control-plane/v1-04-mcp-contract-transport-completion/)
+- [40/v1-05 token scopes and TLS](40-mcp-control-plane/v1-05-token-scopes-tls-release/)
+- [50/v1-03 all nine tool semantics](50-tower-agent-tools/v1-03-nine-tool-semantic-completion/)
+- [60/v1-02 generated SDK black-box GA](60-sdk-typescript/v1-02-generated-sdk-black-box-ga/)
 
 ### Grafo de dependências
 
@@ -122,6 +153,9 @@ possam ser selecionados por flag. [provenance: user-input]
 - [MCP, transportes e CLI](./_shared/mcp-server-transport-cli.md)
 - [approvals/controller/history](./_shared/approvals-controller-history.md)
 - [SDK TypeScript](./_shared/typescript-sdk.md)
+- [product runtime readiness](./_shared/product-runtime-readiness.md)
+- [contract conformance/capability truth](./_shared/contract-conformance-capability-truth.md)
+- [completion coverage](./COMPLETION_COVERAGE.md)
 - [providers](./_shared/provider-contract.md)
 - [Goal futuro](./_shared/goal-boundary.md)
 - [freeze dashboard/ACP](./_shared/ui-freeze.md)
@@ -179,13 +213,15 @@ Cada programa contém `README.md`, `SPECS.md`, `VISION.md` e epics
 - **Rejeitado:** daemon paralelo, por duplicar ownership e sessões.
 - **Status:** aceito. [provenance: user-input, code]
 
-### DD-03 — segurança permissiva do MVP, sem alegação de proteção inexistente
+### DD-03 — segurança local permissiva; remote GA exige hardening
 
-- **Decisão:** bearer full-control, sem scopes finos nem Origin allowlist;
-  `http://` e `ws://` permitidos, inclusive bind LAN/internet explícito.
-- **Rejeitado:** reintroduzir TLS/scopes/Origin obrigatórios contra a decisão
-  humana; também rejeitado omitir o risco.
-- **Status:** aceito. [provenance: user-input]
+- **Decisão:** local/experimental preserva bearer full-control e cleartext
+  explícito; produção remota exige token lifecycle, scopes e TLS/proxy
+  verificado. Origin/pairing/multi-user continuam fora do core.
+- **Rejeitado:** chamar warning+cleartext de remote-ready ou quebrar o modo
+  local antes de uma migração de token.
+- **Status:** completion target; scope UX/TLS têm gates humanos.
+  [provenance: user-input, conversation, skill-output]
 
 ### DD-04 — MCP local não faz loop em si mesmo
 

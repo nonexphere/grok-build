@@ -187,8 +187,17 @@ async fn prefetch_models(agent_config: &AgentConfig) -> Option<IndexMap<String, 
     }
 }
 
-/// Spawn the agent inside a LocalSet and return a handle to the I/O future.
-fn spawn_agent_local(
+/// Spawn the canonical Shell ACP agent inside the caller's `LocalSet` and
+/// return its I/O future.
+///
+/// This is the shared bootstrap for ACP transports. Product hosts must reuse
+/// this function instead of constructing a second [`MvpAgent`], gateway, or
+/// `AgentSideConnection`. The caller owns the Tokio `LocalSet` and must spawn
+/// the returned future; the future resolves when the ACP connection shuts
+/// down. This function deliberately does not advertise App Server/Tower
+/// capabilities or create a `ResidentHandle`—that cross-thread bridge remains
+/// the responsibility of `app_server_runtime`.
+pub fn spawn_agent_local(
     agent_config: AgentConfig,
     auth_manager: Arc<AuthManager>,
     prefetched_models: Option<IndexMap<String, ModelEntry>>,

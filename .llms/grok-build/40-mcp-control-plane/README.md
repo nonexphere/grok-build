@@ -20,4 +20,6 @@ sessions nem Streamable HTTP/SSE da Tower.
 
 - [v1-01-server-transports](./v1-01-server-transports/)
 - [v1-02-remote-security-conformance](./v1-02-remote-security-conformance/)
-
+- [v1-03-tower-product-runtime](./v1-03-tower-product-runtime/) — supervisor combinado
+- [v1-04-mcp-contract-transport-completion](./v1-04-mcp-contract-transport-completion/) — schema/stdio/HTTP completos
+- [v1-05-token-scopes-tls-release](./v1-05-token-scopes-tls-release/) — auth lifecycle e remote release

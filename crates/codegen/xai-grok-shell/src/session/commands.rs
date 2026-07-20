@@ -729,3 +729,30 @@ pub enum SessionCommand {
         branch: Option<String>,
     },
 }
+
+impl SessionCommand {
+    /// Construct a plain text prompt without exposing upload internals to
+    /// cross-crate command producers. Runtime bridges should use this helper
+    /// for ordinary prompts and leave actor-private fields encapsulated.
+    pub fn prompt(
+        prompt_id: String,
+        prompt_blocks: Vec<acp::ContentBlock>,
+        respond_to: oneshot::Sender<PromptTurnResult>,
+    ) -> Self {
+        Self::Prompt {
+            prompt_id,
+            prompt_blocks,
+            prompt_mode: PromptMode::default(),
+            artifact_upload_ctx: None,
+            client_identifier: None,
+            screen_mode: None,
+            verbatim: false,
+            traceparent: None,
+            json_schema: None,
+            send_now: false,
+            respond_to,
+            persist_ack: None,
+            parsed_prompt_tx: None,
+        }
+    }
+}

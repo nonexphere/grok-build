@@ -90,6 +90,8 @@ Examples:
 See ~/.grok/README.md for more information.
 ")]
     Wrap(WrapArgs),
+    /// Run the local Tower supervisor with App Server and MCP enabled by default.
+    Tower(TowerArgs),
     /// Export a session transcript as Markdown
     Export(crate::export_cmd::ExportArgs),
     /// Export or upload session trace data
@@ -378,6 +380,46 @@ pub struct ServeArgs {
     /// Authentication and WebSocket URL overrides
     #[command(flatten)]
     pub headless: HeadlessArgs,
+}
+
+/// Arguments for the combined local Tower supervisor.
+#[derive(Debug, clap::Args, Clone)]
+pub struct TowerArgs {
+    /// App Server WebSocket bind address.
+    #[arg(long, default_value = "127.0.0.1:2419")]
+    pub bind: SocketAddr,
+    /// MCP Streamable HTTP bind address.
+    #[arg(long = "mcp-bind", default_value = "127.0.0.1:8788")]
+    pub mcp_bind: SocketAddr,
+    /// Shared bearer secret (otherwise GROK_AGENT_SECRET or a generated token).
+    #[arg(long, env = "GROK_AGENT_SECRET")]
+    pub secret: Option<String>,
+    /// Disable bearer authentication for local/insecure integrations.
+    #[arg(long)]
+    pub insecure_no_auth: bool,
+    /// Do not start the MCP listener.
+    #[arg(long)]
+    pub no_mcp: bool,
+    /// Do not start the App Server listener.
+    #[arg(long)]
+    pub no_app_server: bool,
+}
+
+impl TowerArgs {
+    /// Resolve one shared secret before either listener binds.
+    pub fn resolve_secret(&self) -> Result<String, String> {
+        let configured = self
+            .secret
+            .clone()
+            .or_else(|| std::env::var("GROK_AGENT_SECRET").ok());
+        match configured {
+            Some(value) if value.trim().is_empty() => {
+                Err("tower secret must not be empty or whitespace".to_string())
+            }
+            Some(value) => Ok(value),
+            None => Ok(generate_random_key(32)),
+        }
+    }
 }
 impl ServeArgs {
     /// Get the secret, generating a random one if not provided.
@@ -924,6 +966,64 @@ impl PagerArgs {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tower_defaults_both_listeners_and_supports_independent_disable_flags() {
+        let args = PagerArgs::try_parse_from(["grok", "tower"]).unwrap();
+        let Some(Command::Tower(tower)) = args.command else {
+            panic!("expected tower command");
+        };
+        assert_eq!(tower.bind, "127.0.0.1:2419".parse().unwrap());
+        assert_eq!(tower.mcp_bind, "127.0.0.1:8788".parse().unwrap());
+        assert!(!tower.no_mcp);
+        assert!(!tower.no_app_server);
+        assert!(!tower.insecure_no_auth);
+
+        let args =
+            PagerArgs::try_parse_from(["grok", "tower", "--no-mcp", "--no-app-server"]).unwrap();
+        let Some(Command::Tower(tower)) = args.command else {
+            panic!("expected tower command");
+        };
+        assert!(tower.no_mcp && tower.no_app_server);
+    }
+
+    #[test]
+    fn tower_secret_is_optional_but_explicit_whitespace_is_rejected() {
+        let generated = TowerArgs {
+            bind: "127.0.0.1:2419".parse().unwrap(),
+            mcp_bind: "127.0.0.1:8788".parse().unwrap(),
+            secret: None,
+            insecure_no_auth: false,
+            no_mcp: false,
+            no_app_server: false,
+        }
+        .resolve_secret()
+        .unwrap();
+        assert_eq!(generated.len(), 32);
+
+        let invalid = TowerArgs {
+            secret: Some("  \t".to_string()),
+            ..TowerArgs {
+                bind: "127.0.0.1:2419".parse().unwrap(),
+                mcp_bind: "127.0.0.1:8788".parse().unwrap(),
+                secret: None,
+                insecure_no_auth: false,
+                no_mcp: false,
+                no_app_server: false,
+            }
+        };
+        assert!(invalid.resolve_secret().is_err());
+    }
+
+    #[test]
+    fn tower_insecure_no_auth_flag_is_opt_in() {
+        let args = PagerArgs::try_parse_from(["grok", "tower", "--insecure-no-auth"]).unwrap();
+        let Some(Command::Tower(tower)) = args.command else {
+            panic!("expected tower command");
+        };
+        assert!(tower.insecure_no_auth);
+    }
+
     #[test]
     fn version_flag_exits_zero() {
         let err = PagerArgs::try_parse_from(["grok", "--version"]).unwrap_err();

@@ -1,0 +1,7 @@
+# Project-scoped Codex MCP configuration for the local Grok OSS tower.
+# The token is injected at runtime through GROK_OSS_TOWER_SECRET.
+[mcp_servers.grok_oss_tower]
+url = "http://127.0.0.1:8788/mcp"
+#bearer_token_env_var = "GROK_OSS_TOWER_SECRET"
+startup_timeout_sec = 10
+tool_timeout_sec = 30

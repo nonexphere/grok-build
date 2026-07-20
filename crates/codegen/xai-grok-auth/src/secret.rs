@@ -19,6 +19,7 @@ impl SecretString {
     }
 
     /// Wrap an existing `&str` as a secret.
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(value: &str) -> Self {
         Self(value.to_owned())
     }

@@ -32,7 +32,7 @@ use std::net::SocketAddr;
 use tokio_util::sync::CancellationToken;
 use xai_grok_pager::app::{
     AgentCmd, Command, HeadlessArgs, LeaderMgmtArgs, LeaderMgmtCommand, LeaderTargetArgs,
-    PagerArgs, join_early_prefetch, resolve_use_leader,
+    PagerArgs, TowerArgs, join_early_prefetch, resolve_use_leader,
 };
 use xai_grok_pager::app::{WorkspaceMgmtArgs, WorkspaceMgmtCommand, WorkspaceStartArgs};
 use xai_grok_pager::client_identity::PAGER_CLIENT_VERSION;
@@ -110,16 +110,27 @@ fn format_startup_token_status(token: &str) -> String {
     "   Token:     present".to_string()
 }
 
+fn format_startup_auth_status(token: &str, require_auth: bool) -> String {
+    if require_auth {
+        format_startup_token_status(token)
+    } else {
+        "   Token:     not used".to_string()
+    }
+}
+
 /// Print startup information for the experimental App Server WS listener path
 /// (C3-G). Honest about the experimental / non-TLS posture: cleartext
 /// non-loopback is `experimental/unsafe`; TLS is a HUMAN gate (D-SEC.13).
 #[cfg(feature = "app-server-ws")]
-fn print_app_server_ws_startup_info(bind: &str, token: &str) {
+fn print_app_server_ws_startup_info(bind: &str, token: &str, require_auth: bool) {
     eprintln!();
     eprintln!("   Grok OSS App Server (experimental) starting...");
     eprintln!();
     eprintln!("   Bind:      {bind}");
-    eprintln!("   Auth:      Bearer (required)");
+    eprintln!(
+        "   Auth:      {}",
+        if require_auth { "Bearer (required)" } else { "DISABLED (--insecure-no-auth)" }
+    );
     eprintln!("   TLS:       not provided (HUMAN gate D-SEC.13 — cleartext only)");
     let host = bind.split(':').next().unwrap_or("127.0.0.1");
     if app_server_composition::app_server_serve_env_enabled() && host != "127.0.0.1"
@@ -128,10 +139,10 @@ fn print_app_server_ws_startup_info(bind: &str, token: &str) {
         eprintln!("   WARNING:   non-loopback cleartext bind is experimental/unsafe");
     }
     eprintln!();
-    eprintln!("   Connect:   ws://{bind}/  (Authorization: Bearer <token>)");
+    eprintln!("   Connect:   ws://{bind}/{}", if require_auth { " (Authorization: Bearer <token>)" } else { " (no authentication)" });
     eprintln!();
-    // R4-01: never print the raw bearer — presence + fingerprint only.
-    eprintln!("{}", format_startup_token_status(token));
+    // R4-01 / R5-08: never print the raw bearer or any derived value.
+    eprintln!("{}", format_startup_auth_status(token, require_auth));
     eprintln!();
 }
 
@@ -152,12 +163,19 @@ impl Drop for AppServerWsGuard {
 /// non-loopback is `experimental/unsafe`; TLS is a HUMAN gate (D-SEC.13 /
 /// MCP102-HUMAN). Fail-closed bearer is required.
 #[cfg(feature = "mcp-streamable-http")]
-fn print_mcp_http_startup_info(bind: &str, token: &str, tower_id: &str) {
+fn print_mcp_http_startup_info(bind: &str, token: &str, tower_id: &str, require_auth: bool) {
     eprintln!();
     eprintln!("   Grok OSS MCP Streamable HTTP (experimental) starting...");
     eprintln!();
     eprintln!("   Bind:      {bind}");
-    eprintln!("   Auth:      Bearer (required, fail-closed)");
+    eprintln!(
+        "   Auth:      {}",
+        if require_auth {
+            "Bearer (header or ?bearer=..., fail-closed)"
+        } else {
+            "DISABLED (--insecure-no-auth)"
+        }
+    );
     eprintln!("   TLS:       not provided (HUMAN gate D-SEC.13 / MCP102-HUMAN — cleartext only)");
     eprintln!("   Tower:     {tower_id}");
     let host = bind.split(':').next().unwrap_or("127.0.0.1");
@@ -165,10 +183,17 @@ fn print_mcp_http_startup_info(bind: &str, token: &str, tower_id: &str) {
         eprintln!("   WARNING:   non-loopback cleartext bind is experimental/unsafe");
     }
     eprintln!();
-    eprintln!("   Connect:   http://{bind}/mcp  (Authorization: Bearer <token>)");
+    eprintln!(
+        "   Connect:   http://{bind}/mcp{}",
+        if require_auth {
+            "?bearer=<token> or Authorization: Bearer <token>"
+        } else {
+            " (no authentication)"
+        }
+    );
     eprintln!();
-    // R4-01: never print the raw bearer — presence + fingerprint only.
-    eprintln!("{}", format_startup_token_status(token));
+    // R4-01 / R5-08: never print the raw bearer or any derived value.
+    eprintln!("{}", format_startup_auth_status(token, require_auth));
     eprintln!();
 }
 
@@ -182,6 +207,101 @@ impl Drop for McpHttpGuard {
     fn drop(&mut self) {
         self.0.join.abort();
     }
+}
+
+/// Wait for the first process shutdown signal shared by all local Tower modes.
+async fn wait_for_shutdown_signal() {
+    #[cfg(unix)]
+    {
+        use tokio::signal::unix::{signal, SignalKind};
+        let mut term = signal(SignalKind::terminate()).ok();
+        let mut hup = signal(SignalKind::hangup()).ok();
+        tokio::select! {
+            _ = tokio::signal::ctrl_c() => {}
+            _ = async { if let Some(signal) = term.as_mut() { let _ = signal.recv().await; } else { std::future::pending::<()>().await; } } => {}
+            _ = async { if let Some(signal) = hup.as_mut() { let _ = signal.recv().await; } else { std::future::pending::<()>().await; } } => {}
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = tokio::signal::ctrl_c().await;
+    }
+}
+
+/// Run both product listeners under one lifecycle when requested by `tower`.
+async fn run_tower_command(args: TowerArgs) -> Result<()> {
+    if args.no_mcp && args.no_app_server {
+        anyhow::bail!("grok-oss tower requires at least one listener; remove one --no-* flag");
+    }
+    let require_auth = !args.insecure_no_auth;
+    let secret = if require_auth {
+        args.resolve_secret().map_err(anyhow::Error::msg)?
+    } else {
+        String::new()
+    };
+
+    #[cfg(not(feature = "app-server-ws"))]
+    if !args.no_app_server {
+        anyhow::bail!("App Server support is not compiled into this binary");
+    }
+    #[cfg(not(feature = "mcp-streamable-http"))]
+    if !args.no_mcp {
+        anyhow::bail!("MCP HTTP support is not compiled into this binary");
+    }
+
+    #[cfg(feature = "app-server-ws")]
+    let app_guard = if !args.no_app_server {
+        let handle = app_server_composition::run_app_server_ws_with_auth(
+            args.bind.to_string(),
+            secret.clone(),
+            require_auth,
+        )
+        .await
+        .map_err(|e| anyhow::anyhow!("App Server failed to bind {}: {e}", args.bind))?;
+        print_app_server_ws_startup_info(&handle.addr.to_string(), &secret, require_auth);
+        Some(AppServerWsGuard(handle))
+    } else {
+        None
+    };
+
+    #[cfg(feature = "mcp-streamable-http")]
+    let mcp_guard = if !args.no_mcp {
+        let tower_id = app_server_composition::select_tower_instance_id(None)
+            .map_err(|e| anyhow::anyhow!("invalid Tower instance id: {e:?}"))?;
+        match app_server_composition::run_mcp_http_with_auth(
+            args.mcp_bind.to_string(),
+            secret.clone(),
+            tower_id.clone(),
+            require_auth,
+        )
+        .await
+        {
+            Ok(handle) => {
+                print_mcp_http_startup_info(
+                    &handle.addr.to_string(),
+                    &secret,
+                    &tower_id,
+                    require_auth,
+                );
+                Some(McpHttpGuard(handle))
+            }
+            Err(error) => {
+                #[cfg(feature = "app-server-ws")]
+                drop(app_guard);
+                return Err(anyhow::anyhow!("MCP HTTP failed to bind {}: {error}", args.mcp_bind));
+            }
+        }
+    } else {
+        None
+    };
+
+    eprintln!("Grok OSS Tower supervisor running (Ctrl-C/SIGTERM to stop)");
+    wait_for_shutdown_signal().await;
+    #[cfg(feature = "mcp-streamable-http")]
+    drop(mcp_guard);
+    #[cfg(feature = "app-server-ws")]
+    drop(app_guard);
+    Ok(())
 }
 
 /// Entrypoint tag for `grok -p`; keys the quiet stderr default in `init_tracing_simple`.
@@ -1450,7 +1570,7 @@ async fn run_agent_command(
                              (R4-10 fail-fast; will not silently use 'default'): {e:?}"
                         )
                     })?;
-                print_mcp_http_startup_info(&bind, &secret, &tower_id);
+                print_mcp_http_startup_info(&bind, &secret, &tower_id, true);
                 let handle = app_server_composition::run_mcp_http(bind, secret, tower_id)
                     .await
                     .map_err(|e| anyhow::anyhow!(
@@ -1486,15 +1606,15 @@ async fn run_agent_command(
             // `FacadeProcessor`-backed WebSocket listener over the real
             // `ShellSessionActorRuntime` (composition root in
             // `app_server_composition`) instead of the shell agent server.
-            // Feature-gated by `app-server-ws`; without the feature the env
-            // gate is a no-op and the shell agent server path runs unchanged.
+            // Feature-gated at compile time by `app-server-ws`, which is part
+            // of the default product build; the env gate selects the path.
             // Default bind is loopback (`--bind`); cleartext non-loopback is
             // `experimental/unsafe` and warned at bind time. TLS stays a HUMAN
             // gate (D-SEC.13).
             #[cfg(feature = "app-server-ws")]
             if app_server_composition::app_server_serve_env_enabled() {
                 let bind = a.bind.to_string();
-                print_app_server_ws_startup_info(&bind, &secret);
+                print_app_server_ws_startup_info(&bind, &secret, true);
                 let handle = app_server_composition::run_app_server_ws(bind, secret)
                     .await
                     .map_err(|e| anyhow::anyhow!("app-server WS listener failed to bind: {e}"))?;
@@ -1987,6 +2107,10 @@ async fn async_main() -> Result<()> {
                     &update_config,
                 )
                 .await;
+            }
+            Command::Tower(tower_args) => {
+                init_tracing_simple("tower");
+                return run_tower_command(tower_args).await;
             }
             Command::Inspect { json } => {
                 let cwd = std::env::current_dir().unwrap_or_default();

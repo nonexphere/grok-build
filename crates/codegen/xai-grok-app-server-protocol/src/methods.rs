@@ -107,6 +107,10 @@ pub struct OperationResult {
     pub accepted: bool,
 }
 
+// This schema/document carrier intentionally preserves concrete protocol
+// variants. Boxing only the large read-result variant would change the public
+// Rust construction shape without changing wire behavior.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "method", content = "value")]
 pub enum MethodDocument {

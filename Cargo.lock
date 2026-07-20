@@ -13263,6 +13263,7 @@ dependencies = [
  "reqwest 0.12.24",
  "serde_json",
  "tokio",
+ "url",
  "xai-grok-app-server-protocol",
  "xai-grok-tower",
  "xai-grok-tower-tools",
@@ -13338,6 +13339,7 @@ dependencies = [
  "chrono",
  "dashmap",
  "dirs 5.0.1",
+ "dunce",
  "fs2",
  "http 1.4.0",
  "mockito",
@@ -14100,6 +14102,7 @@ name = "xai-grok-tower"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "dunce",
  "fs2",
  "serde_json",
  "tempfile",

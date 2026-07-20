@@ -20,3 +20,9 @@ possui lógica divergente.
 Mesmos fixtures e outcomes do in-process path, mais framing/reconnect/
 backpressure/auth/size conformance.
 
+## 5. Completion target
+
+Descriptors publicam schemas resolvíveis, input/output são validados e errors
+preservam retryability/operationId. Stdio e Streamable HTTP passam por cliente
+MCP independente. Remote GA adiciona token lifecycle, scopes e TLS; o bearer
+full-control cleartext permanece somente modo experimental/local.

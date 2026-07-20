@@ -64,12 +64,10 @@ pub fn start_browser_flow(config: &CodexOAuthConfig) -> BrowserFlowState {
 
 /// Probe which configured callback port is free on loopback.
 fn pick_free_loopback_port(ports: &[u16]) -> Option<u16> {
-    for &port in ports {
-        if std::net::TcpListener::bind(("127.0.0.1", port)).is_ok() {
-            return Some(port);
-        }
-    }
-    None
+    ports
+        .iter()
+        .find(|&&port| std::net::TcpListener::bind(("127.0.0.1", port)).is_ok())
+        .copied()
 }
 
 /// Parse the callback URL and extract `code` and `state` parameters.

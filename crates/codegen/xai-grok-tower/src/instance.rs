@@ -81,6 +81,10 @@ impl InstanceDirectory {
     pub fn len(&self) -> usize {
         self.handles.len()
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.handles.is_empty()
+    }
 }
 
 /// Directory segment under a Tower home that holds per-instance state roots.

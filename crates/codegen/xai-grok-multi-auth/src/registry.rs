@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use xai_grok_auth::{AuthProvider, ProviderRegistry};
+use xai_grok_auth::ProviderRegistry;
 
 use crate::kill_switch;
 use crate::providers::byok::{ByokAuthProvider, ALL as BYOK_SPECS, OPENROUTER, GROQ, CLOUDFLARE};

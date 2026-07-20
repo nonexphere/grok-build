@@ -7,7 +7,8 @@
 //! 1. Checks the session exists on disk (storage authority).
 //! 2. Requires a resident actor (returns `unsupported` without one).
 //! 3. Checks `pending_interactions` membership keyed by `interaction_id`
-//!    (= `tool_call_id`); removes the entry (first-answer-wins).
+//!    (= `tool_call_id`); consumes it only after a deliverable response (or
+//!    restores it when the actor hub/sender is not ready).
 //! 4. Delivers `params.decision` via a process-local oneshot hub.
 //! 5. Does NOT re-evaluate allow/deny policy.
 //!
@@ -48,7 +49,9 @@ use xai_grok_tower::{GrokRuntimeFacade, RuntimeError};
 /// can check membership and deliver decisions. The consumer task drains
 /// the command channel (it does not need to process turns for these tests —
 /// `respond_interaction` never sends a `SessionCommand`).
-struct InteractionSpawner;
+struct InteractionSpawner {
+    with_hub: bool,
+}
 
 #[async_trait]
 impl SessionSpawner for InteractionSpawner {
@@ -79,7 +82,7 @@ impl SessionSpawner for InteractionSpawner {
             cmd_tx,
             current_prompt_id,
             pending_interactions: Some(pending_interactions),
-            delivery_hub: Some(delivery_hub),
+            delivery_hub: self.with_hub.then_some(delivery_hub),
         })
     }
 }
@@ -87,7 +90,14 @@ impl SessionSpawner for InteractionSpawner {
 fn real_port(temp: &TempDir) -> ShellSessionActorRuntime {
     ShellSessionActorRuntime::with_spawner(
         temp.path().to_path_buf(),
-        Arc::new(InteractionSpawner),
+        Arc::new(InteractionSpawner { with_hub: true }),
+    )
+}
+
+fn no_hub_port(temp: &TempDir) -> ShellSessionActorRuntime {
+    ShellSessionActorRuntime::with_spawner(
+        temp.path().to_path_buf(),
+        Arc::new(InteractionSpawner { with_hub: false }),
     )
 }
 
@@ -132,6 +142,23 @@ fn seed_pending(
     let (tx, rx) = oneshot::channel();
     hub.lock().unwrap().insert(interaction_id.to_string(), tx);
     rx
+}
+
+fn seed_pending_without_delivery_hub(
+    port: &ShellSessionActorRuntime,
+    session_id: &str,
+    interaction_id: &str,
+    kind: PendingKind,
+) {
+    let resident = port.resident(session_id).expect("resident must exist");
+    let pending = resident
+        .pending_interactions
+        .as_ref()
+        .expect("pending surface must exist");
+    pending
+        .lock()
+        .unwrap()
+        .insert(interaction_id.to_string(), kind);
 }
 
 // ===========================================================================
@@ -335,6 +362,110 @@ async fn interaction_facade_unknown_interaction_not_found() {
         .await
         .unwrap_err();
     assert_eq!(err.code, "interaction_not_found");
+}
+
+#[tokio::test]
+async fn interaction_facade_not_deliverable_keeps_pending_for_retry() {
+    let temp = TempDir::new().unwrap();
+    let port = real_port(&temp);
+    let s = start_session(&port, "/work/ix/retry", "ix-retry").await;
+    seed_pending_without_delivery_hub(
+        &port,
+        &s.session_id,
+        "call-retry",
+        PendingKind::Question,
+    );
+
+    let err = port
+        .respond_interaction(InteractionResponseParams {
+            session_id: s.session_id.clone(),
+            turn_id: "t-retry".into(),
+            interaction_id: "call-retry".into(),
+            decision: "allow".into(),
+            idempotency_key: "r-retry-1".into(),
+        })
+        .await
+        .unwrap_err();
+    assert_eq!(err.code, "interaction_not_deliverable");
+
+    // The parked interaction remains available for the actor to register its
+    // oneshot and for the client to retry; it was not consumed by the failed
+    // delivery attempt.
+    let resident = port.resident(&s.session_id).unwrap();
+    assert!(resident
+        .pending_interactions
+        .as_ref()
+        .unwrap()
+        .lock()
+        .unwrap()
+        .contains_key("call-retry"));
+}
+
+#[tokio::test]
+async fn interaction_facade_missing_hub_keeps_pending_for_retry() {
+    let temp = TempDir::new().unwrap();
+    let port = no_hub_port(&temp);
+    let s = start_session(&port, "/work/ix/no-hub", "ix-no-hub").await;
+    seed_pending_without_delivery_hub(
+        &port,
+        &s.session_id,
+        "call-no-hub",
+        PendingKind::Permission,
+    );
+
+    let err = port
+        .respond_interaction(InteractionResponseParams {
+            session_id: s.session_id.clone(),
+            turn_id: "t-no-hub".into(),
+            interaction_id: "call-no-hub".into(),
+            decision: "allow".into(),
+            idempotency_key: "r-no-hub".into(),
+        })
+        .await
+        .unwrap_err();
+    assert_eq!(err.code, "unsupported");
+    let resident = port.resident(&s.session_id).unwrap();
+    assert!(resident
+        .pending_interactions
+        .as_ref()
+        .unwrap()
+        .lock()
+        .unwrap()
+        .contains_key("call-no-hub"));
+}
+
+#[tokio::test]
+async fn interaction_facade_closed_receiver_keeps_pending_for_retry() {
+    let temp = TempDir::new().unwrap();
+    let port = real_port(&temp);
+    let s = start_session(&port, "/work/ix/closed-receiver", "ix-closed").await;
+    let rx = seed_pending(
+        &port,
+        &s.session_id,
+        "call-closed",
+        PendingKind::Question,
+    );
+    drop(rx);
+
+    let err = port
+        .respond_interaction(InteractionResponseParams {
+            session_id: s.session_id.clone(),
+            turn_id: "t-closed".into(),
+            interaction_id: "call-closed".into(),
+            decision: "allow".into(),
+            idempotency_key: "r-closed".into(),
+        })
+        .await
+        .unwrap_err();
+    assert_eq!(err.code, "interaction_not_deliverable");
+    let resident = port.resident(&s.session_id).unwrap();
+    assert!(resident
+        .pending_interactions
+        .as_ref()
+        .unwrap()
+        .lock()
+        .unwrap()
+        .contains_key("call-closed"));
 }
 
 // ===========================================================================

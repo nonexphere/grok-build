@@ -266,8 +266,7 @@ impl AuthProvider for CodexAuthProvider {
 
         match (flow_snapshot, input) {
             (FlowKind::Browser(browser_flow), LoginInput::BrowserCallback { url }) => {
-                let params =
-                    browser::parse_callback(&url).ok_or_else(|| ProviderError::InvalidCallback)?;
+                let params = browser::parse_callback(&url).ok_or(ProviderError::InvalidCallback)?;
                 let code = browser::validate_callback(&browser_flow.state.state, &params)
                     .map_err(|_e| ProviderError::InvalidCallback)?;
 
@@ -453,14 +452,14 @@ impl AuthProvider for CodexAuthProvider {
         // Return current token if not expiring.
         let now = request.now;
         let early_window = request.early_refresh_window;
-        if let Some(expires_at) = request.credential.metadata.expires_at {
-            if expires_at > now + early_window {
-                return Ok(TokenResolution {
-                    token: request.credential.secret.access_token.clone(),
-                    expires_at: Some(expires_at),
-                    update: None,
-                });
-            }
+        if let Some(expires_at) = request.credential.metadata.expires_at
+            && expires_at > now + early_window
+        {
+            return Ok(TokenResolution {
+                token: request.credential.secret.access_token.clone(),
+                expires_at: Some(expires_at),
+                update: None,
+            });
         }
 
         // Needs refresh.
@@ -568,10 +567,10 @@ impl AuthProvider for CodexAuthProvider {
                 c.etag
             }
         });
-        if let Some(cached) = model_cache::load_cache(&cache_path) {
-            if cached.is_fresh(now) {
-                return Ok(cached.into_model_catalog(xai_grok_auth::ModelCatalogSource::FreshDisk));
-            }
+        if let Some(cached) = model_cache::load_cache(&cache_path)
+            && cached.is_fresh(now)
+        {
+            return Ok(cached.into_model_catalog(xai_grok_auth::ModelCatalogSource::FreshDisk));
         }
 
         let fetch = models::fetch_codex_models_with_etag(

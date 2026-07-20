@@ -6,7 +6,7 @@ use std::path::Path;
 
 use serde_json::{json, Value};
 use xai_grok_auth::{
-    AuthProvider, CredentialStore, ModelListRequest, ProviderId, ProviderModel, ProviderRegistry,
+    CredentialStore, ModelListRequest, ProviderId, ProviderModel, ProviderRegistry,
 };
 
 use crate::kill_switch;
@@ -101,10 +101,11 @@ pub fn prompt_provider_selection(registry: &ProviderRegistry) -> Result<LoginPro
     if line.is_empty() {
         return parse_login_provider(Some(descriptors[0].id.as_str()));
     }
-    if let Ok(n) = line.parse::<usize>() {
-        if n >= 1 && n <= descriptors.len() {
-            return parse_login_provider(Some(descriptors[n - 1].id.as_str()));
-        }
+    if let Ok(n) = line.parse::<usize>()
+        && n >= 1
+        && n <= descriptors.len()
+    {
+        return parse_login_provider(Some(descriptors[n - 1].id.as_str()));
     }
     // Also accept id strings.
     parse_login_provider(Some(line))

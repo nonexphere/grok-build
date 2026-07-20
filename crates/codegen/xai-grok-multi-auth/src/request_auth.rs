@@ -7,7 +7,7 @@ use http::HeaderMap;
 use thiserror::Error;
 
 use xai_grok_auth::{
-    AuthProvider, CredentialBinding, CredentialKey, CredentialStore, ModelBinding,
+    CredentialBinding, CredentialKey, CredentialStore, ModelBinding,
     ProviderRegistry, SentCredentialStamp,
 };
 

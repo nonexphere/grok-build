@@ -8,7 +8,7 @@ use std::sync::Arc;
 use serde_json::{json, Value};
 use xai_grok_tower::GrokRuntimeFacade;
 use xai_grok_tower_tools::{
-    invoke_tower_tool, TowerToolDescriptor, TOWER_TOOL_DESCRIPTORS,
+    invoke_tower_tool, tool_schema, TowerToolDescriptor, TOWER_TOOL_DESCRIPTORS,
 };
 
 pub use xai_grok_tower_tools::{
@@ -84,7 +84,7 @@ pub async fn handle_mcp_jsonrpc(
                 "tools": TOWER_TOOL_DESCRIPTORS.iter().map(|d| json!({
                     "name": d.name,
                     "description": d.description,
-                    "inputSchema": {"$ref": d.input_schema_ref},
+                    "inputSchema": tool_schema(d.name, false).unwrap_or_else(|| json!({"type":"object"})),
                 })).collect::<Vec<_>>()
             }
         }),
@@ -103,7 +103,7 @@ pub async fn handle_mcp_jsonrpc(
                         "jsonrpc":"2.0","id":id,
                         "result":{
                             "content":[{"type":"text","text": format!("{}: {}", err.code, err.message)}],
-                            "structuredContent": {"code": err.code, "message": err.message},
+                            "structuredContent": xai_grok_tower_tools::tool_error_json(&err),
                             "isError": true
                         }
                     })
@@ -176,7 +176,7 @@ mod tests {
             &format!(
                 "{}\n{}\n",
                 json!({"jsonrpc":"2.0","id":1,"method":"tools/list"}),
-                json!({"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"tower_agent_start","arguments":{"workspaceRoot":"/work","idempotencyKey":"mcp1"}}})
+                json!({"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"tower_agent_start","arguments":{"workspaceRoot":"/work","agentType":"build","idempotencyKey":"mcp-start-0001"}}})
             ),
         )
         .await;
@@ -197,6 +197,19 @@ mod tests {
             .next()
             .unwrap();
         assert!(!production.contains(&forbidden));
+    }
+
+    #[test]
+    fn tools_list_publishes_self_contained_input_schemas() {
+        let response = handle_mcp_jsonrpc;
+        let _ = response;
+        let schemas: Vec<Value> = TOWER_TOOL_DESCRIPTORS
+            .iter()
+            .map(|d| tool_schema(d.name, false).expect("canonical input schema"))
+            .collect();
+        assert_eq!(schemas.len(), 9);
+        assert!(schemas.iter().all(|schema| schema["type"] == "object"));
+        assert!(schemas.iter().all(|schema| schema.get("$ref").is_none()));
     }
 }
 

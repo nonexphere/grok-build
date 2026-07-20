@@ -1,6 +1,7 @@
 //! Round-5 runtime correctness tests (R5-03 cross-runtime idempotency,
 //! R5-04 epoch rotation, R5-05 replay gap + pagination).
 
+use std::sync::Arc;
 use tempfile::TempDir;
 use xai_grok_app_server_protocol::{
     SessionStartParams, SubscribeParams, WireCounter,
@@ -9,7 +10,53 @@ use xai_grok_shell::app_server_runtime::{
     experimental_local_turn_spawn, ShellSessionActorRuntime,
 };
 use xai_grok_shell::session::info::Info;
-use xai_grok_tower::GrokRuntimeFacade;
+use xai_grok_tower::{GrokRuntimeFacade, RuntimeError};
+
+#[tokio::test]
+async fn r5_failed_spawn_does_not_publish_idempotency_claim() {
+    // A failed spawn must not become a visible winner while it is still
+    // executing. Another runtime could otherwise return the speculative
+    // session before the first runtime rolls its claim back.
+    let temp = TempDir::new().unwrap();
+    let root = temp.path().to_path_buf();
+    let entered = Arc::new(tokio::sync::Notify::new());
+    let release = Arc::new(tokio::sync::Notify::new());
+    let failing_spawn: xai_grok_shell::app_server_runtime::RealSpawnFn = {
+        let entered = entered.clone();
+        let release = release.clone();
+        Arc::new(move |_, _| {
+            let entered = entered.clone();
+            let release = release.clone();
+            Box::pin(async move {
+                entered.notify_one();
+                release.notified().await;
+                Err(RuntimeError {
+                    code: "spawn_failed",
+                    message: "test spawn failure".into(),
+                })
+            })
+        })
+    };
+    let rt = ShellSessionActorRuntime::with_production_spawn(root.clone(), failing_spawn);
+    let start = tokio::spawn(async move {
+        rt.start_session(SessionStartParams {
+            workspace_root: "/work/failing-spawn".into(),
+            agent_type: None,
+            provider_binding: None,
+            idempotency_key: "failing-spawn-key".into(),
+        })
+        .await
+    });
+    entered.notified().await;
+    let claims = root.join("app_server_idempotency");
+    assert!(
+        !claims.exists() || std::fs::read_dir(&claims).unwrap().next().is_none(),
+        "claim must not be published while spawn is unresolved"
+    );
+    release.notify_one();
+    let err = start.await.unwrap().unwrap_err();
+    assert_eq!(err.code, "spawn_failed");
+}
 
 #[tokio::test]
 async fn r5_cross_runtime_concurrent_idempotency_collapses_to_winner() {
@@ -58,7 +105,7 @@ async fn r5_history_epoch_is_unique_and_rotates() {
     let root = temp.path().to_path_buf();
     let rt = ShellSessionActorRuntime::with_production_spawn(
         root.clone(),
-        experimental_local_turn_spawn(root),
+        experimental_local_turn_spawn(root.clone()),
     );
     let a = rt
         .start_session(SessionStartParams {
@@ -87,7 +134,7 @@ async fn r5_history_epoch_is_unique_and_rotates() {
         cwd: "/work/epoch-a".into(),
     };
     let old = a.history_epoch.clone();
-    let new_epoch = rt.rotate_history_epoch(&info);
+    let new_epoch = rt.rotate_history_epoch(&info).unwrap();
     assert_ne!(old, new_epoch);
     let err = rt
         .replay(SubscribeParams {
@@ -102,11 +149,27 @@ async fn r5_history_epoch_is_unique_and_rotates() {
         .replay(SubscribeParams {
             session_id: a.session_id.clone(),
             after_event_seq: WireCounter::new(0),
-            history_epoch: Some(new_epoch),
+            history_epoch: Some(new_epoch.clone()),
         })
         .await
         .unwrap();
     assert!(!ok.events.is_empty());
+
+    // The persisted epoch must remain authoritative after rebuilding the
+    // runtime, not only within the process that performed the rotation.
+    let restarted = ShellSessionActorRuntime::with_production_spawn(
+        root,
+        experimental_local_turn_spawn(temp.path().to_path_buf()),
+    );
+    let restarted_ok = restarted
+        .replay(SubscribeParams {
+            session_id: a.session_id,
+            after_event_seq: WireCounter::new(0),
+            history_epoch: Some(new_epoch),
+        })
+        .await
+        .unwrap();
+    assert!(!restarted_ok.events.is_empty());
 }
 
 #[tokio::test]

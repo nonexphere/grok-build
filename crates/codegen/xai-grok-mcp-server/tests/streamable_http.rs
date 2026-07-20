@@ -186,7 +186,8 @@ async fn post_tools_call_start_returns_structured_content_with_session_id() {
                 "name": "tower_agent_start",
                 "arguments": {
                     "workspaceRoot": "/work",
-                    "idempotencyKey": "http-start-1"
+                    "agentType": "build",
+                    "idempotencyKey": "http-start-0001"
                 }
             }
         }),
@@ -197,6 +198,129 @@ async fn post_tools_call_start_returns_structured_content_with_session_id() {
     assert_eq!(body["result"]["structuredContent"]["state"], "completed");
     // No error flag on success.
     assert!(body["result"].get("isError").is_none() || body["result"]["isError"] == false);
+}
+
+#[tokio::test]
+async fn completed_tool_result_does_not_leave_an_active_turn() {
+    let (addr, state, _join) = spawn_server().await;
+    let c = client();
+    let (_, _, session) = post_json(&c, addr, Some(TOKEN), None, &init_request(1)).await;
+    let sid = session.as_deref().unwrap().to_owned();
+    let (_, start_body, _) = post_json(
+        &c,
+        addr,
+        Some(TOKEN),
+        Some(&sid),
+        &json!({
+            "jsonrpc":"2.0","id":2,"method":"tools/call",
+            "params": {
+                "name": "tower_agent_start",
+                "arguments": {"workspaceRoot": "/work/active", "agentType": "build", "idempotencyKey": "active-0001"}
+            }
+        }),
+    )
+    .await;
+    let tower_sid = start_body["result"]["structuredContent"]["sessionId"]
+        .as_str()
+        .unwrap();
+    post_json(
+        &c,
+        addr,
+        Some(TOKEN),
+        Some(&sid),
+        &json!({
+            "jsonrpc":"2.0","id":3,"method":"tools/call",
+            "params": {
+                "name": "tower_agent_send",
+                "arguments": {
+                    "sessionId": tower_sid,
+                    "input": [{"type":"text","text":"done"}],
+                    "mode": "new_turn",
+                    "idempotencyKey": "active-send-1"
+                }
+            }
+        }),
+    )
+    .await;
+
+    assert!(state.sessions.lock().unwrap()[&sid]
+        .active_turn_id
+        .lock()
+        .unwrap()
+        .is_none());
+}
+
+#[tokio::test]
+async fn repeated_quiet_tools_call_does_not_duplicate_snapshot_event() {
+    let (addr, state, _join) = spawn_server().await;
+    let c = client();
+    let (_, _, session) = post_json(&c, addr, Some(TOKEN), None, &init_request(1)).await;
+    let start = json!({
+        "jsonrpc":"2.0","id":2,"method":"tools/call",
+        "params": {
+            "name": "tower_agent_start",
+            "arguments": {"workspaceRoot": "/work/quiet", "agentType": "build", "idempotencyKey": "quiet-0001"}
+        }
+    });
+
+    post_json(&c, addr, Some(TOKEN), session.as_deref(), &start).await;
+    let sid = session.as_deref().unwrap();
+    let first_len = state.sessions.lock().unwrap()[sid]
+        .events
+        .lock()
+        .unwrap()
+        .len();
+
+    // The idempotent repeat has no new Tower event. It still invokes the
+    // facade polling path, so a cursor-only implementation would append the
+    // sequence-0 snapshot a second time here.
+    post_json(&c, addr, Some(TOKEN), session.as_deref(), &start).await;
+    let second_len = state.sessions.lock().unwrap()[sid]
+        .events
+        .lock()
+        .unwrap()
+        .len();
+    assert_eq!(second_len, first_len, "quiet snapshot must be emitted once");
+}
+
+#[tokio::test]
+async fn concurrent_quiet_tools_calls_do_not_duplicate_replay_page() {
+    let (addr, state, _join) = spawn_server().await;
+    let c = client();
+    let (_, _, session) = post_json(&c, addr, Some(TOKEN), None, &init_request(1)).await;
+    let start = json!({
+        "jsonrpc":"2.0","id":2,"method":"tools/call",
+        "params": {
+            "name": "tower_agent_start",
+            "arguments": {"workspaceRoot": "/work/concurrent", "agentType": "build", "idempotencyKey": "concurrent-0001"}
+        }
+    });
+    post_json(&c, addr, Some(TOKEN), session.as_deref(), &start).await;
+
+    let sid = session.as_deref().unwrap().to_owned();
+    let baseline = state.sessions.lock().unwrap()[&sid]
+        .events
+        .lock()
+        .unwrap()
+        .len();
+
+    // The same idempotent request is intentionally issued in parallel. Both
+    // handlers enter the shared replay helper; a cursor-only implementation
+    // can read the same page before either handler advances the cursor.
+    let left = post_json(&c, addr, Some(TOKEN), Some(&sid), &start);
+    let right = post_json(&c, addr, Some(TOKEN), Some(&sid), &start);
+    let _ = tokio::join!(left, right);
+
+    let after = state.sessions.lock().unwrap()[&sid]
+        .events
+        .lock()
+        .unwrap()
+        .len();
+    assert_eq!(
+        after,
+        baseline,
+        "concurrent quiet pulls must append no page twice"
+    );
 }
 
 #[tokio::test]
@@ -225,7 +349,7 @@ async fn post_tools_call_deny_path_emits_iserror_with_forbidden_code() {
     .await;
     assert_eq!(status, reqwest::StatusCode::OK);
     assert_eq!(body["result"]["isError"], true);
-    assert_eq!(body["result"]["structuredContent"]["code"], "forbidden");
+    assert_eq!(body["result"]["structuredContent"]["code"], "tower_acl_denied");
 }
 
 // ---------------------------------------------------------------------------
@@ -333,6 +457,34 @@ async fn delete_session_terminates_and_rejects_subsequent_post() {
 }
 
 #[tokio::test]
+async fn delete_rejects_foreign_bearer_binding_before_removal() {
+    let (addr, state, _join) = spawn_server().await;
+    let c = client();
+    let (_, _, session) = post_json(&c, addr, Some(TOKEN), None, &init_request(1)).await;
+    let sid = session.unwrap();
+
+    // Replace the negotiated session with one bound to a different bearer
+    // fingerprint. DELETE must enforce the same binding as GET/POST.
+    state.sessions.lock().unwrap().insert(
+        sid.clone(),
+        Arc::new(McpSession::new(
+            0xdead_beef,
+            "tower-A".to_owned(),
+            state.max_session_events,
+        )),
+    );
+    let resp = c
+        .delete(format!("http://{addr}/mcp"))
+        .header("authorization", format!("Bearer {TOKEN}"))
+        .header("mcp-session-id", &sid)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), reqwest::StatusCode::UNAUTHORIZED);
+    assert!(state.sessions.lock().unwrap().contains_key(&sid));
+}
+
+#[tokio::test]
 async fn delete_without_session_header_is_bad_request() {
     let (addr, _state, _join) = spawn_server().await;
     let c = client();
@@ -364,7 +516,7 @@ async fn get_sse_streams_events_after_tools_call() {
             "jsonrpc":"2.0","id":2,"method":"tools/call",
             "params": {
                 "name": "tower_agent_start",
-                "arguments": {"workspaceRoot": "/work", "idempotencyKey": "sse-1"}
+                "arguments": {"workspaceRoot": "/work", "agentType": "build", "idempotencyKey": "sse-0001"}
             }
         }),
     )
@@ -407,7 +559,7 @@ async fn get_sse_resume_from_last_event_id() {
             "jsonrpc":"2.0","id":2,"method":"tools/call",
             "params": {
                 "name": "tower_agent_start",
-                "arguments": {"workspaceRoot": "/work", "idempotencyKey": "sse-resume-1"}
+                "arguments": {"workspaceRoot": "/work", "agentType": "build", "idempotencyKey": "sse-resume-0001"}
             }
         }),
     )
@@ -429,6 +581,219 @@ async fn get_sse_resume_from_last_event_id() {
         !body.contains("id: 1\n"),
         "resume must not replay already-delivered event 1: {body}"
     );
+}
+
+#[tokio::test]
+async fn open_sse_emits_resumption_error_when_buffer_expires() {
+    let (addr, state, _join) = spawn_server_with(McpHttpConfig {
+        bearer_token: TOKEN.to_owned(),
+        require_auth: true,
+        tower_instance_id: "tower-A".to_owned(),
+        max_session_events: 1,
+        ..Default::default()
+    })
+    .await;
+    let c = client();
+    let (_, _, session) = post_json(&c, addr, Some(TOKEN), None, &init_request(1)).await;
+    let sid = session.as_deref().unwrap().to_owned();
+    let session_arc = state.sessions.lock().unwrap()[&sid].clone();
+
+    let resp = c
+        .get(format!("http://{addr}/mcp"))
+        .header("authorization", format!("Bearer {TOKEN}"))
+        .header("accept", "text/event-stream")
+        .header("mcp-session-id", &sid)
+        .send()
+        .await
+        .unwrap();
+    let mut stream = resp.bytes_stream();
+
+    // Advance the open stream to cursor 1, then expire that cursor by adding
+    // two more events to a one-entry buffer.
+    session_arc.append_event("test".to_owned(), "one".to_owned());
+    let first = timeout(Duration::from_secs(2), stream.next())
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    assert!(String::from_utf8_lossy(&first).contains("id: 1"));
+    session_arc.append_event("test".to_owned(), "two".to_owned());
+    session_arc.append_event("test".to_owned(), "three".to_owned());
+
+    let mut body = String::new();
+    while let Ok(Some(Ok(chunk))) = timeout(Duration::from_secs(2), stream.next()).await {
+        body.push_str(&String::from_utf8_lossy(&chunk));
+        if body.contains("event: resumption_error") {
+            break;
+        }
+    }
+    assert!(body.contains("event: resumption_error"), "body: {body}");
+}
+
+#[tokio::test]
+async fn open_sse_emits_resumption_error_on_tower_epoch_mismatch() {
+    let force_epoch_mismatch = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let runtime: Arc<dyn xai_grok_tower::GrokRuntimeFacade> =
+        Arc::new(InterruptProbeRuntime {
+            inner: FakeRuntime::new(),
+            interrupts: Arc::new(std::sync::Mutex::new(Vec::new())),
+            force_epoch_mismatch: force_epoch_mismatch.clone(),
+        });
+    let handle = run_mcp_http_server(
+        runtime,
+        McpHttpConfig {
+            bearer_token: TOKEN.to_owned(),
+            require_auth: true,
+            tower_instance_id: "tower-A".to_owned(),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let c = client();
+    let (_, _, session) = post_json(&c, handle.addr, Some(TOKEN), None, &init_request(1)).await;
+    let sid = session.as_deref().unwrap().to_owned();
+    post_json(
+        &c,
+        handle.addr,
+        Some(TOKEN),
+        Some(&sid),
+        &json!({
+            "jsonrpc":"2.0","id":2,"method":"tools/call",
+            "params": {
+                "name": "tower_agent_start",
+                "arguments": {"workspaceRoot": "/work/epoch", "agentType": "build", "idempotencyKey": "epoch-0001"}
+            }
+        }),
+    )
+    .await;
+    force_epoch_mismatch.store(true, std::sync::atomic::Ordering::SeqCst);
+
+    let resp = c
+        .get(format!("http://{}/mcp", handle.addr))
+        .header("authorization", format!("Bearer {TOKEN}"))
+        .header("accept", "text/event-stream")
+        .header("mcp-session-id", &sid)
+        .send()
+        .await
+        .unwrap();
+    let body = read_sse_until_idle(resp, Duration::from_millis(400), Duration::from_secs(5)).await;
+    assert!(body.contains("event: resumption_error"), "body: {body}");
+    handle.join.abort();
+}
+
+#[tokio::test]
+async fn tower_session_rebind_resets_mcp_replay_identity() {
+    let (addr, state, _join) = spawn_server().await;
+    let c = client();
+    let (_, _, session) = post_json(&c, addr, Some(TOKEN), None, &init_request(1)).await;
+    let sid = session.as_deref().unwrap().to_owned();
+
+    for (id, root, key) in [(2, "/work/rebind-a", "rebind-a"), (3, "/work/rebind-b", "rebind-b")] {
+        let (_, body, _) = post_json(
+            &c,
+            addr,
+            Some(TOKEN),
+            Some(&sid),
+            &json!({
+                "jsonrpc":"2.0","id":id,"method":"tools/call",
+                "params": {
+                    "name": "tower_agent_start",
+                    "arguments": {"workspaceRoot": root, "agentType": "build", "idempotencyKey": key}
+                }
+            }),
+        )
+        .await;
+        assert!(body["result"]["structuredContent"]["sessionId"].is_string());
+        if id == 2 {
+            let transport = state.sessions.lock().unwrap()[&sid].clone();
+            *transport.active_turn_id.lock().unwrap() = Some("old-turn".to_owned());
+        }
+    }
+
+    assert!(state.sessions.lock().unwrap()[&sid]
+        .active_turn_id
+        .lock()
+        .unwrap()
+        .is_none());
+
+    // The second start binds a different Tower session. Its replay must begin
+    // at cursor zero with the new session epoch, not reuse session A's epoch.
+    let resp = c
+        .get(format!("http://{addr}/mcp"))
+        .header("authorization", format!("Bearer {TOKEN}"))
+        .header("accept", "text/event-stream")
+        .header("mcp-session-id", &sid)
+        .send()
+        .await
+        .unwrap();
+    let body = read_sse_until_idle(resp, Duration::from_millis(400), Duration::from_secs(5)).await;
+    assert!(!body.contains("event: resumption_error"), "body: {body}");
+    assert!(
+        !body.contains("/work/rebind-a"),
+        "rebind must not replay the previous Tower session: {body}"
+    );
+}
+
+#[tokio::test]
+async fn open_sse_is_invalidated_when_tower_session_rebinds() {
+    let (addr, _state, _join) = spawn_server().await;
+    let c = client();
+    let (_, _, session) = post_json(&c, addr, Some(TOKEN), None, &init_request(1)).await;
+    let sid = session.as_deref().unwrap().to_owned();
+    post_json(
+        &c,
+        addr,
+        Some(TOKEN),
+        Some(&sid),
+        &json!({
+            "jsonrpc":"2.0","id":2,"method":"tools/call",
+            "params": {
+                "name": "tower_agent_start",
+                "arguments": {"workspaceRoot": "/work/open-a", "agentType": "build", "idempotencyKey": "open-a-0001"}
+            }
+        }),
+    )
+    .await;
+
+    let resp = c
+        .get(format!("http://{addr}/mcp"))
+        .header("authorization", format!("Bearer {TOKEN}"))
+        .header("accept", "text/event-stream")
+        .header("mcp-session-id", &sid)
+        .send()
+        .await
+        .unwrap();
+    let mut stream = resp.bytes_stream();
+    let _ = timeout(Duration::from_secs(2), stream.next())
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+
+    // Rebind while the old SSE producer is still alive.
+    post_json(
+        &c,
+        addr,
+        Some(TOKEN),
+        Some(&sid),
+        &json!({
+            "jsonrpc":"2.0","id":3,"method":"tools/call",
+            "params": {
+                "name": "tower_agent_start",
+                "arguments": {"workspaceRoot": "/work/open-b", "agentType": "build", "idempotencyKey": "open-b-0001"}
+            }
+        }),
+    )
+    .await;
+    let mut body = String::new();
+    while let Ok(Some(Ok(chunk))) = timeout(Duration::from_secs(2), stream.next()).await {
+        body.push_str(&String::from_utf8_lossy(&chunk));
+        if body.contains("session_rebound") {
+            break;
+        }
+    }
+    assert!(body.contains("session_rebound"), "body: {body}");
 }
 
 #[tokio::test]
@@ -469,7 +834,7 @@ async fn get_sse_does_not_replay_another_clients_events() {
             "jsonrpc":"2.0","id":2,"method":"tools/call",
             "params": {
                 "name": "tower_agent_start",
-                "arguments": {"workspaceRoot": "/workA", "idempotencyKey": "iso-a"}
+                "arguments": {"workspaceRoot": "/workA", "agentType": "build", "idempotencyKey": "iso-a-0001"}
             }
         }),
     )
@@ -549,6 +914,7 @@ async fn r5_mcp_event_buffer_cap_drops_oldest() {
 struct InterruptProbeRuntime {
     inner: FakeRuntime,
     interrupts: Arc<std::sync::Mutex<Vec<(String, String)>>>,
+    force_epoch_mismatch: Arc<std::sync::atomic::AtomicBool>,
 }
 
 #[async_trait::async_trait]
@@ -619,8 +985,14 @@ impl xai_grok_tower::GrokRuntimeFacade for InterruptProbeRuntime {
     }
     async fn replay(
         &self,
-        cursor: xai_grok_app_server_protocol::SubscribeParams,
+        mut cursor: xai_grok_app_server_protocol::SubscribeParams,
     ) -> Result<xai_grok_tower::ReplayPage, xai_grok_tower::RuntimeError> {
+        if self
+            .force_epoch_mismatch
+            .load(std::sync::atomic::Ordering::SeqCst)
+        {
+            cursor.history_epoch = Some("epoch-stale".to_owned());
+        }
         self.inner.replay(cursor).await
     }
 }
@@ -633,6 +1005,7 @@ async fn r5_mcp_ttl_eviction_via_lookup_interrupts_active_turn() {
     let runtime: Arc<dyn xai_grok_tower::GrokRuntimeFacade> = Arc::new(InterruptProbeRuntime {
         inner: FakeRuntime::new(),
         interrupts: interrupts.clone(),
+        force_epoch_mismatch: Arc::new(std::sync::atomic::AtomicBool::new(false)),
     });
     // Start a real Tower session + turn so interrupt_turn can succeed.
     let tower = runtime
@@ -988,7 +1361,7 @@ async fn stdio_and_http_produce_identical_tools_list_and_error_shapes() {
     .await;
     let stdio_err_val: Value = serde_json::from_str(&stdio_err[0]).unwrap();
     assert_eq!(stdio_err_val["result"]["isError"], true);
-    assert_eq!(stdio_err_val["result"]["structuredContent"]["code"], "forbidden");
+    assert_eq!(stdio_err_val["result"]["structuredContent"]["code"], "tower_acl_denied");
 }
 
 // ---------------------------------------------------------------------------
@@ -1014,7 +1387,7 @@ async fn post_tools_call_does_not_reenter_via_managed_mcp_client() {
             "jsonrpc":"2.0","id":2,"method":"tools/call",
             "params": {
                 "name": "tower_agent_start",
-                "arguments": {"workspaceRoot": "/work", "idempotencyKey": "no-self-loop-1"}
+                "arguments": {"workspaceRoot": "/work", "agentType": "build", "idempotencyKey": "no-self-loop-0001"}
             }
         }),
     )

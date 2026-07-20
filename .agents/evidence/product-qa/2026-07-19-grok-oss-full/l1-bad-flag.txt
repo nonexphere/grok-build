@@ -1,0 +1,8 @@
+error: unexpected argument '--definitely-not-a-real-flag' found
+
+  tip: a similar argument exists: '--deny'
+
+Usage: grok-oss --deny <RULE> [PROMPT]
+
+For more information, try '--help'.
+BAD_FLAG_EXIT=2

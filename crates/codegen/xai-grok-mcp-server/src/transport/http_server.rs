@@ -36,7 +36,7 @@
 
 use std::collections::HashMap;
 use std::net::SocketAddr;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -52,9 +52,11 @@ use serde_json::{json, Value};
 use tokio::net::TcpListener;
 use tokio::task::JoinHandle;
 use xai_grok_tower::GrokRuntimeFacade;
-use xai_grok_tower_tools::invoke_tower_tool;
+use xai_grok_tower_tools::{invoke_tower_tool, tool_error_json};
 
-use crate::transport::http::{enforce_body_limit, reject_token_query, validate_http_bearer};
+use crate::transport::http::{
+    enforce_body_limit, presented_bearer, reject_token_query, validate_http_bearer,
+};
 use crate::MCP_PROTOCOL_VERSION;
 
 /// Default inbound message size limit (matches the CLI matrix
@@ -74,6 +76,9 @@ pub struct McpSessionEvent {
     pub event_type: String,
     pub data: String,
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EventCursorExpired;
 
 /// Per-transport-session state.
 #[derive(Debug)]
@@ -99,6 +104,25 @@ pub struct McpSession {
     pub tower_session_id: Mutex<Option<String>>,
     /// Last facade event seq already pulled into this transport session.
     pub last_replayed_seq: Mutex<u64>,
+    /// History epoch learned from the Tower snapshot. Keeping it with the
+    /// cursor makes a rewrite fail closed instead of silently mixing events
+    /// from two histories.
+    history_epoch: Mutex<Option<String>>,
+    /// Monotonic binding generation used to invalidate SSE producers that
+    /// were opened against a previous Tower-session identity.
+    binding_generation: AtomicU64,
+    /// Whether the synthetic sequence-0 snapshot has already been emitted to
+    /// this transport stream. The Tower replay contract intentionally returns
+    /// that snapshot whenever the cursor is 0; without this separate bit a
+    /// quiet session would append the same snapshot on every SSE poll.
+    snapshot_replayed: AtomicBool,
+    /// Last snapshot payload used to distinguish a repeated synthetic
+    /// snapshot from a legitimate later `SessionChanged` event.
+    snapshot_session: Mutex<Option<xai_grok_app_server_protocol::Session>>,
+    /// Serializes facade replay pulls for this MCP session. POST handlers and
+    /// the long-lived SSE task may poll concurrently; without one guard both
+    /// could read the same cursor and append the same non-snapshot events.
+    replay_pull_lock: tokio::sync::Mutex<()>,
     /// Last known in-flight turn id for disconnect-cancels-turn (C4-F F-1).
     /// Set from mutating `tools/call` structured content when a `turnId` is
     /// present; cleared when the transport session is deleted after interrupt.
@@ -125,6 +149,11 @@ impl McpSession {
             min_retained_event_id: AtomicU64::new(0),
             tower_session_id: Mutex::new(None),
             last_replayed_seq: Mutex::new(0),
+            history_epoch: Mutex::new(None),
+            binding_generation: AtomicU64::new(0),
+            snapshot_replayed: AtomicBool::new(false),
+            snapshot_session: Mutex::new(None),
+            replay_pull_lock: tokio::sync::Mutex::new(()),
             active_turn_id: Mutex::new(None),
             event_notify: tokio::sync::Notify::new(),
             last_active: Mutex::new(std::time::Instant::now()),
@@ -133,6 +162,32 @@ impl McpSession {
 
     fn touch(&self) {
         *self.last_active.lock().unwrap() = std::time::Instant::now();
+    }
+
+    /// Bind this transport session to a Tower session and reset replay state
+    /// when the identity changes. Cursor and history epoch are scoped to the
+    /// Tower session; carrying either across a rebind would create a false
+    /// epoch mismatch or mix events from two sessions.
+    async fn bind_tower_session(&self, tower_session_id: String) {
+        let _pull_guard = self.replay_pull_lock.lock().await;
+        let mut bound = self.tower_session_id.lock().unwrap();
+        if bound.as_deref() == Some(tower_session_id.as_str()) {
+            return;
+        }
+        *bound = Some(tower_session_id);
+        *self.last_replayed_seq.lock().unwrap() = 0;
+        *self.history_epoch.lock().unwrap() = None;
+        self.snapshot_replayed.store(false, Ordering::SeqCst);
+        *self.snapshot_session.lock().unwrap() = None;
+        self.binding_generation.fetch_add(1, Ordering::SeqCst);
+        // The active turn identifier is scoped to the old Tower session too;
+        // retaining it would make a later DELETE/TTL interrupt the wrong
+        // session after this rebind.
+        *self.active_turn_id.lock().unwrap() = None;
+        self.events.lock().unwrap().clear();
+        self.min_retained_event_id
+            .store(self.next_event_id.load(Ordering::SeqCst), Ordering::SeqCst);
+        self.event_notify.notify_waiters();
     }
 
     pub fn append_event(&self, event_type: String, data: String) -> u64 {
@@ -159,10 +214,10 @@ impl McpSession {
 
     /// Events strictly after `after`. Returns `Err(())` when the cursor is
     /// expired (below the retained window) — caller should treat as resync.
-    pub fn events_after(&self, after: u64) -> Result<Vec<McpSessionEvent>, ()> {
+    pub fn events_after(&self, after: u64) -> Result<Vec<McpSessionEvent>, EventCursorExpired> {
         let min = self.min_retained_event_id.load(Ordering::SeqCst);
         if after > 0 && after < min {
-            return Err(());
+            return Err(EventCursorExpired);
         }
         Ok(self
             .events
@@ -382,7 +437,7 @@ async fn post_mcp(
     body: axum::body::Bytes,
 ) -> Response {
     // 1. Auth (indistinguishable 401 for missing/wrong/malformed bearer).
-    if let Err(resp) = require_auth(&state, &headers) {
+    if let Err(resp) = require_auth(&state, &headers, uri.query()) {
         return resp;
     }
     // 2. Reject credentials in the query string (defense in depth).
@@ -418,7 +473,7 @@ async fn post_mcp(
         // R4-09 / R5-07: evict idle sessions (and cancel their turns), then
         // enforce max_sessions quota.
         evict_expired_sessions_and_interrupt(&state).await;
-        let fingerprint = bearer_fingerprint(&headers, &state.bearer_token);
+        let fingerprint = bearer_fingerprint(&headers, uri.query(), &state.bearer_token);
         let session = Arc::new(McpSession::new(
             fingerprint,
             state.tower_instance_id.clone(),
@@ -439,7 +494,7 @@ async fn post_mcp(
         }
         Some((sid, session))
     } else {
-        match lookup_session(&state, &headers).await {
+        match lookup_session(&state, &headers, uri.query()).await {
             Ok(s) => {
                 s.1.touch();
                 Some(s)
@@ -455,8 +510,9 @@ async fn post_mcp(
     //    transport session's event log (feeds GET /mcp SSE).
     if let Some((_, session)) = &session
         && method == "tools/call"
+        && let Err(err) = pull_facade_events(&state, session).await
     {
-        pull_facade_events(&state, session).await;
+        record_pull_error(session, err);
     }
 
     // 10. Notification (no id) → 202 Accepted, no body.
@@ -502,9 +558,10 @@ async fn post_mcp(
 /// `resumption_error` and ends.
 async fn get_mcp(
     State(state): State<Arc<McpHttpState>>,
+    OriginalUri(uri): OriginalUri,
     headers: HeaderMap,
 ) -> Response {
-    if let Err(resp) = require_auth(&state, &headers) {
+    if let Err(resp) = require_auth(&state, &headers, uri.query()) {
         return resp;
     }
     // Require Accept: text/event-stream.
@@ -515,7 +572,7 @@ async fn get_mcp(
     if !accept.contains("text/event-stream") {
         return StatusCode::NOT_ACCEPTABLE.into_response();
     }
-    let session = match lookup_session(&state, &headers).await {
+    let session = match lookup_session(&state, &headers, uri.query()).await {
         Ok(s) => s,
         Err(resp) => return resp,
     };
@@ -550,6 +607,7 @@ async fn get_mcp(
         let state_c = state.clone();
         let session_c = session.clone();
         let sid_c = sid.clone();
+        let binding_generation = session.binding_generation.load(Ordering::SeqCst);
         // Long-lived push via channel: producer pulls facade events and exits
         // when the transport session is deleted or the SSE consumer drops
         // (send fails → disconnect-cancels-turn).
@@ -566,16 +624,72 @@ async fn get_mcp(
                         }
                     }
                 }
-                Err(()) => return,
+                Err(_) => {
+                    // The cursor can expire between the preflight check above
+                    // and this first buffer read. Do not turn that race into a
+                    // silent clean disconnect: the client must receive an
+                    // explicit resumption error and reconnect from a snapshot.
+                    let last = session_c.last_event_id();
+                    let min = session_c.min_retained_event_id.load(Ordering::SeqCst);
+                    let error = replay_resumption_error(after, last, min);
+                    if tx.send(error).await.is_err() {
+                        interrupt_active_turn(&state_c, &session_c, &sid_c).await;
+                    }
+                    return;
+                }
             }
             loop {
+                if session_c.binding_generation.load(Ordering::SeqCst) != binding_generation {
+                    let last = session_c.last_event_id();
+                    let error = McpSessionEvent {
+                        id: last,
+                        event_type: "resumption_error".to_owned(),
+                        data: json!({
+                            "error": "resumption_error",
+                            "code": "session_rebound",
+                            "message": "Tower session binding changed; reconnect from a new snapshot.",
+                            "sessionLastEventId": last,
+                        })
+                        .to_string(),
+                    };
+                    let _ = tx.send(error).await;
+                    return;
+                }
                 if !state_c.sessions.lock().unwrap().contains_key(&sid_c) {
                     break;
                 }
-                pull_facade_events(&state_c, &session_c).await;
+                if let Err(err) = pull_facade_events(&state_c, &session_c).await {
+                    let last = session_c.last_event_id();
+                    let message = replay_error_message(err.code);
+                    let error = McpSessionEvent {
+                        id: last,
+                        event_type: "resumption_error".to_owned(),
+                        data: json!({
+                            "error": "resumption_error",
+                            "code": err.code,
+                            "message": message,
+                            "sessionLastEventId": last,
+                        })
+                        .to_string(),
+                    };
+                    let _ = tx.send(error).await;
+                    return;
+                }
                 let pending = match session_c.events_after(after) {
                     Ok(p) => p,
-                    Err(()) => break,
+                    Err(_) => {
+                        // The buffer may expire while this stream is already
+                        // open. Tell the client to resync instead of ending
+                        // silently, which would otherwise look like a clean
+                        // disconnect and lose the gap signal.
+                        let last = session_c.last_event_id();
+                        let min = session_c.min_retained_event_id.load(Ordering::SeqCst);
+                        let error = replay_resumption_error(after, last, min);
+                        if tx.send(error).await.is_err() {
+                            interrupt_active_turn(&state_c, &session_c, &sid_c).await;
+                        }
+                        return;
+                    }
                 };
                 if pending.is_empty() {
                     tokio::select! {
@@ -614,18 +728,40 @@ async fn get_mcp(
     sse.into_response()
 }
 
+/// Build the transport-level signal for a replay cursor that can no longer be
+/// resumed. Keeping this shape shared by the initial-read race and the
+/// long-lived polling path prevents either path from silently dropping a gap.
+fn replay_resumption_error(after: u64, last: u64, min_retained: u64) -> McpSessionEvent {
+    McpSessionEvent {
+        id: last,
+        event_type: "resumption_error".to_owned(),
+        data: json!({
+            "error": "resumption_error",
+            "lastEventId": after,
+            "sessionLastEventId": last,
+            "minRetainedEventId": min_retained,
+        })
+        .to_string(),
+    }
+}
+
 /// `DELETE /mcp` — terminate the transport session; interrupt any active turn
 /// (C4-F F-1 disconnect-cancels-turn).
 async fn delete_mcp(
     State(state): State<Arc<McpHttpState>>,
+    OriginalUri(uri): OriginalUri,
     headers: HeaderMap,
 ) -> Response {
-    if let Err(resp) = require_auth(&state, &headers) {
+    if let Err(resp) = require_auth(&state, &headers, uri.query()) {
         return resp;
     }
-    let sid = match headers.get(MCP_SESSION_HEADER).and_then(|h| h.to_str().ok()) {
-        Some(s) => s.to_owned(),
-        None => return StatusCode::BAD_REQUEST.into_response(),
+    // DELETE has the same session-bound authorization contract as GET/POST:
+    // validate the negotiated bearer fingerprint and Tower instance before
+    // removing anything. Checking only the current global bearer would let a
+    // stale or foreign session id be deleted after a reconfiguration.
+    let (sid, _) = match lookup_session(&state, &headers, uri.query()).await {
+        Ok(session) => session,
+        Err(resp) => return resp,
     };
     let removed = state.sessions.lock().unwrap().remove(&sid);
     let Some(session) = removed else {
@@ -683,7 +819,7 @@ async fn dispatch_jsonrpc(
                 "tools": xai_grok_tower_tools::TOWER_TOOL_DESCRIPTORS.iter().map(|d| json!({
                     "name": d.name,
                     "description": d.description,
-                    "inputSchema": {"$ref": d.input_schema_ref},
+                    "inputSchema": xai_grok_tower_tools::tool_schema(d.name, false).unwrap_or_else(|| json!({"type":"object"})),
                 })).collect::<Vec<_>>()
             }
         }),
@@ -705,10 +841,19 @@ async fn dispatch_jsonrpc(
                     // facade events for the right session.
                     if let Some((_, s)) = session {
                         if let Some(tsid) = result.get("sessionId").and_then(Value::as_str) {
-                            *s.tower_session_id.lock().unwrap() = Some(tsid.to_owned());
+                            s.bind_tower_session(tsid.to_owned()).await;
                         }
-                        // Track in-flight turn for disconnect-cancels-turn.
-                        if let Some(tid) = result
+                        // Track only non-terminal turns for disconnect/TTL
+                        // cancellation. Tool adapters may include the
+                        // historical `turnId` in a completed result; treating
+                        // that identifier as active would interrupt a turn
+                        // that has already finished when the MCP session is
+                        // later deleted or evicted.
+                        let is_completed = result.get("state").and_then(Value::as_str)
+                            == Some("completed");
+                        if is_completed {
+                            *s.active_turn_id.lock().unwrap() = None;
+                        } else if let Some(tid) = result
                             .get("turnId")
                             .or_else(|| result.get("turn").and_then(|t| t.get("turnId")))
                             .and_then(Value::as_str)
@@ -718,8 +863,10 @@ async fn dispatch_jsonrpc(
                         s.event_notify.notify_waiters();
                     }
                     // Pull fresh facade events into the SSE buffer after mutations.
-                    if let Some((_, s)) = session {
-                        pull_facade_events(state, s).await;
+                    if let Some((_, s)) = session
+                        && let Err(err) = pull_facade_events(state, s).await
+                    {
+                        record_pull_error(s, err);
                     }
                     json!({
                         "jsonrpc":"2.0","id":id,
@@ -733,7 +880,7 @@ async fn dispatch_jsonrpc(
                     "jsonrpc":"2.0","id":id,
                     "result": {
                         "content": [{"type":"text","text": format!("{}: {}", err.code, err.message)}],
-                        "structuredContent": {"code": err.code, "message": err.message},
+                        "structuredContent": tool_error_json(&err),
                         "isError": true
                     }
                 }),
@@ -749,26 +896,87 @@ async fn dispatch_jsonrpc(
 /// Pull new facade events for the bound Tower session into the transport
 /// session's event log. Each runtime event becomes one SSE event with a
 /// monotonic transport-session-scoped id.
-async fn pull_facade_events(state: &Arc<McpHttpState>, session: &Arc<McpSession>) {
+async fn pull_facade_events(
+    state: &Arc<McpHttpState>,
+    session: &Arc<McpSession>,
+) -> Result<(), xai_grok_tower::RuntimeError> {
+    // Keep cursor read, replay, append, and cursor advance as one per-session
+    // critical section. The HTTP POST and SSE paths intentionally share this
+    // helper and may otherwise race on the same replay page.
+    let _pull_guard = session.replay_pull_lock.lock().await;
     let tower_session_id = match session.tower_session_id.lock().unwrap().clone() {
         Some(s) => s,
-        None => return,
+        None => return Ok(()),
     };
     let after = *session.last_replayed_seq.lock().unwrap();
+    let history_epoch = session.history_epoch.lock().unwrap().clone();
     let cursor = xai_grok_app_server_protocol::SubscribeParams {
         session_id: tower_session_id.clone(),
         after_event_seq: xai_grok_app_server_protocol::WireCounter::new(after),
-        history_epoch: None,
+        history_epoch,
     };
-    let page = match state.runtime.replay(cursor).await {
-        Ok(p) => p,
-        Err(_) => return,
-    };
+    let page = state.runtime.replay(cursor).await?;
+    let snapshot_was_seen = session.snapshot_replayed.swap(true, Ordering::SeqCst);
     for event in page.events {
+        let repeated_snapshot = if let xai_grok_tower::RuntimeEvent::SessionChanged(
+            ref session_snapshot,
+        ) = event
+        {
+            *session.history_epoch.lock().unwrap() = Some(session_snapshot.history_epoch.clone());
+            let mut known_snapshot = session.snapshot_session.lock().unwrap();
+            let repeated = snapshot_was_seen && after == 0 && known_snapshot.as_ref()
+                == Some(session_snapshot);
+            // Keep the first snapshot identity stable. Later real
+            // SessionChanged events must not replace it, otherwise a repeated
+            // synthetic snapshot could be mistaken for a new event.
+            if known_snapshot.is_none() {
+                *known_snapshot = Some(session_snapshot.clone());
+            }
+            repeated
+        } else {
+            false
+        };
+        if repeated_snapshot {
+            continue;
+        }
         let (event_type, data) = runtime_event_to_json(event);
         session.append_event(event_type, data);
     }
     *session.last_replayed_seq.lock().unwrap() = page.replayed_through.as_u64();
+    Ok(())
+}
+
+/// Keep replay diagnostics useful without forwarding storage paths or other
+/// runtime details through the public SSE stream.
+fn replay_error_message(code: &str) -> &'static str {
+    match code {
+        "epoch_mismatch" | "resync_required" | "cursor_too_old" => {
+            "Replay cursor is no longer valid; reconnect from a new snapshot."
+        }
+        _ => "Replay is unavailable; reconnect from a new snapshot.",
+    }
+}
+
+/// Convert a replay failure observed during POST dispatch into a transport
+/// event. The JSON-RPC response may still describe a successful tool call, but
+/// the SSE consumer must not be left believing its cursor is complete. Keep
+/// the runtime message private; clients only need the stable error code and
+/// cursor coordinates needed to resynchronize.
+fn record_pull_error(session: &McpSession, err: xai_grok_tower::RuntimeError) {
+    let after = *session.last_replayed_seq.lock().unwrap();
+    let last = session.last_event_id();
+    let min_retained = session.min_retained_event_id.load(Ordering::SeqCst);
+    session.append_event(
+        "resumption_error".to_owned(),
+        json!({
+            "error": "resumption_error",
+            "code": err.code,
+            "lastEventId": after,
+            "sessionLastEventId": last,
+            "minRetainedEventId": min_retained,
+        })
+        .to_string(),
+    );
 }
 
 fn runtime_event_to_json(
@@ -793,14 +1001,23 @@ fn runtime_event_to_json(
 // Auth / validation helpers.
 // ---------------------------------------------------------------------------
 
-fn require_auth(state: &McpHttpState, headers: &HeaderMap) -> Result<(), Response> {
+fn require_auth(
+    state: &McpHttpState,
+    headers: &HeaderMap,
+    query: Option<&str>,
+) -> Result<(), Response> {
     if !state.require_auth {
         return Ok(());
     }
     let auth = headers
         .get(header::AUTHORIZATION)
         .and_then(|h| h.to_str().ok());
-    if validate_http_bearer(auth, &state.bearer_token).is_err() {
+    let presented = presented_bearer(auth, query);
+    let valid = presented.as_deref().is_some_and(|token| {
+        let auth = format!("Bearer {token}");
+        validate_http_bearer(Some(&auth), &state.bearer_token).is_ok()
+    });
+    if !valid {
         return Err(unauthorized());
     }
     Ok(())
@@ -851,6 +1068,7 @@ fn check_protocol_version(headers: &HeaderMap) -> Result<(), Response> {
 async fn lookup_session(
     state: &Arc<McpHttpState>,
     headers: &HeaderMap,
+    query: Option<&str>,
 ) -> Result<(String, Arc<McpSession>), Response> {
     // R5-07: every lookup path must cancel in-flight Tower turns on TTL
     // expiry — not only initialize. Sync-only retain left orphans.
@@ -867,7 +1085,7 @@ async fn lookup_session(
     // opening bearer. A session negotiated with Tower A's token cannot be
     // reused once the server is reconfigured for Tower B's token.
     if state.require_auth {
-        let fingerprint = bearer_fingerprint(headers, &state.bearer_token);
+        let fingerprint = bearer_fingerprint(headers, query, &state.bearer_token);
         if fingerprint != session.bearer_fingerprint {
             return Err(unauthorized());
         }
@@ -911,14 +1129,15 @@ async fn evict_expired_sessions_and_interrupt(state: &Arc<McpHttpState>) {
     }
 }
 
-fn bearer_fingerprint(headers: &HeaderMap, expected: &str) -> u64 {
+fn bearer_fingerprint(headers: &HeaderMap, query: Option<&str>, expected: &str) -> u64 {
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};
-    let token = headers
+    let header = headers
         .get(header::AUTHORIZATION)
         .and_then(|h| h.to_str().ok())
-        .and_then(|s| s.strip_prefix("Bearer ").or_else(|| s.strip_prefix("bearer ")))
-        .unwrap_or("");
+        ;
+    let presented = presented_bearer(header, query);
+    let token = presented.as_deref().unwrap_or("");
     // Fingerprint the *expected* token against the presented token: if they
     // match (auth already passed), the fingerprint is stable for this bearer.
     // If they differ, the fingerprint is of the presented (wrong) token, which
@@ -974,6 +1193,54 @@ mod self_loop_canary {
         assert!(!production.contains("xai_grok_mcp::"));
         assert!(!production.contains("McpClient"));
         assert!(!production.contains("register_self"));
+    }
+}
+
+#[cfg(test)]
+mod replay_error_contract {
+    use super::{record_pull_error, replay_error_message, replay_resumption_error, McpSession};
+    use serde_json::Value;
+
+    #[test]
+    fn expired_cursor_error_is_explicit_and_safe() {
+        let event = replay_resumption_error(7, 12, 10);
+        assert_eq!(event.event_type, "resumption_error");
+        let data: Value = serde_json::from_str(&event.data).unwrap();
+        assert_eq!(data["error"], "resumption_error");
+        assert_eq!(data["lastEventId"], 7);
+        assert_eq!(data["sessionLastEventId"], 12);
+        assert_eq!(data["minRetainedEventId"], 10);
+        assert!(!event.data.contains("token"));
+    }
+
+    #[test]
+    fn post_pull_failure_becomes_safe_transport_event() {
+        let session = McpSession::new(0, "default".into(), 8);
+        record_pull_error(
+            &session,
+            xai_grok_tower::RuntimeError {
+                code: "epoch_mismatch",
+                message: "private storage path".into(),
+            },
+        );
+        let events = session.events.lock().unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].event_type, "resumption_error");
+        assert!(!events[0].data.contains("private storage path"));
+        let data: Value = serde_json::from_str(&events[0].data).unwrap();
+        assert_eq!(data["code"], "epoch_mismatch");
+    }
+
+    #[test]
+    fn replay_error_message_never_forwards_runtime_detail() {
+        assert_eq!(
+            replay_error_message("epoch_mismatch"),
+            "Replay cursor is no longer valid; reconnect from a new snapshot."
+        );
+        assert_eq!(
+            replay_error_message("storage_error"),
+            "Replay is unavailable; reconnect from a new snapshot."
+        );
     }
 }
 

@@ -181,3 +181,26 @@ Um epic só fica `concluído` quando todas as tasks obrigatórias estão `[x]`, 
 RED e GREEN são rastreáveis, os gates do epic e dependências passam, docs/status
 foram reconciliados e um delivery report aponta evidência. Skip obrigatório é
 `blocked/deferred`, nunca PASS.
+
+## Gate de prontidão do produto
+
+`cargo check`, testes com `FakeRuntime`, fixtures de adapter e scaffold estrutural
+podem concluir uma etapa de contrato, mas não tornam App Server, MCP ou Tower
+funcionais no binário. A prontidão do produto exige cumulativamente:
+
+1. composition root com `SessionActor` real e dependências obrigatórias;
+2. o mesmo runtime/registry compartilhado por App Server, MCP e tools;
+3. capability anunciada somente quando o caminho executável está pronto;
+4. schemas de entrada, saída e erro validados em cada fronteira;
+5. black-box contra subprocesso/listener reais, além da conformance com fake;
+6. restart, concorrência, recovery, auth e limites exercitados;
+7. smoke humano do binário instalado e evidência sem credenciais.
+
+Os gates terminais são `product_runtime_vertical`,
+`product_transport_conformance`, `mcp_independent_client`,
+`all_nine_product_parity`, `generated_sdk_product_black_box` e
+`remote_security_tls`. O release-hardening deve falhar se qualquer um estiver
+ausente, skipped, usar apenas fake ou não corresponder a uma capability anunciada.
+As autoridades são `_shared/product-runtime-readiness.md`,
+`_shared/contract-conformance-capability-truth.md` e
+`COMPLETION_COVERAGE.md`.

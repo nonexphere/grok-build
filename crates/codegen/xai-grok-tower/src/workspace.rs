@@ -10,11 +10,11 @@ pub fn authorize_workspace_path(
     workspace_root: &Path,
     allowed_root: &Path,
 ) -> Result<PathBuf, RuntimeError> {
-    let canonical = workspace_root.canonicalize().map_err(|e| RuntimeError {
+    let canonical = dunce::canonicalize(workspace_root).map_err(|e| RuntimeError {
         code: "invalid_workspace",
         message: format!("workspace resolution failed: {e}"),
     })?;
-    let allowed = allowed_root.canonicalize().map_err(|e| RuntimeError {
+    let allowed = dunce::canonicalize(allowed_root).map_err(|e| RuntimeError {
         code: "invalid_workspace",
         message: format!("allowed root resolution failed: {e}"),
     })?;
@@ -33,7 +33,7 @@ pub fn assert_workspace_stable(
     path: &Path,
     previously_authorized: &Path,
 ) -> Result<(), RuntimeError> {
-    let now = path.canonicalize().map_err(|e| RuntimeError {
+    let now = dunce::canonicalize(path).map_err(|e| RuntimeError {
         code: "invalid_workspace",
         message: format!("workspace re-resolution failed: {e}"),
     })?;

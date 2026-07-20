@@ -6,7 +6,7 @@ use std::sync::Arc;
 use serde_json::Value;
 use xai_grok_tower::GrokRuntimeFacade;
 
-use crate::{handle_mcp_jsonrpc, process_mcp_stdio_batch};
+use crate::handle_mcp_jsonrpc;
 
 pub async fn run_mcp_stdio<R, W, E>(
     runtime: Arc<dyn GrokRuntimeFacade>,
@@ -51,6 +51,7 @@ where
 #[cfg(test)]
 mod stdio_tests {
     use super::*;
+    use crate::process_mcp_stdio_batch;
     use serde_json::json;
     use xai_grok_tower::FakeRuntime;
 

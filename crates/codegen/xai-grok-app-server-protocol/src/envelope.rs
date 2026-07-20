@@ -133,8 +133,8 @@ fn validate_error_object(error: &Value) -> Result<(), EnvelopeError> {
         spec: &errors::INVALID_REQUEST,
         detail: "error must be an object".into(),
     })?;
-    if !obj.get("code").and_then(Value::as_i64).is_some()
-        && !obj.get("code").and_then(Value::as_u64).is_some()
+    if obj.get("code").and_then(Value::as_i64).is_none()
+        && obj.get("code").and_then(Value::as_u64).is_none()
     {
         return Err(EnvelopeError {
             spec: &errors::INVALID_REQUEST,

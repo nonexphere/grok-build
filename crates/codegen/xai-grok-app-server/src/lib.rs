@@ -35,7 +35,7 @@ pub trait AppServerProcessor: Send + Sync {
 #[cfg(test)]
 mod conformance_tests {
     use super::*;
-    use serde_json::{json, Value};
+    use serde_json::json;
     use std::sync::Arc;
     use xai_grok_app_server_protocol::PROTOCOL_VERSION;
     use xai_grok_tower::FakeRuntime;
@@ -168,7 +168,7 @@ mod adversarial_rejection_tests {
     // remote TLS + live provider smoke are HUMAN-deferred (see handoff C7-E).
     use super::*;
     use crate::transport::websocket::validate_ws_text_frame;
-    use serde_json::{json, Value};
+    use serde_json::json;
     use std::sync::Arc;
     use xai_grok_tower::FakeRuntime;
 

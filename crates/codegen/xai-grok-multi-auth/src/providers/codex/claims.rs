@@ -30,7 +30,7 @@ pub struct CodexClaims {
 fn decode_base64url(input: &str) -> Result<Vec<u8>, String> {
     use base64::Engine;
     let mut s = input.trim_end_matches('=').to_string();
-    while s.len() % 4 != 0 {
+    while !s.len().is_multiple_of(4) {
         s.push('=');
     }
     base64::engine::general_purpose::URL_SAFE

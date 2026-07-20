@@ -1,0 +1,3 @@
+HEAD=d0ea385
+BIN=/home/guilherme/github/grok-goblin/target/debug/grok-oss
+grok 0.2.102 (d0ea385)

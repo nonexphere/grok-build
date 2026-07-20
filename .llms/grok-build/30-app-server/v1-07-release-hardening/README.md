@@ -3,7 +3,7 @@
 Status: rascunho
 Prioridade: lançamento-bloqueante
 Estimativa: 2–4 semanas
-Depende de: `../v1-04-websocket-remote-auth/`, `../v1-05-history-replay/`, `../v1-06-approvals-control/`, `../../40-mcp-control-plane/v1-02-remote-security-conformance/`, `../../50-tower-agent-tools/v1-02-in-process-acl-mcp-parity/`, `../../60-sdk-typescript/v1-01-generated-sdk-client-examples/`
+Depende de: `../v1-04-websocket-remote-auth/`, `../v1-05-history-replay/`, `../v1-06-approvals-control/`, `../v1-09-capability-contract-product-conformance/`, `../../20-tower-core/v1-07-lifecycle-metadata-recovery/`, `../../40-mcp-control-plane/v1-04-mcp-contract-transport-completion/`, `../../40-mcp-control-plane/v1-05-token-scopes-tls-release/`, `../../50-tower-agent-tools/v1-03-nine-tool-semantic-completion/`, `../../60-sdk-typescript/v1-02-generated-sdk-black-box-ga/`
 Habilita: App Server v1 GA
 Skills relacionadas: `@code-audit`, `@release-checklist`, `@code-review`, `@delivery-report`
 Proveniência: [provenance: user-input, workspace, doc-tree, code, inferred]

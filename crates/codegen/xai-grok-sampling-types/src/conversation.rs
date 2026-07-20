@@ -2259,13 +2259,12 @@ pub fn apply_assistant_phases(
         return;
     }
     for item in items.iter_mut() {
-        if let ConversationItem::Assistant(a) = item {
-            if a.phase.is_none()
-                && let Some(id) = a.message_id.as_ref()
-                && let Some(phase) = phases_by_message_id.get(id)
-            {
-                a.phase = Some(*phase);
-            }
+        if let ConversationItem::Assistant(a) = item
+            && a.phase.is_none()
+            && let Some(id) = a.message_id.as_ref()
+            && let Some(phase) = phases_by_message_id.get(id)
+        {
+            a.phase = Some(*phase);
         }
     }
 }
@@ -2469,10 +2468,10 @@ pub fn patch_assistant_phases_on_request_body(
             || (entry.get("type").and_then(|v| v.as_str()) == Some("message")
                 && role == Some("assistant"));
         if is_assistant {
-            if let Some(phase) = phases[phase_idx] {
-                if let Some(obj) = entry.as_object_mut() {
-                    obj.insert("phase".into(), serde_json::json!(phase.as_str()));
-                }
+            if let Some(phase) = phases[phase_idx]
+                && let Some(obj) = entry.as_object_mut()
+            {
+                obj.insert("phase".into(), serde_json::json!(phase.as_str()));
             }
             // phase=None: leave wire entry without phase field
             phase_idx += 1;
@@ -2716,6 +2715,7 @@ fn create_response_from_parts(
 /// silently dropped (AUD-003). Failures panic: `From<&ConversationRequest>`
 /// cannot return `Result`; callers that need soft handling use
 /// [`try_build_responses_input`].
+#[allow(dead_code)]
 fn build_responses_input(req: &ConversationRequest) -> rs::InputParam {
     match try_build_responses_input(req) {
         Ok(param) => param,
@@ -2924,6 +2924,7 @@ pub fn hoist_system_messages_to_instructions(req: &mut rs::CreateResponse) -> Sy
     outcome
 }
 
+#[allow(dead_code)]
 fn easy_input_content_text(content: &rs::EasyInputContent) -> Option<String> {
     easy_input_content_text_with_non_text_count(content).0
 }
@@ -3175,11 +3176,11 @@ pub fn conversation_items_to_responses_input(
             }
             ConversationItem::OpaqueWire(o) => {
                 // Try MCP payload recovery if type says so.
-                if o.type_name == "mcp_call" {
-                    if let Ok(mcp) = serde_json::from_value::<rs::MCPToolCall>(o.payload.clone()) {
-                        out.push(rs::InputItem::Item(rs::Item::McpCall(mcp)));
-                        continue;
-                    }
+                if o.type_name == "mcp_call"
+                    && let Ok(mcp) = serde_json::from_value::<rs::MCPToolCall>(o.payload.clone())
+                {
+                    out.push(rs::InputItem::Item(rs::Item::McpCall(mcp)));
+                    continue;
                 }
                 return Err(format!(
                     "cannot resend opaque wire item type={} (not mapped to Responses input)",

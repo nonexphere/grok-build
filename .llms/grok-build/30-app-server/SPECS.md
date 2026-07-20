@@ -39,3 +39,16 @@ App Server/Tower release.
 Seguir [TDD](../TDD.md), incluindo transport conformance, replay, concurrency,
 security, fault/load e generated-schema drift.
 
+## 8. Product supervisor
+
+O caminho operacional recomendado é o contrato compartilhado
+[tower-command-runtime](../_shared/tower-command-runtime.md). `grok-oss tower`
+coordena o WS App Server e o MCP HTTP com binds separados, token compartilhado
+opcional e rollback atômico de startup.
+
+## 9. Capability truth
+
+Initialize anuncia somente operações executáveis no runtime product-wired. A
+conformance canônica é definida em
+[contract-conformance-capability-truth](../_shared/contract-conformance-capability-truth.md);
+FakeRuntime não habilita capability do binário.

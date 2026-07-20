@@ -1,0 +1,3 @@
+L4 verdict: SKIPPED/BLOCKED.
+Reason: no user-authorized live credentials or OAuth/browser flow available. The L2 scratch-home run honestly returned Not signed in.
+No token or credential was recorded.

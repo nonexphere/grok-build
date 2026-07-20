@@ -51,6 +51,14 @@ pub struct RuntimeError {
 
 #[async_trait]
 pub trait GrokRuntimeFacade: Send + Sync {
+    /// Capabilities that are executable by this concrete runtime instance.
+    /// Adapters must not advertise a method merely because the wire protocol
+    /// knows about it; product composition can honestly narrow this set until
+    /// a real actor factory is installed.
+    fn capabilities(&self) -> RuntimeCapabilities {
+        RuntimeCapabilities::all()
+    }
+
     async fn list_sessions(&self) -> Result<Vec<Session>, RuntimeError>;
     async fn read_session(
         &self,
@@ -68,6 +76,43 @@ pub trait GrokRuntimeFacade: Send + Sync {
         params: InteractionResponseParams,
     ) -> Result<(), RuntimeError>;
     async fn replay(&self, cursor: SubscribeParams) -> Result<ReplayPage, RuntimeError>;
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RuntimeCapabilities {
+    pub session_list: bool,
+    pub session_read: bool,
+    pub session_start: bool,
+    pub session_resume: bool,
+    pub session_fork: bool,
+    pub session_archive: bool,
+    pub session_subscribe: bool,
+    pub turn_start: bool,
+    pub turn_steer: bool,
+    pub turn_interrupt: bool,
+    pub interaction_respond: bool,
+    pub item_lifecycle: bool,
+    pub item_deltas: bool,
+}
+
+impl RuntimeCapabilities {
+    pub const fn all() -> Self {
+        Self {
+            session_list: true,
+            session_read: true,
+            session_start: true,
+            session_resume: true,
+            session_fork: true,
+            session_archive: true,
+            session_subscribe: true,
+            turn_start: true,
+            turn_steer: true,
+            turn_interrupt: true,
+            interaction_respond: true,
+            item_lifecycle: true,
+            item_deltas: true,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]

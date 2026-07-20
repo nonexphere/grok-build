@@ -12,8 +12,13 @@
 //! mutations (split authority).
 
 pub mod shell_session_actor_runtime;
+pub mod acp_host;
+pub use acp_host::{
+    persist_notifications, spawn_acp_host, AcpCommandHandle, AcpHostError, AcpHostHandle,
+    AcpNotificationSink,
+};
 pub use shell_session_actor_runtime::{
-    experimental_local_turn_spawn, RealSpawnFn, ResidentHandle, SessionSpawner,
+    experimental_acp_resident_spawn, experimental_local_turn_spawn, RealSpawnFn, ResidentHandle, SessionSpawner,
     ShellSessionActorRuntime,
 };
 
@@ -25,7 +30,7 @@ use xai_grok_app_server_protocol::{
     SessionReadParams, SessionReadResult, SessionResumeParams, SessionStartParams,
     SubscribeParams, Turn, TurnInterruptParams, TurnStartParams, TurnSteerParams,
 };
-use xai_grok_tower::{GrokRuntimeFacade, ReplayPage, RuntimeError, SessionRegistry};
+use xai_grok_tower::{GrokRuntimeFacade, ReplayPage, RuntimeCapabilities, RuntimeError, SessionRegistry};
 
 /// Marker documenting ownership for characterization tests.
 pub struct ShellRuntimeAdapterMarker;
@@ -60,6 +65,10 @@ impl ShellRuntimeAdapter {
 
 #[async_trait]
 impl GrokRuntimeFacade for ShellRuntimeAdapter {
+    fn capabilities(&self) -> RuntimeCapabilities {
+        self.inner.capabilities()
+    }
+
     async fn list_sessions(&self) -> Result<Vec<Session>, RuntimeError> {
         self.inner.list_sessions().await
     }

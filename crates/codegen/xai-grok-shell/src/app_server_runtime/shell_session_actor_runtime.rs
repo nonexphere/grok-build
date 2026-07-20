@@ -51,7 +51,7 @@
 
 use std::collections::HashMap;
 use std::future::Future;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -64,7 +64,7 @@ use xai_grok_app_server_protocol::{
     SessionResumeParams, SessionStartParams, SessionStatus, SubscribeParams, Turn, TurnInterruptParams,
     TurnKind, TurnStartParams, TurnStatus, TurnSteerParams, WireCounter,
 };
-use xai_grok_tower::{GrokRuntimeFacade, ReplayPage, RuntimeError, RuntimeEvent};
+use xai_grok_tower::{GrokRuntimeFacade, ReplayPage, RuntimeCapabilities, RuntimeError, RuntimeEvent};
 
 use crate::session::commands::{PromptCompletionKind, PromptTurnOk, SessionCommand};
 use crate::session::handle::SessionHandle;
@@ -183,6 +183,193 @@ pub type RealSpawnFn = Arc<
         + Send
         + Sync,
 >;
+
+/// Build a real ACP-backed command bridge for one session.
+///
+/// This is an integration seam, not the default product factory yet: the ACP
+/// host owns inference and JSONL notification persistence, while this bridge
+/// owns only the `Send` command mailbox and running-prompt slot. Interaction
+/// policy, item projection, and multi-command concurrency still require the
+/// remaining product gates before composition can inject it.
+pub fn experimental_acp_resident_spawn(root: PathBuf) -> RealSpawnFn {
+    Arc::new(move |info: Info, model_id: agent_client_protocol::ModelId| {
+        let root = root.clone();
+        Box::pin(async move {
+            use agent_client_protocol::Agent as _;
+            use crate::agent::config::Config as AgentConfig;
+            use crate::app_server_runtime::acp_host::spawn_acp_host;
+
+            let config = AgentConfig::default();
+            let auth_manager = Arc::new(config.create_auth_manager());
+            let mut host = spawn_acp_host(config, auth_manager, None, None).map_err(|error| {
+                RuntimeError {
+                    code: "spawn_failed",
+                    message: error.to_string(),
+                }
+            })?;
+            let init = host
+                .initialize(
+                    agent_client_protocol::InitializeRequest::new(
+                        agent_client_protocol::ProtocolVersion::V1,
+                    )
+                    .client_capabilities(
+                        agent_client_protocol::ClientCapabilities::new()
+                            .fs(agent_client_protocol::FileSystemCapabilities::new())
+                            .terminal(false),
+                    ),
+                )
+                .await
+                .map_err(|error| RuntimeError {
+                    code: "spawn_failed",
+                    message: error.to_string(),
+                })?;
+            let auth_method = init
+                .auth_methods
+                .iter()
+                .find(|method| method.id().0.as_ref() == "xai.api_key")
+                .ok_or_else(|| RuntimeError {
+                    code: "auth_unavailable",
+                    message: "ACP host did not advertise xai.api_key".into(),
+                })?;
+            host.authenticate(
+                agent_client_protocol::AuthenticateRequest::new(auth_method.id().clone()),
+            )
+            .await
+            .map_err(|error| RuntimeError {
+                code: "auth_failed",
+                message: error.to_string(),
+            })?;
+            let session = host
+                .new_session(
+                    agent_client_protocol::NewSessionRequest::new(
+                        PathBuf::from(&info.cwd),
+                    )
+                    .mcp_servers(vec![])
+                    .meta(
+                        serde_json::json!({
+                            "sessionId": info.id.0.to_string(),
+                            "modelId": model_id.0.to_string(),
+                        })
+                        .as_object()
+                        .cloned(),
+                    ),
+                )
+                .await
+                .map_err(|error| RuntimeError {
+                    code: "session_spawn_failed",
+                    message: error.to_string(),
+                })?;
+            if session.session_id != info.id {
+                return Err(RuntimeError {
+                    code: "session_identity_mismatch",
+                    message: "ACP host returned a different session identity".into(),
+                });
+            }
+            let storage = JsonlStorageAdapter::with_root(root);
+            storage
+                .init_session(&info, model_id.clone())
+                .await
+                .map_err(|error| RuntimeError {
+                    code: "persistence_failed",
+                    message: error.to_string(),
+                })?;
+            host.start_persistence(storage, info.clone())
+                .map_err(|error| RuntimeError {
+                    code: "persistence_failed",
+                    message: error.to_string(),
+                })?;
+
+            let (cmd_tx, mut cmd_rx) = mpsc::unbounded_channel::<SessionCommand>();
+            let acp_commands = host.command_handle();
+            let mut prompt_tasks = tokio::task::JoinSet::new();
+            let current_prompt_id = Arc::new(Mutex::new(None::<String>));
+            let pending_interactions: PendingInteractions =
+                Arc::new(Mutex::new(HashMap::new()));
+            let delivery_hub: InteractionDeliveryHub = Arc::new(Mutex::new(HashMap::new()));
+            let current_clone = current_prompt_id.clone();
+            let session_id = info.id.clone();
+            tokio::spawn(async move {
+                while let Some(command) = cmd_rx.recv().await {
+                    match command {
+                        SessionCommand::Prompt {
+                            prompt_id,
+                            prompt_blocks,
+                            respond_to,
+                            ..
+                        } => {
+                            if let Ok(mut current) = current_clone.lock() {
+                                *current = Some(prompt_id.clone());
+                            }
+                            let acp_commands = acp_commands.clone();
+                            let session_id = session_id.clone();
+                            let current = current_clone.clone();
+                            prompt_tasks.spawn(async move {
+                                let result = acp_commands
+                                    .prompt(agent_client_protocol::PromptRequest::new(
+                                        session_id,
+                                        prompt_blocks,
+                                    ))
+                                    .await
+                                    .map(|response| PromptTurnOk {
+                                        stop_reason: response.stop_reason,
+                                        total_tokens: 0,
+                                        turn_snapshot: None,
+                                        completion_kind: PromptCompletionKind::Completed,
+                                        structured_output: None,
+                                        usage: None,
+                                    })
+                                    .map_err(|error| {
+                                        agent_client_protocol::Error::internal_error()
+                                            .data(error.to_string())
+                                    });
+                                let _ = respond_to.send(result);
+                                if let Ok(mut current) = current.lock() {
+                                    *current = None;
+                                }
+                            });
+                        }
+                        SessionCommand::Interject { text, .. } => {
+                            let acp_commands = acp_commands.clone();
+                            let session_id = session_id.clone();
+                            prompt_tasks.spawn(async move {
+                                let _ = acp_commands
+                                .prompt(agent_client_protocol::PromptRequest::new(
+                                    session_id.clone(),
+                                    vec![agent_client_protocol::ContentBlock::Text(
+                                        agent_client_protocol::TextContent::new(text),
+                                    )],
+                                ))
+                                .await;
+                            });
+                        }
+                        SessionCommand::Cancel { .. } => {
+                            let _ = acp_commands
+                                .cancel(agent_client_protocol::CancelNotification::new(
+                                    session_id.clone(),
+                                ))
+                                .await;
+                            if let Ok(mut current) = current_clone.lock() {
+                                *current = None;
+                            }
+                        }
+                        SessionCommand::Shutdown => {
+                            while prompt_tasks.join_next().await.is_some() {}
+                            break;
+                        }
+                        _ => {}
+                    }
+                }
+                let _ = host.shutdown().await;
+            });
+            Ok(ResidentHandle {
+                cmd_tx,
+                current_prompt_id,
+                pending_interactions: Some(pending_interactions),
+                delivery_hub: Some(delivery_hub),
+            })
+        })
+    })
+}
 
 /// **Test/fixture-only** offline turn factory (R5-01).
 ///
@@ -378,6 +565,22 @@ pub struct ShellSessionActorRuntime {
 }
 
 impl ShellSessionActorRuntime {
+    fn sync_directory_metadata(dir: &Path) -> std::io::Result<()> {
+        // Unix exposes directory handles for durable metadata flushes. The
+        // Windows standard library has no portable equivalent; the published
+        // file itself is still synced there, so do not make every durable
+        // update fail merely because the directory handle cannot be opened.
+        #[cfg(unix)]
+        {
+            std::fs::File::open(dir).and_then(|dir_file| dir_file.sync_all())
+        }
+        #[cfg(not(unix))]
+        {
+            let _ = dir;
+            Ok(())
+        }
+    }
+
     /// Build a real port rooted at `root` (product: `grok_home()`; tests: TempDir).
     ///
     /// Uses the `ProductionSpawner` with no real spawn function, which honestly
@@ -516,11 +719,13 @@ impl ShellSessionActorRuntime {
 
     /// Durable start-session idempotency claim path (R4-05).
     fn idempotency_claim_path(&self, key: &str) -> PathBuf {
-        use std::collections::hash_map::DefaultHasher;
-        use std::hash::{Hash, Hasher};
-        let mut h = DefaultHasher::new();
-        key.hash(&mut h);
-        let name = format!("{:016x}.json", h.finish());
+        // Use a cryptographic digest for the on-disk name. `DefaultHasher` is
+        // not a collision-resistant identity primitive and its algorithm is
+        // not a stable cross-process contract. The original key remains in
+        // the claim digest payload; BLAKE3 only provides a safe, deterministic
+        // filename for that payload.
+        let digest = blake3::hash(key.as_bytes()).to_hex();
+        let name = format!("{digest}.json");
         // Storage root is private; reconstruct from a sentinel via adapter.
         // We keep claims under the same root as sessions via a relative path
         // on the first session dir's parent of "sessions".
@@ -582,15 +787,31 @@ impl ShellSessionActorRuntime {
         // rename-into-place. On Linux, `create_new` + write is not crash-safe
         // for readers; we write temp then `create_new` the final by renaming
         // only if the final does not exist (atomic claim).
+        // The temporary path must be unique per *attempt*, not merely per
+        // process: multiple independent runtimes can claim the same key from
+        // concurrent Tokio tasks in one process. Reusing a PID-only path lets
+        // one writer overwrite another writer's fully prepared body before
+        // the exclusive hard-link claim is attempted.
         let tmp = dir.join(format!(
             ".{}.tmp-{}",
             path.file_name().and_then(|s| s.to_str()).unwrap_or("claim"),
-            std::process::id()
+            uuid::Uuid::now_v7()
         ));
         std::fs::write(&tmp, &body).map_err(|e| RuntimeError {
             code: "internal_error",
             message: format!("idempotency temp write: {e}"),
         })?;
+        // The exclusive link below makes the winner selection atomic, but it
+        // does not by itself flush the claim body to stable storage. Sync the
+        // fully-written temporary file before publishing its name so a crash
+        // cannot leave a visible winner whose JSON is still only in page cache.
+        if let Err(e) = std::fs::File::open(&tmp).and_then(|file| file.sync_all()) {
+            let _ = std::fs::remove_file(&tmp);
+            return Err(RuntimeError {
+                code: "internal_error",
+                message: format!("idempotency temp sync: {e}"),
+            });
+        }
         match std::fs::hard_link(&tmp, &path).or_else(|_| {
             // Fallback when hard_link unsupported: exclusive create + copy.
             match std::fs::OpenOptions::new()
@@ -603,13 +824,33 @@ impl ShellSessionActorRuntime {
                     f.write_all(body.as_bytes()).map_err(|e| {
                         std::io::Error::new(std::io::ErrorKind::Other, e.to_string())
                     })?;
-                    f.sync_all().ok();
+                    // A fallback exclusive-create is still a durable claim
+                    // contract: do not report Won if the published body
+                    // could not be flushed to stable storage.
+                    f.sync_all().map_err(|e| {
+                        std::io::Error::new(std::io::ErrorKind::Other, e.to_string())
+                    })?;
                     Ok(())
                 }
                 Err(e) => Err(e),
             }
         }) {
             Ok(()) => {
+                // The claim body is synced above, but the directory entry
+                // also needs a metadata flush before a restart can reliably
+                // rediscover the winner by filename.
+                if let Err(e) = Self::sync_directory_metadata(&dir) {
+                    // The claim was already linked into the namespace, so a
+                    // failed directory flush must undo that publication too;
+                    // removing only the temp would leave a durable-looking
+                    // winner whose caller is about to roll back the session.
+                    let _ = std::fs::remove_file(&path);
+                    let _ = std::fs::remove_file(&tmp);
+                    return Err(RuntimeError {
+                        code: "internal_error",
+                        message: format!("idempotency directory sync: {e}"),
+                    });
+                }
                 let _ = std::fs::remove_file(&tmp);
                 self.idempotency.lock().unwrap().insert(
                     key.to_string(),
@@ -658,34 +899,109 @@ impl ShellSessionActorRuntime {
     }
 
     /// Per-session history epoch (R4-07 / R5-04).
-    fn history_epoch_for(&self, info: &Info) -> String {
+    fn history_epoch_for(&self, info: &Info) -> Result<String, RuntimeError> {
         let path = self.session_dir(info).join(HISTORY_EPOCH_FILE);
-        if let Ok(s) = std::fs::read_to_string(&path) {
-            let t = s.trim();
-            if !t.is_empty() {
-                return t.to_string();
+        match std::fs::read_to_string(&path) {
+            Ok(s) => {
+                let t = s.trim();
+                if t.is_empty() {
+                    return Err(RuntimeError {
+                        code: "internal_error",
+                        message: "history epoch file is empty".into(),
+                    });
+                }
+                Ok(t.to_string())
             }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                // Legacy sessions may predate the durable epoch sidecar.
+                Ok(HISTORY_EPOCH_DEFAULT.to_string())
+            }
+            Err(e) => Err(RuntimeError {
+                code: "internal_error",
+                message: format!("history epoch read: {e}"),
+            }),
         }
-        HISTORY_EPOCH_DEFAULT.to_string()
+    }
+
+    /// Persist a history epoch before exposing it in a projected session.
+    ///
+    /// Epochs are part of the replay contract, so silently swallowing an I/O
+    /// error would let callers advertise an identity that cannot survive a
+    /// restart. Write and sync a unique temporary file, then atomically
+    /// replace the epoch file.
+    fn write_history_epoch(&self, info: &Info, epoch: &str) -> Result<(), RuntimeError> {
+        let path = self.session_dir(info).join(HISTORY_EPOCH_FILE);
+        let parent = path.parent().ok_or_else(|| RuntimeError {
+            code: "internal_error",
+            message: "history epoch path has no parent".into(),
+        })?;
+        let tmp = parent.join(format!(".history_epoch.{}.tmp", uuid::Uuid::now_v7()));
+        let result = (|| {
+            let mut file = std::fs::File::create(&tmp).map_err(|e| RuntimeError {
+                code: "internal_error",
+                message: format!("history epoch create: {e}"),
+            })?;
+            use std::io::Write;
+            file.write_all(format!("{epoch}\n").as_bytes())
+                .map_err(|e| RuntimeError {
+                    code: "internal_error",
+                    message: format!("history epoch write: {e}"),
+                })?;
+            file.sync_all().map_err(|e| RuntimeError {
+                code: "internal_error",
+                message: format!("history epoch sync: {e}"),
+            })?;
+            if let Err(e) = std::fs::rename(&tmp, &path) {
+                // Windows does not replace an existing destination on rename.
+                // Preserve the same API there with a narrow remove-and-rename
+                // fallback; Unix keeps the atomic replacement path above.
+                if e.kind() == std::io::ErrorKind::AlreadyExists {
+                    std::fs::remove_file(&path).map_err(|remove_err| RuntimeError {
+                        code: "internal_error",
+                        message: format!("history epoch replace: {remove_err}"),
+                    })?;
+                    std::fs::rename(&tmp, &path).map_err(|rename_err| RuntimeError {
+                        code: "internal_error",
+                        message: format!("history epoch publish: {rename_err}"),
+                    })?;
+                } else {
+                    return Err(RuntimeError {
+                        code: "internal_error",
+                        message: format!("history epoch publish: {e}"),
+                    });
+                }
+            }
+            Self::sync_directory_metadata(parent).map_err(|e| RuntimeError {
+                code: "internal_error",
+                message: format!("history epoch directory sync: {e}"),
+            })?;
+            Ok(())
+        })();
+        if result.is_err() {
+            let _ = std::fs::remove_file(&tmp);
+        }
+        result
     }
 
     /// Ensure a unique history epoch file exists for a new session stream.
-    fn ensure_history_epoch(&self, info: &Info) {
+    fn ensure_history_epoch(&self, info: &Info) -> Result<String, RuntimeError> {
         let path = self.session_dir(info).join(HISTORY_EPOCH_FILE);
         if path.is_file() {
-            return;
+            // Return the value we validated instead of forcing callers to do
+            // another fallible read after publishing an idempotency claim.
+            return self.history_epoch_for(info);
         }
         let epoch = format!("epoch_{}", uuid::Uuid::now_v7());
-        let _ = std::fs::write(path, format!("{epoch}\n"));
+        self.write_history_epoch(info, &epoch)?;
+        Ok(epoch)
     }
 
     /// Rotate the history epoch (invalidates prior cursors) when the stream
     /// identity changes — rewrite, truncate, or reconstruction (R5-04).
-    pub fn rotate_history_epoch(&self, info: &Info) -> String {
-        let path = self.session_dir(info).join(HISTORY_EPOCH_FILE);
+    pub fn rotate_history_epoch(&self, info: &Info) -> Result<String, RuntimeError> {
         let epoch = format!("epoch_{}", uuid::Uuid::now_v7());
-        let _ = std::fs::write(path, format!("{epoch}\n"));
-        epoch
+        self.write_history_epoch(info, &epoch)?;
+        Ok(epoch)
     }
 
     /// Apply residency result consistently (R5-02): hard spawn failures
@@ -713,7 +1029,7 @@ impl ShellSessionActorRuntime {
             .map_err(io_err_to_runtime)?;
         let binding = self.load_binding(&info).await;
         let archived = self.storage.is_archived(&info);
-        let epoch = self.history_epoch_for(&info);
+        let epoch = self.history_epoch_for(&info)?;
         Self::residency_result(self.ensure_resident(&info, &default_model_id()).await)?;
         Ok(project_summary_to_session(
             &summary,
@@ -775,6 +1091,15 @@ impl ShellSessionActorRuntime {
         {
             *g = None;
         }
+    }
+
+    /// Drop a speculative resident created before an idempotency loser is
+    /// discarded. Dropping the last command sender lets the actor thread
+    /// observe channel closure; the durable session row is removed separately
+    /// by the caller.
+    fn remove_resident(&self, session_id: &str) {
+        self.residents.lock().unwrap().remove(session_id);
+        self.last_spawn_error.lock().unwrap().remove(session_id);
     }
 
     /// Build the `unsupported` error returned by turn methods when no resident
@@ -1327,6 +1652,28 @@ fn project_updates(
 
 #[async_trait]
 impl GrokRuntimeFacade for ShellSessionActorRuntime {
+    fn capabilities(&self) -> RuntimeCapabilities {
+        // Storage-backed session/replay paths are executable today. Turn and
+        // interaction mutation remain unavailable until the composition root
+        // injects the real SessionActor factory; advertise that fact instead
+        // of claiming an unsupported product capability.
+        RuntimeCapabilities {
+            session_list: true,
+            session_read: true,
+            session_start: true,
+            session_resume: true,
+            session_fork: true,
+            session_archive: true,
+            session_subscribe: true,
+            turn_start: false,
+            turn_steer: false,
+            turn_interrupt: false,
+            interaction_respond: false,
+            item_lifecycle: false,
+            item_deltas: false,
+        }
+    }
+
     async fn list_sessions(&self) -> Result<Vec<Session>, RuntimeError> {
         let summaries = self
             .storage
@@ -1341,7 +1688,7 @@ impl GrokRuntimeFacade for ShellSessionActorRuntime {
         for s in &summaries {
             let binding = self.load_binding(&s.info).await;
             let archived = self.storage.is_archived(&s.info);
-            let epoch = self.history_epoch_for(&s.info);
+            let epoch = self.history_epoch_for(&s.info)?;
             sessions.push(project_summary_to_session(s, binding.as_ref(), archived, &epoch));
         }
         Ok(sessions)
@@ -1361,7 +1708,7 @@ impl GrokRuntimeFacade for ShellSessionActorRuntime {
         // and project it onto the Session row and every inferred Turn row.
         let binding = self.load_binding(&info).await;
         let archived = self.storage.is_archived(&info);
-        let epoch = self.history_epoch_for(&info);
+        let epoch = self.history_epoch_for(&info)?;
         let session = project_summary_to_session(&summary, binding.as_ref(), archived, &epoch);
         // R2: project Turn/Item from `updates.jsonl` via the shared projector
         // (same surface as R11 `replay` — no second buffer). PARTIAL: turn
@@ -1431,34 +1778,28 @@ impl GrokRuntimeFacade for ShellSessionActorRuntime {
             .init_session(&info, default_model_id())
             .await
             .map_err(io_err_to_runtime)?;
-        self.ensure_history_epoch(&info);
-        if let Some(binding) = &params.provider_binding {
-            self.write_binding(&info, binding).await?;
-        }
-        // R5-03: claim is the atomic authority. On Existing, discard the
-        // speculative session and return the winner's row.
-        match self.claim_idempotency(&params.idempotency_key, &session_id, &digest)? {
-            IdempotencyClaim::Existing {
-                session_id: winner_id,
-            } => {
+        let epoch = match self.ensure_history_epoch(&info) {
+            Ok(epoch) => epoch,
+            Err(e) => {
                 let _ = self.storage.delete_session(&info).await;
-                return self.load_existing_session_row(&winner_id).await;
+                return Err(e);
             }
-            IdempotencyClaim::Won => {}
+        };
+        if let Some(binding) = &params.provider_binding {
+            if let Err(e) = self.write_binding(&info, binding).await {
+                let _ = self.storage.delete_session(&info).await;
+                return Err(e);
+            }
         }
-        // R5-02: hard spawn failures roll back; `unsupported` (no factory)
-        // keeps storage-only session — turns surface spawn detail via
-        // `no_resident_error`.
+        // R5-02: hard spawn failures roll back; intentional `unsupported`
+        // (no factory) keeps a storage-only session. Spawn before publishing
+        // the claim so another runtime cannot observe a winner that is being
+        // rolled back.
         match self.ensure_resident(&info, &default_model_id()).await {
             Ok(()) => {}
             Err(e) if e.code == "unsupported" => {}
             Err(e) => {
                 let _ = self.storage.delete_session(&info).await;
-                let _ = std::fs::remove_file(self.idempotency_claim_path(&params.idempotency_key));
-                self.idempotency
-                    .lock()
-                    .unwrap()
-                    .remove(&params.idempotency_key);
                 return Err(RuntimeError {
                     code: "spawn_failed",
                     message: format!(
@@ -1468,7 +1809,28 @@ impl GrokRuntimeFacade for ShellSessionActorRuntime {
                 });
             }
         }
-        let epoch = self.history_epoch_for(&info);
+        // R5-03: claim is the atomic authority after speculative creation has
+        // reached a stable residency state. On Existing, discard both the
+        // speculative resident and its durable session row before returning
+        // the winner's row.
+        let claim = match self.claim_idempotency(&params.idempotency_key, &session_id, &digest) {
+            Ok(claim) => claim,
+            Err(e) => {
+                self.remove_resident(&session_id);
+                let _ = self.storage.delete_session(&info).await;
+                return Err(e);
+            }
+        };
+        match claim {
+            IdempotencyClaim::Existing {
+                session_id: winner_id,
+            } => {
+                self.remove_resident(&session_id);
+                let _ = self.storage.delete_session(&info).await;
+                return self.load_existing_session_row(&winner_id).await;
+            }
+            IdempotencyClaim::Won => {}
+        }
         Ok(project_summary_to_session(
             &summary,
             params.provider_binding.as_ref(),
@@ -1491,7 +1853,7 @@ impl GrokRuntimeFacade for ShellSessionActorRuntime {
             self.ensure_resident(&info, &summary.current_model_id).await,
         )?;
         let archived = self.storage.is_archived(&info);
-        let epoch = self.history_epoch_for(&info);
+        let epoch = self.history_epoch_for(&info)?;
         Ok(project_summary_to_session(
             &summary,
             binding.as_ref(),
@@ -1523,26 +1885,36 @@ impl GrokRuntimeFacade for ShellSessionActorRuntime {
             session_kind: Some("fork".to_string()),
             ..Default::default()
         };
-        self.storage
+        if let Err(e) = self
+            .storage
             .copy_session_data(&source_info, &target_info, options)
             .await
-            .map_err(io_err_to_runtime)?;
-        let summary = self
-            .storage
-            .load_summary(&target_info)
-            .await
-            .map_err(io_err_to_runtime)?;
+        {
+            let _ = self.storage.delete_session(&target_info).await;
+            return Err(io_err_to_runtime(e));
+        }
+        let summary = match self.storage.load_summary(&target_info).await {
+            Ok(summary) => summary,
+            Err(e) => {
+                let _ = self.storage.delete_session(&target_info).await;
+                return Err(io_err_to_runtime(e));
+            }
+        };
         // C5-C: the fork copy copies the `provider_binding.json` sidecar
         // (identifier-only, no secrets) from the source session dir, so the
         // forked session inherits the parent's binding. Re-load it from the
         // target's sidecar to project the inherited binding onto the forked
         // Session row (the copy is the authority; this read is the projection).
         let binding = self.load_binding(&target_info).await;
-        // R5-04: fork is a new stream identity — always mint a unique epoch
-        // (do not inherit the source cursor space).
-        let _ = std::fs::remove_file(self.session_dir(&target_info).join(HISTORY_EPOCH_FILE));
-        self.ensure_history_epoch(&target_info);
-        let epoch = self.history_epoch_for(&target_info);
+        // R5-04: fork is a new stream identity — rotate the copied epoch
+        // atomically instead of removing it and ignoring an I/O failure.
+        let epoch = match self.rotate_history_epoch(&target_info) {
+            Ok(epoch) => epoch,
+            Err(e) => {
+                let _ = self.storage.delete_session(&target_info).await;
+                return Err(e);
+            }
+        };
         // Forks start unarchived even if the source was archived (new identity).
         Ok(project_summary_to_session(
             &summary,
@@ -1787,30 +2159,71 @@ impl GrokRuntimeFacade for ShellSessionActorRuntime {
         // 5. Deliver the decision string via the delivery hub. The hub maps
         //    `interaction_id` → `oneshot::Sender` and is shared with the live
         //    actor via `SessionHandle::interaction_delivery_hub` (R5-09).
-        //    If no oneshot is registered, the pending entry was still removed
-        //    (first-answer-wins) but no parked future receives the decision —
-        //    return `interaction_not_deliverable` so callers are not silent.
-        let hub = resident.delivery_hub.as_ref().ok_or_else(|| RuntimeError {
-            code: "unsupported",
-            message: "resident has no interaction delivery hub".into(),
-        })?;
+        //    If no oneshot is registered, restore the pending entry so a later
+        //    retry can deliver it once the actor has parked its future.
+        let Some(hub) = resident.delivery_hub.as_ref() else {
+            // The resident advertised a pending interaction surface but no
+            // delivery hub. Preserve the pending entry so a later retry (or
+            // a correctly initialized actor) can still deliver it.
+            if let Some(kind) = removed {
+                pending
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .insert(params.interaction_id.clone(), kind);
+            }
+            return Err(RuntimeError {
+                code: "unsupported",
+                message: "resident has no interaction delivery hub".into(),
+            });
+        };
         let sender = {
             let mut map = hub.lock().unwrap_or_else(|e| e.into_inner());
             map.remove(&params.interaction_id)
         };
         match sender {
             Some(tx) => {
-                let _ = tx.send(params.decision.clone());
-                Ok(())
+                if tx.send(params.decision.clone()).is_ok() {
+                    Ok(())
+                } else {
+                    // A sender can remain in the hub after its parked future
+                    // has been cancelled. Treat that as a failed delivery,
+                    // not success, and restore the pending entry so a fresh
+                    // actor park can retry safely.
+                    if let Some(kind) = removed {
+                        pending
+                            .lock()
+                            .unwrap_or_else(|e| e.into_inner())
+                            .insert(params.interaction_id.clone(), kind);
+                    }
+                    Err(RuntimeError {
+                        code: "interaction_not_deliverable",
+                        message: format!(
+                            "Pending interaction '{}' receiver was closed before delivery.",
+                            params.interaction_id
+                        ),
+                    })
+                }
             }
-            None => Err(RuntimeError {
-                code: "interaction_not_deliverable",
-                message: format!(
-                    "Pending interaction '{}' had no parked oneshot registered \
-                     on the delivery hub (actor must park before respond).",
-                    params.interaction_id
-                ),
-            }),
+            None => {
+                // Do not consume a pending interaction when the actor has not
+                // parked its oneshot yet. The caller can retry after the
+                // reverse-request park completes; first-answer-wins applies
+                // only once a decision was actually deliverable.
+                if let Some(kind) = removed {
+                    pending
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .insert(params.interaction_id.clone(), kind);
+                }
+                Err(RuntimeError {
+                    code: "interaction_not_deliverable",
+                    message: format!(
+                        "Pending interaction '{}' had no parked oneshot registered \
+                         on the delivery hub (actor must park before respond).",
+                        params.interaction_id
+                    ),
+                })
+            }
         }
     }
 
@@ -1821,7 +2234,7 @@ impl GrokRuntimeFacade for ShellSessionActorRuntime {
             .load_summary(&info)
             .await
             .map_err(io_err_to_runtime)?;
-        let epoch = self.history_epoch_for(&info);
+        let epoch = self.history_epoch_for(&info)?;
         if let Some(expected) = &cursor.history_epoch {
             if expected.as_str() != epoch {
                 return Err(RuntimeError {
@@ -1921,5 +2334,18 @@ mod port_invariant_tests {
                 && !production.contains(": FakeRuntime"),
             "real port must not mix FakeRuntime authority"
         );
+    }
+
+    #[test]
+    fn shell_runtime_capabilities_do_not_advertise_unwired_actor_methods() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let runtime = ShellSessionActorRuntime::new(temp.path().to_path_buf());
+        let capabilities = runtime.capabilities();
+        assert!(capabilities.session_start);
+        assert!(capabilities.session_subscribe);
+        assert!(!capabilities.turn_start);
+        assert!(!capabilities.turn_steer);
+        assert!(!capabilities.turn_interrupt);
+        assert!(!capabilities.interaction_respond);
     }
 }

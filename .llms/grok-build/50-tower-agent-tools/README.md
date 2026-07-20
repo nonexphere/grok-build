@@ -20,5 +20,5 @@ fragmentadas; não há tools first-class de peer top-level Session.
 
 - [v1-01-tool-contract-and-facade](./v1-01-tool-contract-and-facade/)
 - [v1-02-in-process-acl-mcp-parity](./v1-02-in-process-acl-mcp-parity/)
+- [v1-03-nine-tool-semantic-completion](./v1-03-nine-tool-semantic-completion/) — fecha gaps live das nove tools
 - [v2-01-peer-messaging-study](./v2-01-peer-messaging-study/)
-

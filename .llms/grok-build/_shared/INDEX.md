@@ -2,6 +2,12 @@
 
 This is the canonical completion matrix for the 2026-07-18 contract-deepening pass. Status describes this pass only: DONE means the requested contract/schema/scaffold evidence exists, not that runtime business logic is implemented. PARTIAL names the exact remaining gap and why it is not faked. [provenance: review §11–§14]
 
+The 2026-07-19 product-completion ledger is
+[`COMPLETION_COVERAGE.md`](../COMPLETION_COVERAGE.md), supported by
+[`product-runtime-readiness.md`](./product-runtime-readiness.md) and
+[`contract-conformance-capability-truth.md`](./contract-conformance-capability-truth.md).
+Those artifacts supersede any inference that scaffold DONE means product-ready.
+
 The post-review corrections are recorded in
 [`ARCHITECTURE_CORRECTIONS.md`](./ARCHITECTURE_CORRECTIONS.md); they refine wire
 types, composition ownership, gates and release posture without changing the

@@ -10,7 +10,9 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use xai_grok_app_server::FacadeProcessor;
-use xai_grok_shell::app_server_runtime::{ShellRuntimeAdapter, ShellSessionActorRuntime};
+use xai_grok_shell::app_server_runtime::{
+    experimental_acp_resident_spawn, ShellRuntimeAdapter, ShellSessionActorRuntime,
+};
 use xai_grok_tower::{GrokRuntimeFacade, TowerInstanceId, TowerInstanceIdError};
 
 /// Build the experimental App Server processor for the product path.
@@ -38,13 +40,30 @@ pub fn experimental_app_server_processor_with_root(
     FacadeProcessor::new(Arc::new(adapter))
 }
 
+/// Build the App Server processor with the shell-owned ACP resident factory.
+///
+/// This is an explicit promotion seam, not the default product constructor:
+/// the ACP host can now be composed without reaching into shell internals, but
+/// the runtime still advertises mutation capabilities only after the remaining
+/// actor, Interaction, and replay gates prove the full contract.
+pub fn experimental_app_server_processor_with_acp_spawn(
+    root: std::path::PathBuf,
+) -> FacadeProcessor {
+    let spawn = experimental_acp_resident_spawn(root.clone());
+    let real: Arc<dyn GrokRuntimeFacade> = Arc::new(
+        ShellSessionActorRuntime::with_production_spawn(root, spawn),
+    );
+    let adapter = ShellRuntimeAdapter::inject(real);
+    FacadeProcessor::new(Arc::new(adapter))
+}
+
 // ---------------------------------------------------------------------------
 // C3-G: experimental App Server WebSocket listener product path.
 //
 // Feature-gated behind `app-server-ws` (pager-bin Cargo feature), which
 // enables the `websocket` feature on `xai-grok-app-server` and pulls the WS
-// test client. The default build does NOT enable this: the stdio / in-process
-// product path stays zero-network on the app-server side. The listener itself
+// test client. The default build includes this listener; the stdio / in-process
+// product path remains available alongside it. The listener itself
 // lives in `xai-grok-app-server::transport::ws_listener` (C3-B); this module
 // only wires it into the product composition root with the real
 // `ShellSessionActorRuntime`-backed processor.
@@ -89,10 +108,20 @@ pub fn app_server_ws_listener_config(
     bind: String,
     bearer_token: String,
 ) -> xai_grok_app_server::WsListenerConfig {
+    app_server_ws_listener_config_with_auth(bind, bearer_token, true)
+}
+
+/// Build the product WS config with an explicit authentication posture.
+#[cfg(feature = "app-server-ws")]
+pub fn app_server_ws_listener_config_with_auth(
+    bind: String,
+    bearer_token: String,
+    require_auth: bool,
+) -> xai_grok_app_server::WsListenerConfig {
     xai_grok_app_server::WsListenerConfig {
         bind,
         bearer_token,
-        require_auth: true,
+        require_auth,
         outbound_queue_cap: xai_grok_app_server::OUTBOUND_QUEUE_CAP,
     }
 }
@@ -111,8 +140,18 @@ pub async fn run_app_server_ws(
     bind: String,
     bearer_token: String,
 ) -> Result<xai_grok_app_server::WsListenerHandle, std::io::Error> {
+    run_app_server_ws_with_auth(bind, bearer_token, true).await
+}
+
+/// Start the product WS listener with an explicit authentication posture.
+#[cfg(feature = "app-server-ws")]
+pub async fn run_app_server_ws_with_auth(
+    bind: String,
+    bearer_token: String,
+    require_auth: bool,
+) -> Result<xai_grok_app_server::WsListenerHandle, std::io::Error> {
     let processor = experimental_app_server_processor();
-    let config = app_server_ws_listener_config(bind, bearer_token);
+    let config = app_server_ws_listener_config_with_auth(bind, bearer_token, require_auth);
     xai_grok_app_server::run_ws_listener(Arc::new(processor), config).await
 }
 
@@ -134,8 +173,8 @@ pub async fn run_app_server_ws_with_root(
 //
 // Feature-gated behind `mcp-streamable-http` (pager-bin Cargo feature), which
 // enables the `streamable-http` feature on `xai-grok-mcp-server` and pulls the
-// HTTP test client. The default build does NOT enable this: the stdio /
-// in-process product path stays zero-network on the MCP side. The listener
+// HTTP test client. The default build includes this listener; the stdio /
+// in-process product path remains available alongside it. The listener
 // itself lives in `xai-grok-mcp-server::transport::http_server` (C4-B); this
 // module only wires it into the product composition root with the real
 // `ShellSessionActorRuntime`-backed facade.
@@ -253,10 +292,21 @@ pub fn mcp_http_server_config(
     bearer_token: String,
     tower_instance_id: String,
 ) -> xai_grok_mcp_server::McpHttpConfig {
+    mcp_http_server_config_with_auth(bind, bearer_token, tower_instance_id, true)
+}
+
+/// Build the product MCP config with an explicit authentication posture.
+#[cfg(feature = "mcp-streamable-http")]
+pub fn mcp_http_server_config_with_auth(
+    bind: String,
+    bearer_token: String,
+    tower_instance_id: String,
+    require_auth: bool,
+) -> xai_grok_mcp_server::McpHttpConfig {
     xai_grok_mcp_server::McpHttpConfig {
         bind,
         bearer_token,
-        require_auth: true,
+        require_auth,
         max_message_bytes: xai_grok_mcp_server::DEFAULT_MAX_MESSAGE_BYTES,
         tower_instance_id,
         agent_type: "orchestrator".to_owned(),
@@ -282,8 +332,19 @@ pub async fn run_mcp_http(
     bearer_token: String,
     tower_instance_id: String,
 ) -> std::io::Result<xai_grok_mcp_server::McpHttpHandle> {
+    run_mcp_http_with_auth(bind, bearer_token, tower_instance_id, true).await
+}
+
+/// Start the product MCP listener with an explicit authentication posture.
+#[cfg(feature = "mcp-streamable-http")]
+pub async fn run_mcp_http_with_auth(
+    bind: String,
+    bearer_token: String,
+    tower_instance_id: String,
+    require_auth: bool,
+) -> std::io::Result<xai_grok_mcp_server::McpHttpHandle> {
     let runtime = experimental_mcp_http_runtime();
-    let config = mcp_http_server_config(bind, bearer_token, tower_instance_id);
+    let config = mcp_http_server_config_with_auth(bind, bearer_token, tower_instance_id, require_auth);
     xai_grok_mcp_server::run_mcp_http_server(runtime, config).await
 }
 
@@ -399,6 +460,47 @@ mod composition_tests {
         let processor = experimental_app_server_processor_with_root(temp.path().to_path_buf());
         // Smoke: the processor builds from the real port without panicking.
         let _ = processor;
+    }
+
+    #[test]
+    fn acp_composition_seam_builds_without_promoting_unverified_capabilities() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let processor = experimental_app_server_processor_with_acp_spawn(temp.path().to_path_buf());
+        // Construction must be side-effect free: the ACP host is created only
+        // when a resident is actually requested, and capability truth remains
+        // fail-closed until the actor gates are complete.
+        let _ = processor;
+    }
+
+    #[tokio::test]
+    async fn product_initialize_does_not_advertise_unwired_turn_methods() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let processor = experimental_app_server_processor_with_root(temp.path().to_path_buf());
+        let response = processor
+            .handle_line(
+                &json!({
+                    "jsonrpc":"2.0","id":1,"method":"initialize",
+                    "params":{
+                        "protocolVersion": PROTOCOL_VERSION,
+                        "clientInfo":{"name":"pager-bin","version":"0"},
+                        "capabilities":{}
+                    }
+                })
+                .to_string(),
+            )
+            .await
+            .unwrap()
+            .unwrap();
+        let value: serde_json::Value = serde_json::from_str(&response).unwrap();
+        assert_eq!(value["result"]["capabilities"]["sessions"]["start"], true);
+        assert_eq!(value["result"]["capabilities"]["turns"]["start"], false);
+        assert_eq!(value["result"]["capabilities"]["turns"]["steer"], false);
+        assert_eq!(value["result"]["capabilities"]["turns"]["interrupt"], false);
+        assert_eq!(value["result"]["capabilities"]["items"]["lifecycle"], false);
+        assert_eq!(value["result"]["capabilities"]["items"]["deltas"], false);
+        assert_eq!(value["result"]["capabilities"]["interactions"]["approvals"], false);
+        assert_eq!(value["result"]["capabilities"]["interactions"]["questions"], false);
+        assert_eq!(value["result"]["capabilities"]["interactions"]["mcpElicitation"], false);
     }
 }
 
@@ -888,6 +990,35 @@ mod mcp_http_composition_tests {
         (status, value, session_id)
     }
 
+    async fn post_json_query(
+        client: &reqwest::Client,
+        addr: std::net::SocketAddr,
+        query: &str,
+        body: &Value,
+    ) -> (reqwest::StatusCode, Value, Option<String>) {
+        let resp = client
+            .post(format!("http://{addr}/mcp?{query}"))
+            .header("content-type", "application/json")
+            .header("accept", "application/json, text/event-stream")
+            .json(body)
+            .send()
+            .await
+            .unwrap();
+        let status = resp.status();
+        let session_id = resp
+            .headers()
+            .get("mcp-session-id")
+            .and_then(|h| h.to_str().ok())
+            .map(|s| s.to_owned());
+        let text = resp.text().await.unwrap();
+        let value = if text.is_empty() {
+            Value::Null
+        } else {
+            serde_json::from_str(&text).unwrap_or(Value::Null)
+        };
+        (status, value, session_id)
+    }
+
     /// Black-box: the product composition root starts a real MCP HTTP listener
     /// on loopback, fail-closes on an empty bearer, authenticates a valid
     /// bearer, and routes `initialize` + `tools/list` + `tools/call` through
@@ -964,6 +1095,7 @@ mod mcp_http_composition_tests {
                     "name": "tower_agent_start",
                     "arguments": {
                         "workspaceRoot": temp.path().to_string_lossy(),
+                        "agentType": "grok-oss",
                         "idempotencyKey": "comp-mcp-1"
                     }
                 }
@@ -978,6 +1110,48 @@ mod mcp_http_composition_tests {
 
         // Clean shutdown: abort the accept loop so the test process exits.
         handle.join.abort();
+    }
+
+    #[tokio::test]
+    async fn mcp_http_composition_accepts_bearer_query_for_headerless_clients() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let handle = run_mcp_http_with_root(
+            temp.path().to_path_buf(),
+            "127.0.0.1:0".to_owned(),
+            TOKEN.to_owned(),
+            TOWER_ID.to_owned(),
+        )
+        .await
+        .unwrap();
+        let (status, body, session) = post_json_query(
+            &client(),
+            handle.addr,
+            &format!("bearer={TOKEN}"),
+            &init_request(1),
+        )
+        .await;
+        assert_eq!(status, reqwest::StatusCode::OK);
+        assert_eq!(body["result"]["protocolVersion"], MCP_PROTOCOL_VERSION);
+        assert!(session.is_some(), "query bearer must negotiate a session");
+        handle.join.abort();
+    }
+
+    #[cfg(feature = "app-server-ws")]
+    #[test]
+    fn product_configs_can_explicitly_disable_authentication() {
+        let ws = app_server_ws_listener_config_with_auth(
+            "127.0.0.1:0".to_owned(),
+            String::new(),
+            false,
+        );
+        assert!(!ws.require_auth);
+        let mcp = mcp_http_server_config_with_auth(
+            "127.0.0.1:0".to_owned(),
+            String::new(),
+            TOWER_ID.to_owned(),
+            false,
+        );
+        assert!(!mcp.require_auth);
     }
 
     /// Fail-closed bearer (F-2): the product config builder requires auth and
@@ -1106,4 +1280,3 @@ mod mcp_http_composition_tests {
         );
     }
 }
-

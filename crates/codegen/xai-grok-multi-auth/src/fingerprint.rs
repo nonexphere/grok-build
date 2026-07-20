@@ -31,7 +31,7 @@ pub fn compute_fingerprint(
     let chatgpt_user_id = account
         .metadata
         .get("chatgpt_user_id")
-        .or_else(|| account.subject.as_ref())
+        .or(account.subject.as_ref())
         .map(|s| s.as_str())
         .unwrap_or("");
     hasher.update(chatgpt_user_id.as_bytes());
@@ -40,7 +40,7 @@ pub fn compute_fingerprint(
     let chatgpt_account_id = account
         .metadata
         .get("chatgpt_account_id")
-        .or_else(|| account.provider_account_id.as_ref())
+        .or(account.provider_account_id.as_ref())
         .map(|s| s.as_str())
         .unwrap_or("");
     hasher.update(chatgpt_account_id.as_bytes());

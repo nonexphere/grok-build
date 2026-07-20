@@ -23,4 +23,7 @@ instance, workspace arbitrário por start e facade estável para novos clients.
 - [v1-02-multi-session-workspace-registry](./v1-02-multi-session-workspace-registry/)
 - [v1-03-multi-instance-daemon-modes](./v1-03-multi-instance-daemon-modes/)
 - [v1-04-operations-hardening](./v1-04-operations-hardening/)
-
+- [v1-05-tower-supervisor](./v1-05-tower-supervisor/) — `grok-oss tower`
+- [v1-06-canonical-session-actor-runtime](./v1-06-canonical-session-actor-runtime/) — P0 actor product-wired
+- [v1-07-lifecycle-metadata-recovery](./v1-07-lifecycle-metadata-recovery/) — state/metadata/recovery truth
+- [v1-08-product-session-host](./v1-08-product-session-host/) — ACP/LocalSet boundary for the real product actor (P0, pending)

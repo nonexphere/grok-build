@@ -29,15 +29,15 @@ use crate::token_manager::TokenManager;
 const OPENAI_ISSUER: &str = "https://auth.openai.com";
 
 /// Shared store + TokenManager per absolute grok home (single-flight refresh).
-static SHARED_MANAGERS: Lazy<DashMap<PathBuf, (Arc<dyn CredentialStore>, Arc<TokenManager>)>> =
+type SharedManager = (Arc<dyn CredentialStore>, Arc<TokenManager>);
+
+static SHARED_MANAGERS: Lazy<DashMap<PathBuf, SharedManager>> =
     Lazy::new(DashMap::new);
 
 fn make_store_and_manager(
     home: &Path,
 ) -> Result<(Arc<dyn CredentialStore>, Arc<TokenManager>), String> {
-    let home_key = home
-        .canonicalize()
-        .unwrap_or_else(|_| home.to_path_buf());
+    let home_key = dunce::canonicalize(home).unwrap_or_else(|_| home.to_path_buf());
     // Atomic entry: avoid check-then-act race that could insert two managers
     // for the same home and split in-process single-flight (AUD-007).
     use dashmap::mapref::entry::Entry;

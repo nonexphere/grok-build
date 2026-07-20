@@ -26,3 +26,9 @@ sempre sobre o mesmo registry/facade.
 Actor uniqueness, multi-client/session/workspace/instance, restart/reconnect e
 resource bounds conforme [TDD](../TDD.md).
 
+## 6. Product runtime e lifecycle truth
+
+O modo normal só fica ready quando a factory canônica do SessionActor está
+montada conforme [product-runtime-readiness](../_shared/product-runtime-readiness.md).
+Session rows preservam agentType, residency, provider binding e estado canônico;
+archive/resume/restart obedecem uma state machine explícita.

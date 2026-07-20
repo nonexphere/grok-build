@@ -35,6 +35,7 @@ fs2 = { workspace = true }
 webbrowser = { workspace = true }
 dirs = { workspace = true }
 once_cell = { workspace = true }
+dunce = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

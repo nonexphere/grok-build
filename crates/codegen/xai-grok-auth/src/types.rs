@@ -161,8 +161,9 @@ impl Default for ProviderAccountInfo {
 }
 
 /// Lifecycle status of a stored credential.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum CredentialStatus {
+    #[default]
     Ready,
     Expiring,
     Refreshing,
@@ -171,26 +172,15 @@ pub enum CredentialStatus {
     Corrupt,
 }
 
-impl Default for CredentialStatus {
-    fn default() -> Self {
-        Self::Ready
-    }
-}
-
 /// Which secret backend persists a credential's secret material.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum SecretBackendKind {
     Keyring,
     EncryptedFile,
+    #[default]
     File,
     Ephemeral,
     Legacy,
-}
-
-impl Default for SecretBackendKind {
-    fn default() -> Self {
-        Self::File
-    }
 }
 
 /// A stable 32-byte fingerprint of an account identity, used to detect

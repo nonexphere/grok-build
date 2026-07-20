@@ -2,6 +2,13 @@
 
 Snapshot auditado: `967161f5623b891611fc581a77008d29e9d4d87d`, 2026-07-18.
 
+> **Superseded para completion do produto.** Este arquivo prova somente a
+> completude estrutural do plano original. A auditoria live de 2026-07-19
+> encontrou gaps product-wired F-01..F-10. O ledger atual é
+> [COMPLETION_COVERAGE.md](./COMPLETION_COVERAGE.md) e o gate final só pode
+> ficar green após os epics corretivos 20/v1-06..07, 30/v1-09, 40/v1-04..05,
+> 50/v1-03 e 60/v1-02 terem cobertura executável.
+
 | Requisito do prompt | Evidência atual | Veredito |
 |---|---|---|
 | Root com roadmap/status/grafo/princípios | [`README.md`](./README.md) | provado |

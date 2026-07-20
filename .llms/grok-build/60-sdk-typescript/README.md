@@ -19,4 +19,4 @@ não há package, geração reproduzível ou client comprovado.
 ## Epics
 
 - [v1-01-generated-sdk-client-examples](./v1-01-generated-sdk-client-examples/)
-
+- [v1-02-generated-sdk-black-box-ga](./v1-02-generated-sdk-black-box-ga/) — geração real e listener black-box

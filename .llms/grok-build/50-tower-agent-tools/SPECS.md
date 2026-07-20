@@ -19,3 +19,8 @@ não mutável pelo modelo. Bearer client externo é gate distinto.
 
 Estuda messaging direto peer↔peer preservando ACL e mailbox, sem bloquear v1.
 
+## 5. Semantic completion
+
+Nenhuma tool usa placeholder/default para campo obrigatório. Todas preservam
+metadata, structured input, epoch/cursor, state transitions, bounds, errors e
+output schema conforme o contrato compartilhado.

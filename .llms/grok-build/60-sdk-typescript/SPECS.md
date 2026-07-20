@@ -19,3 +19,8 @@ example fica no programa MCP, não duplica SDK protocol.
 
 `[PROPOSED] packages/grok-oss-app-server`; uso local no MVP, publish npm após freeze.
 
+## 5. Completion target
+
+Types e method bindings são gerados, não mirror manual. Clean regeneration é
+determinística e o client Node passa start/send/stream/history/interrupt contra
+stdio e WebSocket product-wired antes de GA.

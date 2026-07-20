@@ -1,5 +1,7 @@
 //! Streamable HTTP/SSE adapter surface for MCP control plane.
-//! Bearer tokens are accepted from the Authorization header only.
+//! Bearer tokens are accepted from the Authorization header or the explicit
+//! `?bearer=` compatibility query parameter for clients that cannot configure
+//! custom HTTP headers.
 
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -9,7 +11,7 @@ use serde_json::{json, Value};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HttpAuthError;
 
-/// Validate Authorization: Bearer for Streamable HTTP. Never accept query tokens.
+/// Validate Authorization: Bearer for Streamable HTTP.
 pub fn validate_http_bearer(header: Option<&str>, expected: &str) -> Result<(), HttpAuthError> {
     let Some(header) = header else {
         return Err(HttpAuthError);
@@ -31,6 +33,29 @@ pub fn validate_http_bearer(header: Option<&str>, expected: &str) -> Result<(), 
         return Err(HttpAuthError);
     }
     Ok(())
+}
+
+/// Resolve the bearer presented by a client. A valid Authorization header has
+/// precedence; the query parameter is a compatibility path for hosted MCP
+/// clients that only accept a URL. The caller still compares the result to the
+/// configured expected token using the same constant-time validator.
+pub fn presented_bearer(header: Option<&str>, query: Option<&str>) -> Option<String> {
+    if let Some(header) = header {
+        return Some(
+            header
+                .strip_prefix("Bearer ")
+                .or_else(|| header.strip_prefix("bearer "))
+                .unwrap_or("")
+                .to_owned(),
+        );
+    }
+    query.and_then(query_bearer)
+}
+
+/// Extract and percent-decode the explicit `bearer` query parameter.
+pub fn query_bearer(query: &str) -> Option<String> {
+    url::form_urlencoded::parse(query.as_bytes())
+        .find_map(|(key, value)| (key == "bearer").then(|| value.into_owned()))
 }
 
 pub fn reject_token_query(query: &str) -> Result<(), HttpAuthError> {
@@ -87,6 +112,7 @@ mod streamable_http_tests {
         assert!(validate_http_bearer(Some("Bearer ab"), "abc").is_err());
         assert!(reject_token_query("foo=1").is_ok());
         assert!(reject_token_query("token=secret").is_err());
+        assert_eq!(query_bearer("bearer=abc"), Some("abc".to_owned()));
 
         let table = SseResumeTable::new();
         assert_eq!(table.resume_from("s1", None), 0);
@@ -109,6 +135,7 @@ mod auth_failures_tests {
         }
         assert!(validate_http_bearer(Some("Bearer token-value"), expected).is_ok());
         assert!(reject_token_query("access_token=1").is_err());
+        assert_eq!(presented_bearer(None, Some("bearer=token-value")), Some(expected.to_owned()));
     }
 
     #[test]

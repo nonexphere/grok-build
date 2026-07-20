@@ -284,8 +284,8 @@ Estes **não** estão materializados como `.agents/issues/*`. A próxima IA deve
 
 | ID sugerido | Severity | Type | Finding |
 |-------------|----------|------|---------|
-| ARCH-AS-001 | Critical (product) | architecture-gap | **Zero** implementação App Server; só specs |
-| ARCH-MCP-001 | High | architecture-gap | Sem MCP **server** de orquestração de sessões |
+| ARCH-AS-001 | Critical (product) | architecture-gap | **Implementação local parcial** existe (`xai-grok-app-server` + adapter Shell); falta wiring product-wired do actor canônico com credenciais reais |
+| ARCH-MCP-001 | High | architecture-gap | MCP **server** existe (`xai-grok-mcp-server`), mas a integração de orquestração de sessões ainda depende do actor canônico e permanece parcial |
 | ARCH-TOWER-001 | High | architecture-gap | Sem peer sessions; orquestração limitada a subagent depth=1 |
 | ARCH-ACL-001 | High | security / product | Sem modelo de capability “tower” por agent type |
 | ARCH-FLAG-001 | Medium | config-gap | Sem flags CLI de co-start app-server/MCP/tokens |
@@ -988,15 +988,22 @@ Quando o checklist mínimo estiver respondido, o Codex pode planejar sem inventa
 O **grok-oss** já tem:
 - fork operacional com multi-provider/Codex **substancialmente implementado** (offline path),
 - identidade de produto (`grok-oss`, `~/.grok-oss`, npm layout),
-- runtime maduro (SessionActor, leader multi-client, ACP, subagents, MCP **client**),
-- **planos detalhados mas não implementados** de App Server e Goal Runtime.
+  - runtime maduro (SessionActor, leader multi-client, ACP, subagents, MCP client)
+    e uma implementação local parcial de App Server/MCP server;
+  - wiring product-wired do actor canônico e integração completa de Tower ainda
+    permanecem abertos.
 
 O humano pede agora a **camada de plataforma**:
 1. App Server WebSocket + API TypeScript (estilo Codex),
 2. MCP de controle de sessões/agentes co-hospedado com flags,
 3. Agent Tower: sessões peer + comunicação + ACL por tipo de agent.
 
-O plano App Server em `changes/` + `.llms/grok-build/app-server/` é a **melhor base**, mas precisa ser **estendido** (MCP server + Tower + flags + identity grok-oss). Implementação de código ainda **não começou**. O maior risco de engenharia é **duplicar runtime/control planes**; o maior risco de produto é **privilege escalation** se a tower for liberada a todos os agents.
+O plano App Server em `changes/` + `.llms/grok-build/app-server/` continua sendo
+a base de contratos; a implementação local parcial já cobre adapters, MCP
+Streamable HTTP e isolamento Tower, mas ainda precisa do wiring product-wired
+do actor canônico, credenciais reais e validação operacional. O maior risco de
+engenharia é **duplicar runtime/control planes**; o maior risco de produto é
+**privilege escalation** se a tower for liberada a todos os agents.
 
 Issues abertas atuais são sobretudo **docs/ops/test honesty** (docs-001/002, testing-001, operations-001), não blockers de design da tower. Multi-provider 1.0 e BYOK são programas paralelos.
 
@@ -1486,4 +1493,3 @@ Proposta para você confirmar (SIM/ajustar):
 ---
 
 **Fim do handoff.**
-

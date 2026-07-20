@@ -233,6 +233,7 @@ impl FacadeProcessor {
             ));
         }
         self.initialized.store(true, Ordering::SeqCst);
+        let runtime = self.runtime.capabilities();
         let result = InitializeResult {
             protocol_version: PROTOCOL_VERSION.into(),
             server_info: ClientInfo {
@@ -242,26 +243,26 @@ impl FacadeProcessor {
             server_instance_id: self.server_instance_id.clone(),
             capabilities: ServerCapabilities {
                 sessions: SessionCapabilities {
-                    list: true,
-                    read: true,
-                    start: true,
-                    resume: true,
-                    fork: true,
-                    archive: true,
-                    subscribe: true,
+                    list: runtime.session_list,
+                    read: runtime.session_read,
+                    start: runtime.session_start,
+                    resume: runtime.session_resume,
+                    fork: runtime.session_fork,
+                    archive: runtime.session_archive,
+                    subscribe: runtime.session_subscribe,
                 },
                 turns: TurnCapabilities {
-                    start: true,
-                    steer: true,
-                    interrupt: true,
+                    start: runtime.turn_start,
+                    steer: runtime.turn_steer,
+                    interrupt: runtime.turn_interrupt,
                 },
                 items: ItemCapabilities {
-                    lifecycle: true,
-                    deltas: true,
+                    lifecycle: runtime.item_lifecycle,
+                    deltas: runtime.item_deltas,
                 },
                 interactions: InteractionCapabilities {
-                    approvals: true,
-                    questions: true,
+                    approvals: runtime.interaction_respond,
+                    questions: runtime.interaction_respond,
                     mcp_elicitation: false,
                 },
                 experimental: vec!["experimental-v2".into()],
@@ -459,11 +460,10 @@ mod processor_tests {
             .unwrap();
         let sub_v: Value = serde_json::from_str(&sub).unwrap();
         assert!(
-            sub_v["result"]["replay"]["events"]
+            !sub_v["result"]["replay"]["events"]
                 .as_array()
                 .unwrap()
-                .len()
-                >= 1
+                .is_empty()
         );
     }
 

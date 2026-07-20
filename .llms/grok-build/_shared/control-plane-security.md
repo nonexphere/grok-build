@@ -73,12 +73,27 @@ at the process or an explicitly documented trusted reverse proxy plus the HUMAN
 threat-model gate. This tightens release classification without changing the
 locked ability to run an explicitly requested unsafe development mode.
 
-## Explicitly deferred defenses
+## Completion target beyond the experimental MVP
 
-Fine-grained scopes, Origin checks, TLS/WSS termination, pairing/device approval,
-multi-user identity and expiring delegated tokens are future features. They must
-be additive and migration-tested; none is simulated by undocumented header
-conventions in MVP.
+The locked full-control bearer remains valid for local/experimental MVP
+compatibility. App Server + Tower completion and remote GA additionally require:
+
+- durable token IDs with create/list/revoke/rotate and connection revocation;
+- least-privilege scopes shared by App Server and MCP;
+- token material absent from URLs, cookies, argv, logs and default CLI output;
+- TLS/WSS at the process or a verified trusted reverse proxy contract;
+- migration/rollback from the legacy full-control token without silent
+  privilege expansion.
+
+These requirements are owned by `40-mcp-control-plane/v1-05-token-scopes-tls-release`.
+Until that epic and its HUMAN gate are complete, non-loopback remains
+experimental/unsafe and must not be advertised as production-ready.
+
+## Explicitly deferred from local MVP, required for remote GA
+
+Origin allowlists, pairing/device approval, multi-user identity and expiring
+delegated tokens remain future features. Scopes and TLS are no longer deferred
+from remote GA. No defense is simulated by undocumented header conventions.
 
 ## Limits and backpressure defaults
 

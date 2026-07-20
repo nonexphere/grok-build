@@ -1,0 +1,3 @@
+L3 verdict: BLOCKED.
+Reason: interactive PTY observability unavailable; tmux is not installed and no interactive-terminal MCP tool is configured in this session.
+Per human-product-test skill, no TUI PASS is claimed without pane/buffer capture.

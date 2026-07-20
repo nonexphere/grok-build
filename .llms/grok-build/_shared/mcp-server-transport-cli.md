@@ -15,7 +15,7 @@ Exact HTTP surface:
 
 | Request | Required headers | Behavior |
 |---|---|---|
-| `POST /mcp` | Bearer, JSON content type, Accept including JSON and SSE | JSON-RPC request/notification; JSON or SSE response per negotiation |
+| `POST /mcp` | Bearer header, JSON content type, Accept including JSON and SSE | JSON-RPC request/notification; JSON or SSE response per negotiation |
 | `GET /mcp` | Bearer, `Accept: text/event-stream`, optional `Last-Event-ID` | opens/resumes server event stream |
 | `DELETE /mcp` | Bearer + negotiated MCP session header | terminates that MCP transport session |
 
@@ -81,14 +81,11 @@ mode defaults to both loopback App Server WS and MCP HTTP. `--stdio` cannot
 coexist with MCP stdio because stdout has one framing owner. Any explicit
 non-loopback address emits the security warning and requires the release gate.
 
-Token CLI, when integration lands: `grok-oss tower token show-path`, `rotate`
-and `revoke-connections`. It never prints token material by default; `cat`-style
-access is a user filesystem action, not a product command.
-
-Token administration remains `[PROPOSED]`: handoff §14 did not freeze this UX.
-If it becomes MVP, D-TR.6 requires `grok-oss app-server tokens
-create|list|revoke`, with safe display IDs, one-time creation output and durable
-revocation specified before code. The scaffold implements no token CLI.
+Token administration is required for remote GA and owned by
+`40/v1-05-token-scopes-tls-release`: safe-ID create/list/revoke/rotate,
+one-time creation output, scopes and connection revocation. Exact UX remains a
+HUMAN freeze before implementation. Token material is never printed by default
+or accepted in URLs.
 
 ## Health and co-start
 

@@ -108,6 +108,11 @@ pub enum LoginInput {
 }
 
 /// The outcome of a `complete_login` step.
+// `Complete` intentionally carries the complete credential record by value:
+// callers consume it immediately and this public enum is part of the login
+// contract. Boxing it would add an allocation and change the construction API
+// solely to satisfy a layout lint.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
 pub enum LoginCompletion {
     Pending { retry_after: Duration },

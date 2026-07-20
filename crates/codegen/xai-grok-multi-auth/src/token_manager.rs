@@ -21,7 +21,7 @@ use thiserror::Error;
 use tokio::sync::Mutex;
 
 use xai_grok_auth::{
-    AuthProvider, CredentialBinding, CredentialKey, CredentialLockPurpose, CredentialSecret,
+    CredentialBinding, CredentialKey, CredentialLockPurpose, CredentialSecret,
     CredentialStore, CredentialUpdate, ProviderError, ProviderRegistry, SecretString,
     SentCredentialStamp, StoredCredential, TokenUseReason, UnauthorizedRecovery, ValidToken,
 };
