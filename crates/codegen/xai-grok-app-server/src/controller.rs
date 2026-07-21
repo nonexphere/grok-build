@@ -12,9 +12,7 @@ mod controller_lease_tests {
         let table = LeaseTable::new();
         let lease = table.grant("s", "ix", "c1", 1);
         assert_eq!(lease.lease_revision, WireCounter::new(1));
-        assert!(table
-            .resolve("s", "ix", "c1", &WireCounter::new(1))
-            .is_ok());
+        assert!(table.resolve("s", "ix", "c1", &WireCounter::new(1)).is_ok());
     }
 
     #[test]
@@ -41,9 +39,11 @@ mod controller_policy_tests {
         let table = LeaseTable::new();
         let lease = table.grant("s", "ix", "c1", 1);
         // After "disconnect", lease still requires explicit resolve — no auto path.
-        assert!(table
-            .resolve("s", "ix", "c1", &lease.lease_revision)
-            .is_ok());
+        assert!(
+            table
+                .resolve("s", "ix", "c1", &lease.lease_revision)
+                .is_ok()
+        );
     }
 
     #[test]

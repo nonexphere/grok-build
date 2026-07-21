@@ -179,9 +179,7 @@ mod entity_transition_tests {
             status: ItemStatus::Pending,
             created_at_ms: 1,
             body: ItemBody::UserMessage {
-                content: vec![crate::InputBlock::Text {
-                    text: "hi".into(),
-                }],
+                content: vec![crate::InputBlock::Text { text: "hi".into() }],
             },
         };
         let session_json = serde_json::to_value(&session).unwrap();
@@ -204,13 +202,9 @@ mod entity_transition_tests {
     fn entity_all_mvp_item_body_kinds_roundtrip() {
         let kinds = [
             ItemBody::UserMessage {
-                content: vec![crate::InputBlock::Text {
-                    text: "a".into(),
-                }],
+                content: vec![crate::InputBlock::Text { text: "a".into() }],
             },
-            ItemBody::AgentMessage {
-                text: "b".into(),
-            },
+            ItemBody::AgentMessage { text: "b".into() },
             ItemBody::ToolCall {
                 tool_name: "t".into(),
                 arguments: json!({}),

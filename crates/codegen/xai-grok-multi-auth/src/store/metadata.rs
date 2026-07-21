@@ -99,8 +99,8 @@ fn write_json_atomic<T: Serialize>(path: &Path, value: &T) -> Result<(), StoreEr
         fs::create_dir_all(parent).map_err(io_to_store)?;
     }
 
-    let bytes =
-        serde_json::to_vec_pretty(value).map_err(|e| StoreError::Backend(format!("serialize: {e}")))?;
+    let bytes = serde_json::to_vec_pretty(value)
+        .map_err(|e| StoreError::Backend(format!("serialize: {e}")))?;
 
     let tmp = path.with_extension(format!(
         "{}.{}.tmp",
@@ -198,10 +198,8 @@ pub fn recover_pending_txn(paths: &StorePaths) -> Result<(), StoreError> {
         }
         Err(e @ StoreError::Corrupt(_)) => {
             // Quarantine so operators can inspect; fail loud to the caller.
-            let quarantine = path.with_extension(format!(
-                "journal.quarantine.{}",
-                std::process::id()
-            ));
+            let quarantine =
+                path.with_extension(format!("journal.quarantine.{}", std::process::id()));
             if let Err(rename_err) = fs::rename(path, &quarantine) {
                 return Err(StoreError::Corrupt(format!(
                     "txn journal corrupt ({e}) and quarantine failed: {rename_err}"

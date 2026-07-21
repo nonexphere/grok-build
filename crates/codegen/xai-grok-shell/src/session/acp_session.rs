@@ -593,9 +593,8 @@ pub(crate) struct SessionActor {
     /// Pinned multi-provider (Codex) binding + stamp-holding bearer resolver
     /// for the current session/turn (A1 request-scoped stamp, A4 ModelBinding).
     /// `None` when the session is on xAI/legacy auth.
-    pub(crate) multi_provider_auth: parking_lot::Mutex<
-        Option<crate::auth::multi_provider_resolve::MultiProviderSessionAuth>,
-    >,
+    pub(crate) multi_provider_auth:
+        parking_lot::Mutex<Option<crate::auth::multi_provider_resolve::MultiProviderSessionAuth>>,
     pub(crate) state: TokioMutex<State>,
     /// Notification transport: gateway, persistence channel, replay buffer.
     pub(crate) notifications: NotificationSender,

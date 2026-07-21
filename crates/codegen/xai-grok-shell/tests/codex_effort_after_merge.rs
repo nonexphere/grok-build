@@ -14,7 +14,9 @@ use xai_grok_auth::{CredentialId, ProviderModel};
 use xai_grok_multi_auth::cli::{CodexAccountModels, CodexModelsReport};
 use xai_grok_multi_auth::provider_model_key::format_provider_model_key;
 use xai_grok_sampling_types::ReasoningEffort;
-use xai_grok_shell::agent::config::{Config, ModelEntry, ResolvedCredentials, sampling_config_for_model};
+use xai_grok_shell::agent::config::{
+    Config, ModelEntry, ResolvedCredentials, sampling_config_for_model,
+};
 use xai_grok_shell::agent::models::{
     clear_codex_merge_report_override_for_test, merge_codex_report_into_catalog,
     resolve_model_catalog, set_codex_merge_report_override_for_test,

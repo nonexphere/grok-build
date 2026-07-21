@@ -4,20 +4,20 @@
 //! The fake mirrors facade semantics (ids, revisions, epochs, idempotency).
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use async_trait::async_trait;
 use xai_grok_app_server_protocol::{
-    InputBlock, InteractionRequest, InteractionResponseParams, Item, ItemBody, ItemStatus,
-    Session, SessionArchiveParams, SessionForkParams, SessionReadParams, SessionReadResult,
-    SessionResumeParams, SessionStartParams, SessionStatus, SubscribeParams, Turn, TurnInterruptParams,
-    TurnKind, TurnStartParams, TurnStatus, TurnSteerParams, WireCounter,
+    InputBlock, InteractionRequest, InteractionResponseParams, Item, ItemBody, ItemStatus, Session,
+    SessionArchiveParams, SessionForkParams, SessionReadParams, SessionReadResult,
+    SessionResumeParams, SessionStartParams, SessionStatus, SubscribeParams, Turn,
+    TurnInterruptParams, TurnKind, TurnStartParams, TurnStatus, TurnSteerParams, WireCounter,
 };
 
 use crate::{
-    admit_resident, admit_turn, project_runtime_event, GrokRuntimeFacade, ReplayPage, ResourceBudgets,
-    ResourceUsage, RuntimeError, RuntimeEvent, SessionRegistry,
+    GrokRuntimeFacade, ReplayPage, ResourceBudgets, ResourceUsage, RuntimeError, RuntimeEvent,
+    SessionRegistry, admit_resident, admit_turn, project_runtime_event,
 };
 
 #[derive(Debug, Default)]
@@ -74,7 +74,10 @@ impl FakeRuntime {
     }
 
     fn push_event(state: &mut FakeState, session_id: &str, event: RuntimeEvent) {
-        let seq = state.next_event_seq.entry(session_id.to_owned()).or_insert(0);
+        let seq = state
+            .next_event_seq
+            .entry(session_id.to_owned())
+            .or_insert(0);
         *seq += 1;
         state
             .events
@@ -133,10 +136,7 @@ impl GrokRuntimeFacade for FakeRuntime {
 
     async fn start_session(&self, params: SessionStartParams) -> Result<Session, RuntimeError> {
         let mut state = self.state.lock().unwrap();
-        let digest = format!(
-            "{}|{:?}",
-            params.workspace_root, params.provider_binding
-        );
+        let digest = format!("{}|{:?}", params.workspace_root, params.provider_binding);
         if let Some((existing_id, prev_digest)) = state.idempotency.get(&params.idempotency_key) {
             if prev_digest != &digest {
                 return Err(RuntimeError {
@@ -175,9 +175,7 @@ impl GrokRuntimeFacade for FakeRuntime {
             created_at_ms: now,
             updated_at_ms: now,
         };
-        state
-            .registry
-            .get_or_insert_with(&session_id, |_| Ok(()))?;
+        state.registry.get_or_insert_with(&session_id, |_| Ok(()))?;
         state.usage.record_resident(1);
         state.sessions.insert(session_id.clone(), session.clone());
         state
@@ -288,10 +286,13 @@ impl GrokRuntimeFacade for FakeRuntime {
                     message: "The idempotency key was already used with different input.".into(),
                 });
             }
-            let turns = state.turns.get(&params.session_id).ok_or_else(|| RuntimeError {
-                code: "internal_error",
-                message: "idempotent turn missing".into(),
-            })?;
+            let turns = state
+                .turns
+                .get(&params.session_id)
+                .ok_or_else(|| RuntimeError {
+                    code: "internal_error",
+                    message: "idempotent turn missing".into(),
+                })?;
             return turns
                 .iter()
                 .find(|t| &t.turn_id == existing_id)
@@ -355,9 +356,10 @@ impl GrokRuntimeFacade for FakeRuntime {
             .entry(params.session_id.clone())
             .or_default()
             .push(turn.clone());
-        state
-            .idempotency
-            .insert(params.idempotency_key.clone(), (turn_id.clone(), turn_digest));
+        state.idempotency.insert(
+            params.idempotency_key.clone(),
+            (turn_id.clone(), turn_digest),
+        );
 
         let user_item = Item {
             item_id: self.next_id("item"),
@@ -520,7 +522,11 @@ impl GrokRuntimeFacade for FakeRuntime {
             .cloned()
             .unwrap_or_default();
         let page_size = 100usize;
-        let events: Vec<_> = all.into_iter().skip(after as usize).take(page_size).collect();
+        let events: Vec<_> = all
+            .into_iter()
+            .skip(after as usize)
+            .take(page_size)
+            .collect();
         let replayed_through = after + events.len() as u64;
         let next_cursor = if (replayed_through as usize)
             < state
@@ -643,9 +649,7 @@ mod fake_conformance_tests {
         let turn = rt
             .start_turn(TurnStartParams {
                 session_id: session.session_id.clone(),
-                input: vec![InputBlock::Text {
-                    text: "x".into(),
-                }],
+                input: vec![InputBlock::Text { text: "x".into() }],
                 idempotency_key: "t".into(),
             })
             .await
@@ -654,9 +658,7 @@ mod fake_conformance_tests {
             .steer_turn(TurnSteerParams {
                 session_id: session.session_id.clone(),
                 turn_id: turn.turn_id.clone(),
-                input: vec![InputBlock::Text {
-                    text: "y".into(),
-                }],
+                input: vec![InputBlock::Text { text: "y".into() }],
                 idempotency_key: "st".into(),
             })
             .await

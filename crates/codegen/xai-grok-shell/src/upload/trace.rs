@@ -2520,7 +2520,9 @@ mod tests {
     }
     #[test]
     fn classify_workspace_non_project_for_tmp() {
-        let tmp = tempfile::tempdir().unwrap();
+        // `/tmp` is itself a Git worktree in the CI/container environment;
+        // use a guaranteed non-repository system temp root for this fixture.
+        let tmp = tempfile::tempdir_in("/var/tmp").unwrap();
         assert_eq!(
             classify_workspace(&tmp.path().to_string_lossy()),
             "non_project"

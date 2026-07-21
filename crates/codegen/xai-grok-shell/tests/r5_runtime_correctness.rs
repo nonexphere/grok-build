@@ -3,12 +3,8 @@
 
 use std::sync::Arc;
 use tempfile::TempDir;
-use xai_grok_app_server_protocol::{
-    SessionStartParams, SubscribeParams, WireCounter,
-};
-use xai_grok_shell::app_server_runtime::{
-    experimental_local_turn_spawn, ShellSessionActorRuntime,
-};
+use xai_grok_app_server_protocol::{SessionStartParams, SubscribeParams, WireCounter};
+use xai_grok_shell::app_server_runtime::{ShellSessionActorRuntime, experimental_local_turn_spawn};
 use xai_grok_shell::session::info::Info;
 use xai_grok_tower::{GrokRuntimeFacade, RuntimeError};
 
@@ -127,7 +123,10 @@ async fn r5_history_epoch_is_unique_and_rotates() {
         .unwrap();
     assert!(a.history_epoch.starts_with("epoch_"));
     assert!(b.history_epoch.starts_with("epoch_"));
-    assert_ne!(a.history_epoch, b.history_epoch, "sessions must not share epoch");
+    assert_ne!(
+        a.history_epoch, b.history_epoch,
+        "sessions must not share epoch"
+    );
 
     let info = Info {
         id: agent_client_protocol::SessionId::new(a.session_id.clone()),
@@ -208,7 +207,10 @@ async fn r5_replay_gap_and_exact_pagination() {
             ))),
         )))
     };
-    storage.append_update(&info, &mk("before-gap")).await.unwrap();
+    storage
+        .append_update(&info, &mk("before-gap"))
+        .await
+        .unwrap();
     // Physical non-projectable line (invalid JSON) creates a seq gap risk if
     // cursor used vector index instead of canonical event_seq.
     let updates_path = storage
@@ -224,7 +226,10 @@ async fn r5_replay_gap_and_exact_pagination() {
             .unwrap();
         writeln!(f, "{{not valid json").unwrap();
     }
-    storage.append_update(&info, &mk("after-gap")).await.unwrap();
+    storage
+        .append_update(&info, &mk("after-gap"))
+        .await
+        .unwrap();
 
     let page0 = rt
         .replay(SubscribeParams {
@@ -254,5 +259,8 @@ async fn r5_replay_gap_and_exact_pagination() {
         })
         .await
         .unwrap();
-    assert!(page1.events.is_empty(), "exclusive cursor past end is empty");
+    assert!(
+        page1.events.is_empty(),
+        "exclusive cursor past end is empty"
+    );
 }

@@ -25,13 +25,12 @@ use xai_grok_auth::{
     AuthFailureClass, AuthFailureResponse, AuthProvider, LoginCompletion, LoginFlowId, LoginInput,
     LoginRequest, LoginStart, LoginTransport, LogoutOutcome, LogoutRequest, ModelCatalog,
     ModelListRequest, ProviderAccountInfo, ProviderCapabilities, ProviderCredentialUpdate,
-    ProviderDescriptor, ProviderEndpointRequest, ProviderError,
-    ProviderId, ProviderRequestAuth, RefreshRequest, RequestAuthContext, StoredCredential,
-    TokenRequest, TokenResolution,
+    ProviderDescriptor, ProviderEndpointRequest, ProviderError, ProviderId, ProviderRequestAuth,
+    RefreshRequest, RequestAuthContext, StoredCredential, TokenRequest, TokenResolution,
 };
 
 pub use config::CodexOAuthConfig;
-pub use errors::{classify_refresh_failure, RefreshFailureKind};
+pub use errors::{RefreshFailureKind, classify_refresh_failure};
 
 use crate::kill_switch;
 
@@ -287,10 +286,9 @@ impl AuthProvider for CodexAuthProvider {
                 .await
                 .map_err(|e| ProviderError::TokenExchange(e.to_string()))?;
 
-                let claims = claims::parse_id_token_claims(
-                    token_resp.id_token.as_deref().unwrap_or(""),
-                )
-                .ok();
+                let claims =
+                    claims::parse_id_token_claims(token_resp.id_token.as_deref().unwrap_or(""))
+                        .ok();
                 let account = claims
                     .as_ref()
                     .map(claims::claims_to_account_info)
@@ -433,7 +431,9 @@ impl AuthProvider for CodexAuthProvider {
 
         Ok(ProviderCredentialUpdate {
             account,
-            access_token: Some(xai_grok_auth::SecretString::from_str(&token_resp.access_token)),
+            access_token: Some(xai_grok_auth::SecretString::from_str(
+                &token_resp.access_token,
+            )),
             refresh_token: token_resp
                 .refresh_token
                 .map(|s| xai_grok_auth::SecretString::from_str(&s)),
@@ -482,10 +482,7 @@ impl AuthProvider for CodexAuthProvider {
         })
     }
 
-    async fn logout(
-        &self,
-        request: LogoutRequest<'_>,
-    ) -> Result<LogoutOutcome, ProviderError> {
+    async fn logout(&self, request: LogoutRequest<'_>) -> Result<LogoutOutcome, ProviderError> {
         let mut remote_revoked = false;
         let mut warning = None;
         if request.revoke {
@@ -557,8 +554,7 @@ impl AuthProvider for CodexAuthProvider {
 
         // M7/D9: per-credential disk cache + stale/bundled fallback.
         let home = crate::token_resolve::grok_home();
-        let cache_path =
-            model_cache::cache_path(&home, credential.metadata.key.credential_id);
+        let cache_path = model_cache::cache_path(&home, credential.metadata.key.credential_id);
         let now = Utc::now();
         let prior_etag = model_cache::load_cache(&cache_path).and_then(|c| {
             if c.is_fresh(now) {
@@ -590,10 +586,7 @@ impl AuthProvider for CodexAuthProvider {
         Ok(catalog)
     }
 
-    fn resolve_endpoint(
-        &self,
-        request: ProviderEndpointRequest<'_>,
-    ) -> Result<Url, ProviderError> {
+    fn resolve_endpoint(&self, request: ProviderEndpointRequest<'_>) -> Result<Url, ProviderError> {
         request_auth::resolve_codex_endpoint(&self.config, &request)
     }
 
@@ -601,9 +594,9 @@ impl AuthProvider for CodexAuthProvider {
         &self,
         request: RequestAuthContext<'_>,
     ) -> Result<ProviderRequestAuth, ProviderError> {
-        let credential = request
-            .credential
-            .ok_or_else(|| ProviderError::InvalidConfig("no credential for Codex request".into()))?;
+        let credential = request.credential.ok_or_else(|| {
+            ProviderError::InvalidConfig("no credential for Codex request".into())
+        })?;
         let headers = request_auth::build_codex_request_headers(credential)?;
         Ok(ProviderRequestAuth { headers })
     }
@@ -644,7 +637,10 @@ mod audit_remediation_tests {
             !dbg.contains("device-auth-SECRET-123"),
             "device_auth_id must not appear in Debug: {dbg}"
         );
-        assert!(dbg.contains("<redacted>"), "expected redaction markers: {dbg}");
+        assert!(
+            dbg.contains("<redacted>"),
+            "expected redaction markers: {dbg}"
+        );
     }
 
     /// Drive the real [`AuthProvider::logout`] path with a mockito revoke 5xx.

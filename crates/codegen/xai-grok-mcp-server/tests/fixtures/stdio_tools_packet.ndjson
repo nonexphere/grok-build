@@ -1,0 +1,2 @@
+{"jsonrpc":"2.0","id":101,"method":"tools/list"}
+{"jsonrpc":"2.0","id":102,"method":"tools/call","params":{"name":"tower_agent_list","arguments":{}}}

@@ -14,26 +14,24 @@ pub mod projection;
 pub mod registry;
 pub mod telemetry;
 pub mod workspace;
-pub use budgets::{
-    admit_resident, admit_turn, ResourceBudgets, ResourceUsage,
-};
+pub use budgets::{ResourceBudgets, ResourceUsage, admit_resident, admit_turn};
 pub use fake::FakeRuntime;
 pub use instance::{
-    instance_state_root, InstanceDirectory, TowerHandle, TowerInstanceId, TowerInstanceIdError,
-    TOWER_INSTANCES_DIR,
+    InstanceDirectory, TOWER_INSTANCES_DIR, TowerHandle, TowerInstanceId, TowerInstanceIdError,
+    instance_state_root,
 };
 pub use lease::{ControllerLease, LeaseTable};
 pub use lifecycle::{DrainController, DrainState};
 pub use lock::{
-    InstanceLock, InstanceLockError, INSTANCE_ENDPOINT_FILE, INSTANCE_LOCK_FILE,
-    INSTANCE_METADATA_FILE, INSTANCE_TOKEN_FILE,
+    INSTANCE_ENDPOINT_FILE, INSTANCE_LOCK_FILE, INSTANCE_METADATA_FILE, INSTANCE_TOKEN_FILE,
+    InstanceLock, InstanceLockError,
 };
-pub use telemetry::LifecycleMetrics;
 pub use metadata::{Residency, SessionMetadata};
 pub use projection::{
     contains_secret_canary, project_runtime_event, project_unknown_diagnostic, redact_text,
 };
 pub use registry::{ActorToken, ResidentSession, SessionRegistry};
+pub use telemetry::LifecycleMetrics;
 
 use async_trait::async_trait;
 use xai_grok_app_server_protocol::{

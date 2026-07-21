@@ -1,4 +1,6 @@
 # Epic v2-03 — Runtime e continuation determinística v2
+Owner: goal runtime owners
+Escopo: conforme a seção Escopo deste epic
 
 Status: rascunho/backlog
 Prioridade: pós-lançamento core
@@ -56,3 +58,21 @@ e concentra continuation numa policy pura seguida por protocolo race-safe.
 - **[HIGH][Confirmed] races com user input/cancel:** double turn — intent+CAS+final idle check.
 - **[HIGH][Likely] blocking entre actor/runtime:** deadlock — portas unidirecionais e testes determinísticos.
 - **UNVERIFIED:** hook exato para compaction usage e scheduler governor.
+## Revisão de implementação
+
+Este epic só pode ser executado quando cada task tiver owner, arquivos ou
+contrato afetado, pré-condição, comando de validação e evidência esperada.
+Alterações de comportamento exigem Red-Green-Refactor; alterações de contrato
+exigem contract test e atualização da matriz de rastreabilidade.
+
+### Gate mínimo
+
+- [ ] dependências e links deste epic foram verificados;
+- [ ] interfaces, schemas, estados, erros e compatibilidade estão definidos;
+- [ ] caminho fake/conformance está separado do caminho product-backed;
+- [ ] testes unitários, integração, black-box e segurança foram classificados;
+- [ ] timeout, cancelamento, retry, restart e falhas parciais foram tratados;
+- [ ] observabilidade, limites de recurso e redaction foram especificados;
+- [ ] comando reproduzível e artefato de evidência foram registrados;
+- [ ] bloqueios humanos/externos possuem owner e condição de desbloqueio;
+- [ ] status do epic foi reconciliado com `TRACEABILITY.md` e `COMPLETION_COVERAGE.md`.

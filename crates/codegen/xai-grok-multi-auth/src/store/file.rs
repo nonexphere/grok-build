@@ -20,10 +20,10 @@ use xai_grok_auth::{
     ProviderId, StoreError,
 };
 
-use super::lock::{acquire_blocking, acquire_credential_lock, FileLockGuard};
+use super::lock::{FileLockGuard, acquire_blocking, acquire_credential_lock};
 use super::metadata::{
-    commit_accounts_and_secrets, load_accounts, load_secrets, recover_pending_txn, save_accounts,
-    AccountsFile,
+    AccountsFile, commit_accounts_and_secrets, load_accounts, load_secrets, recover_pending_txn,
+    save_accounts,
 };
 use super::paths::StorePaths;
 
@@ -164,7 +164,10 @@ impl CredentialStore for FileCredentialStore {
             .map(|m| m.key))
     }
 
-    async fn default_account(&self, provider: &ProviderId) -> Result<Option<CredentialKey>, StoreError> {
+    async fn default_account(
+        &self,
+        provider: &ProviderId,
+    ) -> Result<Option<CredentialKey>, StoreError> {
         self.ensure_journal_recovered().await?;
         let accounts = load_accounts(&self.paths)?;
         match accounts.defaults.get(provider.as_str()) {
@@ -196,26 +199,30 @@ impl CredentialStore for FileCredentialStore {
         if find_index(&accounts, key).is_none() {
             return Err(StoreError::NotFound);
         }
-        accounts
-            .defaults
-            .insert(key.provider.as_str().to_string(), key.credential_id.to_string());
+        accounts.defaults.insert(
+            key.provider.as_str().to_string(),
+            key.credential_id.to_string(),
+        );
         save_accounts(&self.paths, &accounts)?;
         Ok(())
     }
 
-    async fn load_metadata(&self, key: &CredentialKey) -> Result<Option<CredentialMetadata>, StoreError> {
+    async fn load_metadata(
+        &self,
+        key: &CredentialKey,
+    ) -> Result<Option<CredentialMetadata>, StoreError> {
         self.ensure_journal_recovered().await?;
         let accounts = load_accounts(&self.paths)?;
         Ok(find_metadata(&accounts, key).cloned())
     }
 
-    async fn load_secret(&self, key: &CredentialKey) -> Result<Option<CredentialSecret>, StoreError> {
+    async fn load_secret(
+        &self,
+        key: &CredentialKey,
+    ) -> Result<Option<CredentialSecret>, StoreError> {
         self.ensure_journal_recovered().await?;
         let secrets = load_secrets(&self.paths)?;
-        Ok(secrets
-            .secrets
-            .get(&key.credential_id.to_string())
-            .cloned())
+        Ok(secrets.secrets.get(&key.credential_id.to_string()).cloned())
     }
 
     async fn create(&self, record: NewCredentialRecord) -> Result<CredentialMetadata, StoreError> {
@@ -227,8 +234,11 @@ impl CredentialStore for FileCredentialStore {
         let mut secrets = load_secrets(&self.paths)?;
 
         let credential_id = CredentialId::new();
-        let alias =
-            resolve_unique_alias(&accounts, &record.provider, record.requested_alias.as_deref());
+        let alias = resolve_unique_alias(
+            &accounts,
+            &record.provider,
+            record.requested_alias.as_deref(),
+        );
         let now = Utc::now();
 
         let metadata = CredentialMetadata {

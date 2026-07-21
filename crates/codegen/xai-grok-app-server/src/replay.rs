@@ -39,9 +39,7 @@ pub async fn replay_all_pages(
 mod cursor_semantics_tests {
     use super::*;
     use std::sync::Arc;
-    use xai_grok_app_server_protocol::{
-        InputBlock, SessionStartParams, TurnStartParams,
-    };
+    use xai_grok_app_server_protocol::{InputBlock, SessionStartParams, TurnStartParams};
     use xai_grok_tower::FakeRuntime;
 
     #[tokio::test]

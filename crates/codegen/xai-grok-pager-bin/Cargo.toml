@@ -114,6 +114,8 @@ tempfile = { workspace = true }
 # `PagerArgs::try_parse_from` in the CLI-parsing unit tests (needs the
 # `clap::Parser` trait in scope).
 clap = { workspace = true, features = ["derive"] }
+rmcp = { version = "2.1", default-features = false, features = ["client", "transport-child-process"] }
+process-wrap = "9.0"
 
 [features]
 default = [
@@ -157,3 +159,5 @@ mcp-streamable-http = [
     "xai-grok-mcp-server/streamable-http",
     "dep:reqwest",
 ]
+# Product MCP stdio launcher (`grok-oss tower --stdio`).
+mcp-stdio = ["dep:xai-grok-mcp-server"]

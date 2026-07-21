@@ -90,7 +90,9 @@ async fn create_test_actor(
         pending_interactions: std::sync::Arc::new(std::sync::Mutex::new(
             std::collections::HashMap::new(),
         )),
-        interaction_delivery_hub: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+        interaction_delivery_hub: std::sync::Arc::new(std::sync::Mutex::new(
+            std::collections::HashMap::new(),
+        )),
 
         current_prompt_mode: Arc::new(parking_lot::Mutex::new(PromptMode::Agent)),
         turn_start_prompt_mode: parking_lot::Mutex::new(PromptMode::Agent),
@@ -526,7 +528,9 @@ async fn create_test_actor_with_memory(
         pending_interactions: std::sync::Arc::new(std::sync::Mutex::new(
             std::collections::HashMap::new(),
         )),
-        interaction_delivery_hub: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+        interaction_delivery_hub: std::sync::Arc::new(std::sync::Mutex::new(
+            std::collections::HashMap::new(),
+        )),
 
         telemetry_enabled: false,
         supports_backend_search: std::cell::Cell::new(false),
@@ -1142,9 +1146,9 @@ fn api_error_with_context_window(context_window: u64) -> xai_grok_sampler::Sampl
         empty_response_context: None,
         doom_loop_triggers: None,
         doom_loop_aborted_at_chunk: None,
-            auth_attempt_id: None,
-        }
+        auth_attempt_id: None,
     }
+}
 /// Primary scenario: remote settings shrinks the context window mid-session.
 /// The shell's last-known token count (214K) exceeds the new limit (200K) —
 /// should_compact_on_error must return true so the session can recover.
@@ -1295,7 +1299,9 @@ async fn test_e2e_idle_resume_refreshes_model_metadata() {
                 pending_interactions: std::sync::Arc::new(std::sync::Mutex::new(
                     std::collections::HashMap::new(),
                 )),
-                interaction_delivery_hub: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+                interaction_delivery_hub: std::sync::Arc::new(std::sync::Mutex::new(
+                    std::collections::HashMap::new(),
+                )),
 
                 current_prompt_mode: Arc::new(parking_lot::Mutex::new(PromptMode::Agent)),
                 turn_start_prompt_mode: parking_lot::Mutex::new(PromptMode::Agent),
@@ -1519,7 +1525,7 @@ async fn test_compact_on_error_noop_without_model_metadata() {
                 doom_loop_triggers: None,
                 doom_loop_aborted_at_chunk: None,
                 auth_attempt_id: None,
-};
+            };
             assert!(!actor.should_compact_on_error(&err).await);
         })
         .await;

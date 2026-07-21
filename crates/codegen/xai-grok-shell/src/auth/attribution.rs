@@ -94,12 +94,7 @@ impl ShellAttribution {
 }
 
 impl Auth401AttributionCallback for ShellAttribution {
-    fn record_401(
-        &self,
-        consumer: SamplingConsumer,
-        has_sent_auth: bool,
-        attempt_id: Option<u64>,
-    ) {
+    fn record_401(&self, consumer: SamplingConsumer, has_sent_auth: bool, attempt_id: Option<u64>) {
         record_consumer_401(
             self.auth_manager.as_ref(),
             self.session_id.as_deref(),
@@ -298,10 +293,7 @@ mod tests {
 
     fn assert_no_secret_material(payload: &JsonValue, canary: &str) {
         let s = payload.to_string();
-        assert!(
-            !s.contains(canary),
-            "payload must not contain canary: {s}"
-        );
+        assert!(!s.contains(canary), "payload must not contain canary: {s}");
         for n in [4usize, 8, 12, 20] {
             if canary.len() >= n {
                 let p: String = canary.chars().take(n).collect();
@@ -573,14 +565,8 @@ mod tests {
 
         assert!(!attribution.fields_str.contains_key("sent_key_prefix"));
         assert!(!attribution.fields_str.contains_key("current_key_prefix"));
-        assert_eq!(
-            attribution.fields_bool.get("has_sent_auth"),
-            Some(&true),
-        );
-        assert_eq!(
-            attribution.fields_bool.get("has_current_auth"),
-            Some(&true),
-        );
+        assert_eq!(attribution.fields_bool.get("has_sent_auth"), Some(&true),);
+        assert_eq!(attribution.fields_bool.get("has_current_auth"), Some(&true),);
         assert_eq!(attribution.fields_i64.get("attempt_id"), Some(&99));
         assert_eq!(
             attribution.fields_str.get("consumer").map(String::as_str),
@@ -599,7 +585,10 @@ mod tests {
             .get("mint_age_seconds")
             .copied()
             .unwrap();
-        assert!((0..5).contains(&mint), "mint_age_seconds should be 0-5, got {mint}");
+        assert!(
+            (0..5).contains(&mint),
+            "mint_age_seconds should be 0-5, got {mint}"
+        );
     }
 
     #[test]

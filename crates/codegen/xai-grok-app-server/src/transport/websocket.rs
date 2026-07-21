@@ -3,8 +3,8 @@
 
 use std::sync::Arc;
 
-use crate::processor::FacadeProcessor;
 use crate::ProcessorError;
+use crate::processor::FacadeProcessor;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WebSocketAuth {
@@ -142,10 +142,7 @@ mod websocket_tests {
     #[test]
     fn websocket_transport_rejects_batch_and_oversized_frames() {
         assert!(validate_ws_text_frame(r#"{"jsonrpc":"2.0"}"#).is_ok());
-        assert_eq!(
-            validate_ws_text_frame("[1,2]").unwrap_err().code,
-            -32600
-        );
+        assert_eq!(validate_ws_text_frame("[1,2]").unwrap_err().code, -32600);
         let big = "x".repeat(1_048_577);
         assert_eq!(validate_ws_text_frame(&big).unwrap_err().code, -32021);
     }

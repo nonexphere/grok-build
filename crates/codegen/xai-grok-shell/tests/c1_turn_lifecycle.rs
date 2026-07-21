@@ -114,6 +114,7 @@ impl SessionSpawner for TestActorSpawner {
             current_prompt_id,
             pending_interactions: None,
             delivery_hub: None,
+            permission_responder: None,
         })
     }
 }
@@ -181,9 +182,7 @@ async fn c1_turn_start_turn_without_resident_returns_unsupported() {
     let err = port
         .start_turn(TurnStartParams {
             session_id,
-            input: vec![InputBlock::Text {
-                text: "hi".into(),
-            }],
+            input: vec![InputBlock::Text { text: "hi".into() }],
             idempotency_key: "nr-t".into(),
         })
         .await
@@ -331,6 +330,7 @@ impl SessionSpawner for HeldTurnSpawner {
             current_prompt_id,
             pending_interactions: None,
             delivery_hub: None,
+            permission_responder: None,
         })
     }
 }
@@ -355,9 +355,7 @@ async fn c1_turn_steer_turn_against_running_turn_returns_item() {
         port_for_turn
             .start_turn(TurnStartParams {
                 session_id: session_id_for_turn,
-                input: vec![InputBlock::Text {
-                    text: "run".into(),
-                }],
+                input: vec![InputBlock::Text { text: "run".into() }],
                 idempotency_key: "sr-t-1".into(),
             })
             .await
@@ -416,9 +414,7 @@ async fn c1_turn_interrupt_turn_cancels_running_turn_only() {
         port_for_turn
             .start_turn(TurnStartParams {
                 session_id: session_id_for_turn,
-                input: vec![InputBlock::Text {
-                    text: "run".into(),
-                }],
+                input: vec![InputBlock::Text { text: "run".into() }],
                 idempotency_key: "iv-t-1".into(),
             })
             .await

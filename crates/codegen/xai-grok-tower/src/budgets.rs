@@ -51,7 +51,10 @@ impl ResourceUsage {
     }
 }
 
-pub fn admit_resident(budgets: &ResourceBudgets, usage: &ResourceUsage) -> Result<(), RuntimeError> {
+pub fn admit_resident(
+    budgets: &ResourceBudgets,
+    usage: &ResourceUsage,
+) -> Result<(), RuntimeError> {
     if usage.resident_sessions >= budgets.max_resident_sessions {
         return Err(RuntimeError {
             code: "resource_budget_admission",

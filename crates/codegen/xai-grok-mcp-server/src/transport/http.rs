@@ -6,7 +6,7 @@
 use std::collections::HashMap;
 use std::sync::Mutex;
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HttpAuthError;
@@ -135,7 +135,10 @@ mod auth_failures_tests {
         }
         assert!(validate_http_bearer(Some("Bearer token-value"), expected).is_ok());
         assert!(reject_token_query("access_token=1").is_err());
-        assert_eq!(presented_bearer(None, Some("bearer=token-value")), Some(expected.to_owned()));
+        assert_eq!(
+            presented_bearer(None, Some("bearer=token-value")),
+            Some(expected.to_owned())
+        );
     }
 
     #[test]
@@ -162,6 +165,9 @@ mod limits_tests {
     #[test]
     fn limits_reject_oversized_body_explicitly() {
         assert!(enforce_body_limit(100, 1_048_576).is_ok());
-        assert_eq!(enforce_body_limit(2_000_000, 1_048_576).unwrap_err(), "message_too_large");
+        assert_eq!(
+            enforce_body_limit(2_000_000, 1_048_576).unwrap_err(),
+            "message_too_large"
+        );
     }
 }

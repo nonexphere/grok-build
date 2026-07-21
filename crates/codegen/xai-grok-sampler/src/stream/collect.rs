@@ -54,7 +54,7 @@ pub async fn collect_response(
         doom_loop_triggers: None,
         doom_loop_aborted_at_chunk: None,
         auth_attempt_id: None,
-})
+    })
 }
 
 #[cfg(test)]

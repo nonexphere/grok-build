@@ -54,7 +54,9 @@ pub enum LoginCoordinatorError {
 /// UI events emitted during login.
 #[derive(Debug, Clone)]
 pub enum LoginUiEvent {
-    OpenBrowser { url: Url },
+    OpenBrowser {
+        url: Url,
+    },
     ShowDeviceCode {
         verification_uri: Url,
         user_code: String,
@@ -62,8 +64,12 @@ pub enum LoginUiEvent {
     },
     WaitingForApproval,
     ExchangingToken,
-    Completed { key: CredentialKey },
-    Failed { error: String },
+    Completed {
+        key: CredentialKey,
+    },
+    Failed {
+        error: String,
+    },
 }
 
 /// Login coordinator that drives a provider's login flow and persists the
@@ -188,9 +194,7 @@ impl LoginCoordinator {
         open_browser: bool,
     ) -> Result<CredentialMetadata, LoginCoordinatorError> {
         match transport {
-            LoginTransport::BrowserPkce => {
-                self.run_browser_login(provider_id, open_browser).await
-            }
+            LoginTransport::BrowserPkce => self.run_browser_login(provider_id, open_browser).await,
             LoginTransport::DeviceCode => self.run_device_login(provider_id).await,
             LoginTransport::ApiKey => self.run_api_key_login(provider_id, None).await,
         }
@@ -220,13 +224,13 @@ impl LoginCoordinator {
         })?;
         let caps = provider.descriptor().capabilities;
         if !caps.contains(ProviderCapabilities::API_KEY_LOGIN) {
-            return Err(LoginCoordinatorError::Provider(ProviderError::InvalidConfig(
-                format!(
+            return Err(LoginCoordinatorError::Provider(
+                ProviderError::InvalidConfig(format!(
                     "provider `{}` does not support API-key login \
                      (missing API_KEY_LOGIN capability)",
                     provider_id.as_str()
-                ),
-            )));
+                )),
+            ));
         }
 
         // Track which env var supplied the secret so the xAI fallback guard
@@ -304,13 +308,11 @@ impl LoginCoordinator {
         // and the PKCE token exchange redirect_uri stored in the flow.
         let port = redirect_port_from_auth_url(&auth_url).unwrap_or(1455);
 
-        let listener = TcpListener::bind(("127.0.0.1", port))
-            .await
-            .map_err(|e| {
-                CallbackError::Bind(format!(
-                    "cannot bind 127.0.0.1:{port} for OAuth callback: {e}"
-                ))
-            })?;
+        let listener = TcpListener::bind(("127.0.0.1", port)).await.map_err(|e| {
+            CallbackError::Bind(format!(
+                "cannot bind 127.0.0.1:{port} for OAuth callback: {e}"
+            ))
+        })?;
 
         println!("Open this URL to authorize:\n  {auth_url}");
         if open_browser {
@@ -389,15 +391,9 @@ impl LoginCoordinator {
 
             if let Some(key) = completed_key {
                 println!();
-                return self
-                    .store
-                    .load_metadata(&key)
-                    .await?
-                    .ok_or_else(|| {
-                        LoginCoordinatorError::Message(
-                            "credential vanished after create".into(),
-                        )
-                    });
+                return self.store.load_metadata(&key).await?.ok_or_else(|| {
+                    LoginCoordinatorError::Message("credential vanished after create".into())
+                });
             }
 
             if pending {
@@ -420,15 +416,9 @@ impl LoginCoordinator {
     ) -> Result<CredentialMetadata, LoginCoordinatorError> {
         for ev in events {
             if let LoginUiEvent::Completed { key } = ev {
-                return self
-                    .store
-                    .load_metadata(&key)
-                    .await?
-                    .ok_or_else(|| {
-                        LoginCoordinatorError::Message(
-                            "credential vanished after create".into(),
-                        )
-                    });
+                return self.store.load_metadata(&key).await?.ok_or_else(|| {
+                    LoginCoordinatorError::Message("credential vanished after create".into())
+                });
             }
         }
         Err(LoginCoordinatorError::Message(
@@ -446,7 +436,6 @@ fn redirect_port_from_auth_url(auth_url: &Url) -> Option<u16> {
     let ru = Url::parse(&redirect).ok()?;
     ru.port()
 }
-
 
 #[cfg(test)]
 mod api_key_login_tests {
@@ -487,7 +476,10 @@ mod api_key_login_tests {
         assert!(format!("{err}").contains("empty"));
         // clear env and require explicit secret or env
         let err2 = coord.run_api_key_login(&provider, None).await.unwrap_err();
-        assert!(format!("{err2}").contains("GROK_BYOK_API_KEY") || format!("{err2}").contains("API key"));
+        assert!(
+            format!("{err2}").contains("GROK_BYOK_API_KEY")
+                || format!("{err2}").contains("API key")
+        );
     }
 
     #[tokio::test]

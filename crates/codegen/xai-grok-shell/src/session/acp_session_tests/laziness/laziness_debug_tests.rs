@@ -34,7 +34,7 @@ fn assistant_text(text: &str) -> ConversationItem {
 
         phase: None,
         message_id: None,
-})
+    })
 }
 
 fn assistant_with_tool_call(text: &str, name: &str, args: &str) -> ConversationItem {
@@ -51,7 +51,7 @@ fn assistant_with_tool_call(text: &str, name: &str, args: &str) -> ConversationI
 
         phase: None,
         message_id: None,
-})
+    })
 }
 
 /// Build `[Reasoning(text), Assistant(content, tool_calls)]` as the
@@ -89,7 +89,7 @@ fn assistant_with_reasoning_items(
 
         phase: None,
         message_id: None,
-}));
+    }));
     out
 }
 
@@ -211,7 +211,7 @@ fn flatten_skips_reasoning_when_encrypted_only() {
 
             phase: None,
             message_id: None,
-}),
+        }),
     ];
     let out = flatten_transcript_for_classifier(&items, true);
     assert!(
@@ -246,7 +246,7 @@ fn flatten_skips_reasoning_when_text_is_empty() {
 
             phase: None,
             message_id: None,
-}),
+        }),
     ];
     let out = flatten_transcript_for_classifier(&items, true);
     assert!(
@@ -554,7 +554,7 @@ fn window_assistant_text_pin_skips_empty_assistant_turns() {
 
         phase: None,
         message_id: None,
-});
+    });
     // 5 real text turns at idxs 0..5, then 10 empty turns.
     let mut items: Vec<ConversationItem> =
         (0..5).map(|i| assistant_text(&format!("t{i}"))).collect();

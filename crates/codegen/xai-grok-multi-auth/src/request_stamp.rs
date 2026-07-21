@@ -9,8 +9,8 @@
 //! identity for multi-provider 401 recovery.
 
 use std::collections::{HashMap, VecDeque};
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use xai_grok_auth::SentCredentialStamp;
 

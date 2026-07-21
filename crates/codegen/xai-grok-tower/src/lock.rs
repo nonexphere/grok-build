@@ -23,7 +23,7 @@ use std::path::{Path, PathBuf};
 
 use fs2::FileExt;
 
-use crate::instance::{instance_state_root, TowerInstanceId};
+use crate::instance::{TowerInstanceId, instance_state_root};
 
 /// File name of the exclusive per-instance lock under the instance root.
 pub const INSTANCE_LOCK_FILE: &str = "instance.lock";
@@ -278,10 +278,7 @@ mod tests {
         let id: TowerInstanceId = "default".parse().unwrap();
         let _first = InstanceLock::try_acquire(home.path(), &id).unwrap();
         let second = InstanceLock::try_acquire(home.path(), &id);
-        assert!(matches!(
-            second,
-            Err(InstanceLockError::AlreadyHeld { .. })
-        ));
+        assert!(matches!(second, Err(InstanceLockError::AlreadyHeld { .. })));
     }
 
     #[test]
@@ -343,7 +340,11 @@ mod tests {
             lock.metadata_path().file_name().unwrap().to_str().unwrap(),
             "metadata.json"
         );
-        for p in [lock.endpoint_path(), lock.token_path(), lock.metadata_path()] {
+        for p in [
+            lock.endpoint_path(),
+            lock.token_path(),
+            lock.metadata_path(),
+        ] {
             assert!(p.starts_with(lock.state_root()));
         }
     }

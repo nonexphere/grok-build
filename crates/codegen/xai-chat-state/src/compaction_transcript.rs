@@ -784,7 +784,7 @@ mod tests {
 
                 phase: None,
                 message_id: None,
-}),
+            }),
             ConversationItem::tool_result("c", "file contents"),
         ];
         let s = compute_turn_stats(&items);

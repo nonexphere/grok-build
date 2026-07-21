@@ -1,5 +1,25 @@
 # Epic v1-02 — Foundation para providers de API key
+Owner: provider/auth owners
+Escopo: conforme a seção Escopo deste epic
 
+## Revisão de implementação
+
+Este epic só pode ser executado quando cada task tiver owner, arquivos ou
+contrato afetado, pré-condição, comando de validação e evidência esperada.
+Alterações de comportamento exigem Red-Green-Refactor; alterações de contrato
+exigem contract test e atualização da matriz de rastreabilidade.
+
+### Gate mínimo
+
+- [ ] dependências e links deste epic foram verificados;
+- [ ] interfaces, schemas, estados, erros e compatibilidade estão definidos;
+- [ ] caminho fake/conformance está separado do caminho product-backed;
+- [ ] testes unitários, integração, black-box e segurança foram classificados;
+- [ ] timeout, cancelamento, retry, restart e falhas parciais foram tratados;
+- [ ] observabilidade, limites de recurso e redaction foram especificados;
+- [ ] comando reproduzível e artefato de evidência foram registrados;
+- [ ] bloqueios humanos/externos possuem owner e condição de desbloqueio;
+- [ ] status do epic foi reconciliado com `TRACEABILITY.md` e `COMPLETION_COVERAGE.md`.
 Status: rascunho
 Prioridade: paralelo ao lançamento core
 Estimativa: 2–4 semanas
@@ -59,4 +79,3 @@ refresh; 401 invalida/reauth e no máximo um retry somente se geração mudou.
 - **[HIGH][Confirmed] terceiro auth system:** evitar reutilizando multi-auth/store/binding.
 - **[HIGH][Confirmed] secret leak:** TTY/file/store/redaction tests.
 - **[MEDIUM][Likely] generic seam Codex-shaped:** provider fixtures antes de abstraction freeze.
-

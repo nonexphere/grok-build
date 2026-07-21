@@ -441,8 +441,8 @@ impl FeedbackClient {
         if response.status() == reqwest::StatusCode::UNAUTHORIZED
             && let Some(am) = self.credentials.auth_manager()
         {
-            let has_sent_auth = self.credentials.deployment_key.is_some()
-                || self.credentials.user_token.is_some();
+            let has_sent_auth =
+                self.credentials.deployment_key.is_some() || self.credentials.user_token.is_some();
             crate::auth::attribution::record_consumer_401(
                 am.as_ref(),
                 self.session_id.as_deref(),

@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use url::Url;
 
 use super::config::{CodexOAuthConfig, DEFAULT_SCOPES};
-use super::pkce::{generate_state, PkceVerifier};
+use super::pkce::{PkceVerifier, generate_state};
 
 /// In-memory state for a browser PKCE login flow.
 ///
@@ -38,10 +38,7 @@ pub fn build_authorization_url(
     url.query_pairs_mut()
         .append_pair("response_type", "code")
         .append_pair("client_id", &config.client_id)
-        .append_pair(
-            "redirect_uri",
-            &config.redirect_uri_for_port(port),
-        )
+        .append_pair("redirect_uri", &config.redirect_uri_for_port(port))
         .append_pair("scope", &DEFAULT_SCOPES.join(" "))
         .append_pair("code_challenge", pkce.challenge())
         .append_pair("code_challenge_method", "S256")
@@ -94,10 +91,7 @@ pub struct CallbackParams {
 ///
 /// Returns `Ok(code)` if the state matches and there is no error.
 /// Returns `Err` with a descriptive message otherwise.
-pub fn validate_callback(
-    expected_state: &str,
-    params: &CallbackParams,
-) -> Result<String, String> {
+pub fn validate_callback(expected_state: &str, params: &CallbackParams) -> Result<String, String> {
     if let Some(ref error) = params.error {
         return Err(format!("OAuth error: {error}"));
     }
@@ -149,7 +143,10 @@ mod tests {
             query.get("code_challenge_method").map(|s| s.as_str()),
             Some("S256")
         );
-        assert_eq!(query.get("state").map(|s| s.as_str()), Some("test-state-123"));
+        assert_eq!(
+            query.get("state").map(|s| s.as_str()),
+            Some("test-state-123")
+        );
         assert_eq!(
             query.get("id_token_add_organizations").map(|s| s.as_str()),
             Some("true")

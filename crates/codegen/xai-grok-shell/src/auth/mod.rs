@@ -10,6 +10,10 @@ mod flow;
 mod jwt;
 pub(crate) mod manager;
 mod model;
+#[cfg(feature = "native-multi-provider-auth")]
+pub(crate) mod multi_provider;
+#[cfg(feature = "native-multi-provider-auth")]
+pub(crate) mod multi_provider_resolve;
 pub mod oidc;
 pub(crate) mod recovery;
 pub(crate) mod refresh;
@@ -17,10 +21,6 @@ pub(crate) mod single_flight;
 mod storage;
 #[cfg(feature = "native-multi-provider-auth")]
 pub(crate) mod store;
-#[cfg(feature = "native-multi-provider-auth")]
-pub(crate) mod multi_provider;
-#[cfg(feature = "native-multi-provider-auth")]
-pub(crate) mod multi_provider_resolve;
 pub(crate) mod token_type;
 pub(crate) use config::LEGACY_AUTH_SCOPE;
 pub use config::{

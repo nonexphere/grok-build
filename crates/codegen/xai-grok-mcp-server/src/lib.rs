@@ -5,22 +5,22 @@ pub mod transport;
 
 use std::sync::Arc;
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use xai_grok_tower::GrokRuntimeFacade;
 use xai_grok_tower_tools::{
-    invoke_tower_tool, tool_schema, TowerToolDescriptor, TOWER_TOOL_DESCRIPTORS,
+    TOWER_TOOL_DESCRIPTORS, TowerToolDescriptor, invoke_tower_tool, tool_schema,
 };
 
 pub use xai_grok_tower_tools::{
-    TowerToolDescriptor as McpToolDescriptor, TOWER_TOOL_DESCRIPTORS as MCP_TOOL_DESCRIPTORS,
-    TOWER_TOOL_NAMES as MCP_TOOL_NAMES, TOWER_TOOL_NAMES,
+    TOWER_TOOL_DESCRIPTORS as MCP_TOOL_DESCRIPTORS, TOWER_TOOL_NAMES as MCP_TOOL_NAMES,
+    TOWER_TOOL_NAMES, TowerToolDescriptor as McpToolDescriptor,
 };
 
 #[cfg(feature = "streamable-http")]
 pub use transport::http_server::{
-    McpHttpConfig, McpHttpHandle, McpHttpState, McpSession, McpSessionEvent,
     DEFAULT_MAX_MESSAGE_BYTES, DEFAULT_MAX_SESSION_EVENTS, MCP_PROTOCOL_VERSION_HEADER,
-    MCP_SESSION_HEADER, bind_warning, run_mcp_http_server,
+    MCP_SESSION_HEADER, McpHttpConfig, McpHttpHandle, McpHttpState, McpSession, McpSessionEvent,
+    bind_warning, run_mcp_http_server,
 };
 
 /// MCP wire protocol version advertised by `initialize` and enforced by the
@@ -92,7 +92,9 @@ pub async fn handle_mcp_jsonrpc(
             let name = request["params"]["name"].as_str().unwrap_or("");
             let args = request["params"]["arguments"].clone();
             match call_tool_typed(runtime, agent_type, explicit_opt_in, name, args).await {
-                Ok(result) => json!({"jsonrpc":"2.0","id":id,"result":{"content":[{"type":"text","text": result.to_string()}],"structuredContent": result}}),
+                Ok(result) => {
+                    json!({"jsonrpc":"2.0","id":id,"result":{"content":[{"type":"text","text": result.to_string()}],"structuredContent": result}})
+                }
                 Err(err) => {
                     // Parity with in-process ToolError: stable Tower code is
                     // preserved in structuredContent and `isError: true` so
@@ -192,10 +194,7 @@ mod tests {
         // Forbidden product name: a hub tool that re-enters MCP against self.
         let forbidden = ["tower", "agent", "hub"].join("_");
         assert!(!TOWER_TOOL_NAMES.contains(&forbidden.as_str()));
-        let production = include_str!("lib.rs")
-            .split("#[cfg(test)]")
-            .next()
-            .unwrap();
+        let production = include_str!("lib.rs").split("#[cfg(test)]").next().unwrap();
         assert!(!production.contains(&forbidden));
     }
 

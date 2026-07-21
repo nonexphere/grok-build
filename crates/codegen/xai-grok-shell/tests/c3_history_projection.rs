@@ -53,7 +53,8 @@ async fn append_acp(temp: &TempDir, session_id: &str, cwd: &str, update: acp::Se
         id: acp::SessionId::new(session_id.to_string()),
         cwd: cwd.to_string(),
     };
-    let notification = acp::SessionNotification::new(acp::SessionId::new(session_id.to_string()), update);
+    let notification =
+        acp::SessionNotification::new(acp::SessionId::new(session_id.to_string()), update);
     storage
         .append_update(&info, &SessionUpdate::Acp(Box::new(notification)))
         .await
@@ -192,7 +193,10 @@ async fn c3_read_session_items_include_tool_call_and_reasoning_bodies() {
         .items
         .iter()
         .any(|i| matches!(i.body, ItemBody::ReasoningSummary { .. }));
-    assert!(has_reasoning, "reasoning chunk projected to ReasoningSummary");
+    assert!(
+        has_reasoning,
+        "reasoning chunk projected to ReasoningSummary"
+    );
     let has_tool = result
         .items
         .iter()
@@ -275,7 +279,10 @@ async fn c3_read_session_include_flags_respected() {
         .await
         .unwrap();
     assert!(!turns_only.turns.is_empty());
-    assert!(turns_only.items.is_empty(), "include_items=false → no items");
+    assert!(
+        turns_only.items.is_empty(),
+        "include_items=false → no items"
+    );
 
     let items_only = port
         .read_session(SessionReadParams {
@@ -285,7 +292,10 @@ async fn c3_read_session_include_flags_respected() {
         })
         .await
         .unwrap();
-    assert!(items_only.turns.is_empty(), "include_turns=false → no turns");
+    assert!(
+        items_only.turns.is_empty(),
+        "include_turns=false → no turns"
+    );
     assert!(!items_only.items.is_empty());
 }
 
@@ -378,7 +388,10 @@ async fn c3_replay_projects_agent_thought_chunk_as_item_completed() {
                 if matches!(i.body, ItemBody::ReasoningSummary { .. })
         )
     });
-    assert!(has_thought, "AgentThoughtChunk → ItemCompleted(ReasoningSummary)");
+    assert!(
+        has_thought,
+        "AgentThoughtChunk → ItemCompleted(ReasoningSummary)"
+    );
 }
 
 #[tokio::test]
@@ -527,10 +540,7 @@ async fn c3_replay_honest_partial_skips_xai_extension_updates() {
         meta: None,
     };
     storage
-        .append_update(
-            &info,
-            &SessionUpdate::Xai(Box::new(xai_notif)),
-        )
+        .append_update(&info, &SessionUpdate::Xai(Box::new(xai_notif)))
         .await
         .unwrap();
     append_acp(&temp, &sid, cwd, agent_chunk("after xai")).await;
@@ -546,7 +556,10 @@ async fn c3_replay_honest_partial_skips_xai_extension_updates() {
 
     // The xAI update contributes no RuntimeEvent; only snapshot + user +
     // agent delta appear. The projector does not panic on xAI updates.
-    assert!(page.events.len() >= 2, "snapshot + at least one projected event");
+    assert!(
+        page.events.len() >= 2,
+        "snapshot + at least one projected event"
+    );
     // No item references the xAI extension.
     let all_items_have_real_bodies = page.events.iter().all(|e| {
         matches!(
@@ -647,5 +660,8 @@ async fn c3_read_session_crash_mid_turn_inferred_completed_partial() {
     // detected). This assertion documents the inference — not a claim that
     // the turn truly completed.
     assert_eq!(result.turns[0].status, TurnStatus::Completed);
-    assert!(!result.items.is_empty(), "partial agent chunk still projected");
+    assert!(
+        !result.items.is_empty(),
+        "partial agent chunk still projected"
+    );
 }

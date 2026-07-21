@@ -1,4 +1,6 @@
 # Epic v2-01 — Migração opcional do dashboard para App Server
+Owner: App Server/protocol owners
+Escopo: conforme a seção Escopo deste epic
 
 Status: rascunho/backlog
 Prioridade: pós-lançamento
@@ -57,3 +59,21 @@ ACP/leader/roster sem qualquer mutation. [provenance: user-input]
 - **[HIGH][Confirmed] TUI regression:** staged shadow/parity; não bloquear v1 deixando este epic futuro.
 - **[MEDIUM][Likely] duplicated rendering semantics:** native tracker só após comparison.
 - **Human decision required:** parity acceptance thresholds e default switch.
+## Revisão de implementação
+
+Este epic só pode ser executado quando cada task tiver owner, arquivos ou
+contrato afetado, pré-condição, comando de validação e evidência esperada.
+Alterações de comportamento exigem Red-Green-Refactor; alterações de contrato
+exigem contract test e atualização da matriz de rastreabilidade.
+
+### Gate mínimo
+
+- [ ] dependências e links deste epic foram verificados;
+- [ ] interfaces, schemas, estados, erros e compatibilidade estão definidos;
+- [ ] caminho fake/conformance está separado do caminho product-backed;
+- [ ] testes unitários, integração, black-box e segurança foram classificados;
+- [ ] timeout, cancelamento, retry, restart e falhas parciais foram tratados;
+- [ ] observabilidade, limites de recurso e redaction foram especificados;
+- [ ] comando reproduzível e artefato de evidência foram registrados;
+- [ ] bloqueios humanos/externos possuem owner e condição de desbloqueio;
+- [ ] status do epic foi reconciliado com `TRACEABILITY.md` e `COMPLETION_COVERAGE.md`.

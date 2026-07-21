@@ -42,9 +42,7 @@ impl CachedModelCatalog {
             return false;
         }
         let age = now.signed_duration_since(self.fetched_at);
-        age.to_std()
-            .map(|d| d < MODEL_CACHE_TTL)
-            .unwrap_or(false)
+        age.to_std().map(|d| d < MODEL_CACHE_TTL).unwrap_or(false)
     }
 
     pub fn into_model_catalog(self, source: ModelCatalogSource) -> ModelCatalog {
@@ -112,10 +110,7 @@ pub fn load_cache(path: &Path) -> Option<CachedModelCatalog> {
 pub fn save_cache(path: &Path, catalog: &CachedModelCatalog) {
     if let Err(e) = save_cache_inner(path, catalog) {
         // multi-auth has no tracing dep; keep failure observable on stderr.
-        eprintln!(
-            "codex model cache: failed to save {}: {e}",
-            path.display()
-        );
+        eprintln!("codex model cache: failed to save {}: {e}", path.display());
     }
 }
 
@@ -192,9 +187,7 @@ pub fn resolve_after_fetch(
             (out, CacheSource::Network)
         }
         Err(err) if is_auth_or_identity_error(&err) => {
-            eprintln!(
-                "codex model cache: auth/identity fetch failure; not serving stale: {err}"
-            );
+            eprintln!("codex model cache: auth/identity fetch failure; not serving stale: {err}");
             (
                 ModelCatalog {
                     models: Vec::new(),

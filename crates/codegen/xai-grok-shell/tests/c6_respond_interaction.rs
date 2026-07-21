@@ -64,9 +64,8 @@ impl SessionSpawner for InteractionSpawner {
         let current_prompt_id = Arc::new(Mutex::new(None::<String>));
         let pending_interactions: PendingInteractions =
             Arc::new(Mutex::new(std::collections::HashMap::new()));
-        let delivery_hub: Arc<
-            Mutex<std::collections::HashMap<String, oneshot::Sender<String>>>,
-        > = Arc::new(Mutex::new(std::collections::HashMap::new()));
+        let delivery_hub: Arc<Mutex<std::collections::HashMap<String, oneshot::Sender<String>>>> =
+            Arc::new(Mutex::new(std::collections::HashMap::new()));
 
         // Drain the command channel so the mailbox does not fill up. We do
         // not need to process any SessionCommand for respond_interaction
@@ -83,6 +82,7 @@ impl SessionSpawner for InteractionSpawner {
             current_prompt_id,
             pending_interactions: Some(pending_interactions),
             delivery_hub: self.with_hub.then_some(delivery_hub),
+            permission_responder: None,
         })
     }
 }
@@ -188,7 +188,10 @@ async fn interaction_facade_delivers_decision_to_parked_oneshot() {
     .expect("delivery succeeds");
 
     let decision = rx.await.expect("oneshot must receive the decision");
-    assert_eq!(decision, "allow", "decision is forwarded verbatim — no policy re-eval");
+    assert_eq!(
+        decision, "allow",
+        "decision is forwarded verbatim — no policy re-eval"
+    );
 
     // The pending entry must be removed (first-answer-wins).
     let resident = port.resident(&s.session_id).unwrap();
@@ -369,12 +372,7 @@ async fn interaction_facade_not_deliverable_keeps_pending_for_retry() {
     let temp = TempDir::new().unwrap();
     let port = real_port(&temp);
     let s = start_session(&port, "/work/ix/retry", "ix-retry").await;
-    seed_pending_without_delivery_hub(
-        &port,
-        &s.session_id,
-        "call-retry",
-        PendingKind::Question,
-    );
+    seed_pending_without_delivery_hub(&port, &s.session_id, "call-retry", PendingKind::Question);
 
     let err = port
         .respond_interaction(InteractionResponseParams {
@@ -392,13 +390,15 @@ async fn interaction_facade_not_deliverable_keeps_pending_for_retry() {
     // oneshot and for the client to retry; it was not consumed by the failed
     // delivery attempt.
     let resident = port.resident(&s.session_id).unwrap();
-    assert!(resident
-        .pending_interactions
-        .as_ref()
-        .unwrap()
-        .lock()
-        .unwrap()
-        .contains_key("call-retry"));
+    assert!(
+        resident
+            .pending_interactions
+            .as_ref()
+            .unwrap()
+            .lock()
+            .unwrap()
+            .contains_key("call-retry")
+    );
 }
 
 #[tokio::test]
@@ -406,12 +406,7 @@ async fn interaction_facade_missing_hub_keeps_pending_for_retry() {
     let temp = TempDir::new().unwrap();
     let port = no_hub_port(&temp);
     let s = start_session(&port, "/work/ix/no-hub", "ix-no-hub").await;
-    seed_pending_without_delivery_hub(
-        &port,
-        &s.session_id,
-        "call-no-hub",
-        PendingKind::Permission,
-    );
+    seed_pending_without_delivery_hub(&port, &s.session_id, "call-no-hub", PendingKind::Permission);
 
     let err = port
         .respond_interaction(InteractionResponseParams {
@@ -425,13 +420,15 @@ async fn interaction_facade_missing_hub_keeps_pending_for_retry() {
         .unwrap_err();
     assert_eq!(err.code, "unsupported");
     let resident = port.resident(&s.session_id).unwrap();
-    assert!(resident
-        .pending_interactions
-        .as_ref()
-        .unwrap()
-        .lock()
-        .unwrap()
-        .contains_key("call-no-hub"));
+    assert!(
+        resident
+            .pending_interactions
+            .as_ref()
+            .unwrap()
+            .lock()
+            .unwrap()
+            .contains_key("call-no-hub")
+    );
 }
 
 #[tokio::test]
@@ -439,12 +436,7 @@ async fn interaction_facade_closed_receiver_keeps_pending_for_retry() {
     let temp = TempDir::new().unwrap();
     let port = real_port(&temp);
     let s = start_session(&port, "/work/ix/closed-receiver", "ix-closed").await;
-    let rx = seed_pending(
-        &port,
-        &s.session_id,
-        "call-closed",
-        PendingKind::Question,
-    );
+    let rx = seed_pending(&port, &s.session_id, "call-closed", PendingKind::Question);
     drop(rx);
 
     let err = port
@@ -459,13 +451,15 @@ async fn interaction_facade_closed_receiver_keeps_pending_for_retry() {
         .unwrap_err();
     assert_eq!(err.code, "interaction_not_deliverable");
     let resident = port.resident(&s.session_id).unwrap();
-    assert!(resident
-        .pending_interactions
-        .as_ref()
-        .unwrap()
-        .lock()
-        .unwrap()
-        .contains_key("call-closed"));
+    assert!(
+        resident
+            .pending_interactions
+            .as_ref()
+            .unwrap()
+            .lock()
+            .unwrap()
+            .contains_key("call-closed")
+    );
 }
 
 // ===========================================================================
@@ -507,9 +501,7 @@ async fn interaction_facade_production_source_has_no_second_permission_engine() 
     // second permission policy engine. The delivery channel checks
     // membership and forwards the decision; it must not contain allow/deny
     // evaluation logic of its own.
-    let src = include_str!(
-        "../src/app_server_runtime/shell_session_actor_runtime.rs"
-    );
+    let src = include_str!("../src/app_server_runtime/shell_session_actor_runtime.rs");
     let production = src.split("#[cfg(test)]").next().unwrap();
 
     // The respond_interaction method body must not contain policy evaluation
@@ -579,9 +571,7 @@ async fn interaction_facade_suite_covers_minimum_scenarios() {
     );
     // The production source (not the test file) must not construct or import
     // FakeRuntime — the delivery channel is backed by the real adapter only.
-    let prod_src = include_str!(
-        "../src/app_server_runtime/shell_session_actor_runtime.rs"
-    );
+    let prod_src = include_str!("../src/app_server_runtime/shell_session_actor_runtime.rs");
     let prod_code = prod_src.split("#[cfg(test)]").next().unwrap();
     assert!(
         !prod_code.contains("FakeRuntime::new"),

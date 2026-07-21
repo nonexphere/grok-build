@@ -4,8 +4,8 @@
 //! switch registration.
 
 use std::collections::BTreeMap;
-use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, Ordering};
 
 use chrono::Utc;
 use tempfile::TempDir;
@@ -17,8 +17,8 @@ use xai_grok_multi_auth::store::file::FileCredentialStore;
 use xai_grok_multi_auth::store::paths::StorePaths;
 
 use xai_grok_auth::{
-    CredentialSecret, CredentialStore, CredentialUpdate, NewCredentialRecord,
-    ProviderAccountInfo, ProviderId, SecretBackendKind, SecretString,
+    CredentialSecret, CredentialStore, CredentialUpdate, NewCredentialRecord, ProviderAccountInfo,
+    ProviderId, SecretBackendKind, SecretString,
 };
 
 // ── Helpers ─────────────────────────────────────────────────────────
@@ -164,18 +164,18 @@ async fn store_unix_0600_on_secrets_file() {
         .unwrap()
         .permissions()
         .mode();
-    assert_eq!(
-        mode & 0o777,
-        0o600,
-        "secrets file must be owner-only 0o600"
-    );
+    assert_eq!(mode & 0o777, 0o600, "secrets file must be owner-only 0o600");
 
     // Accounts file should also be 0600.
     let mode = std::fs::metadata(paths.accounts_file())
         .unwrap()
         .permissions()
         .mode();
-    assert_eq!(mode & 0o777, 0o600, "accounts file must be owner-only 0o600");
+    assert_eq!(
+        mode & 0o777,
+        0o600,
+        "accounts file must be owner-only 0o600"
+    );
 }
 
 // ── Test 4: ephemeral store ──────────────────────────────────────────
@@ -241,18 +241,24 @@ async fn store_alias_and_default_account() {
 
     // Alias resolution.
     assert_eq!(
-        store.resolve_alias(&xai(), "personal").await.unwrap().unwrap(),
+        store
+            .resolve_alias(&xai(), "personal")
+            .await
+            .unwrap()
+            .unwrap(),
         m1.key
     );
     assert_eq!(
         store.resolve_alias(&xai(), "work").await.unwrap().unwrap(),
         m2.key
     );
-    assert!(store
-        .resolve_alias(&xai(), "nonexistent")
-        .await
-        .unwrap()
-        .is_none());
+    assert!(
+        store
+            .resolve_alias(&xai(), "nonexistent")
+            .await
+            .unwrap()
+            .is_none()
+    );
 
     // Set and get default.
     store.set_default_account(&m1.key).await.unwrap();
@@ -276,10 +282,7 @@ async fn store_alias_and_default_account() {
     assert!(m3.alias.starts_with("personal"));
 
     // No alias defaults to "default".
-    let m4 = store
-        .create(new_record(codex(), None, "t4"))
-        .await
-        .unwrap();
+    let m4 = store.create(new_record(codex(), None, "t4")).await.unwrap();
     assert_eq!(m4.alias, "default");
 }
 
@@ -293,7 +296,10 @@ fn secret_debug_redaction() {
         id_token: Some(SecretString::from_str("super-secret-id-token")),
         fields: {
             let mut m = BTreeMap::new();
-            m.insert("api_key".to_string(), SecretString::from_str("secret-api-key"));
+            m.insert(
+                "api_key".to_string(),
+                SecretString::from_str("secret-api-key"),
+            );
             m
         },
     };
@@ -330,7 +336,10 @@ fn kill_switch_disables_codex_registration() {
     let registry = registry::build_default_registry();
     let descriptors = registry.list();
     let has_codex = descriptors.iter().any(|d| d.id.as_str() == "codex");
-    assert!(!has_codex, "Codex should not be registered when kill switch is on");
+    assert!(
+        !has_codex,
+        "Codex should not be registered when kill switch is on"
+    );
 
     // xAI should still be registered.
     let has_xai = descriptors.iter().any(|d| d.id.as_str() == "xai");
@@ -346,7 +355,10 @@ fn kill_switch_disables_codex_registration() {
     let registry = registry::build_default_registry();
     let descriptors = registry.list();
     let has_codex = descriptors.iter().any(|d| d.id.as_str() == "codex");
-    assert!(has_codex, "Codex should be registered when kill switch is off");
+    assert!(
+        has_codex,
+        "Codex should be registered when kill switch is off"
+    );
 
     // Restore original value.
     if let Some(val) = was_set {

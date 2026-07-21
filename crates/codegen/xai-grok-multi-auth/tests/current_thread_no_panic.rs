@@ -9,7 +9,9 @@ use xai_grok_auth::{
     CredentialSecret, CredentialStore, NewCredentialRecord, ProviderAccountInfo, ProviderId,
     SecretBackendKind, SecretString,
 };
-use xai_grok_multi_auth::provider_model_key::{format_provider_model_key, parse_provider_model_key};
+use xai_grok_multi_auth::provider_model_key::{
+    format_provider_model_key, parse_provider_model_key,
+};
 use xai_grok_multi_auth::store::file::FileCredentialStore;
 use xai_grok_multi_auth::token_resolve;
 
@@ -51,11 +53,7 @@ fn block_on_safe_on_current_thread_runtime_does_not_panic() {
     // Nested: already on current-thread handle; must not panic.
     let result = rt.block_on(async {
         // Simulate session worker calling sync BearerResolver path.
-        token_resolve::resolve_access_token_blocking(
-            &home,
-            &provider,
-            meta.key.credential_id,
-        )
+        token_resolve::resolve_access_token_blocking(&home, &provider, meta.key.credential_id)
     });
     assert!(
         result.is_ok(),

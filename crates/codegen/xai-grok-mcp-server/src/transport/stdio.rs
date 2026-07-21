@@ -67,13 +67,8 @@ mod stdio_tests {
         let v: Value = serde_json::from_str(&out[0]).unwrap();
         assert_eq!(v["result"]["tools"].as_array().unwrap().len(), 9);
         // Empty input is graceful EOF with zero lines.
-        let empty = process_mcp_stdio_batch(
-            Arc::new(FakeRuntime::new()),
-            "orchestrator",
-            false,
-            "",
-        )
-        .await;
+        let empty =
+            process_mcp_stdio_batch(Arc::new(FakeRuntime::new()), "orchestrator", false, "").await;
         assert!(empty.is_empty());
     }
 
@@ -91,8 +86,26 @@ mod stdio_tests {
         let out = process_mcp_stdio_batch(rt, "orchestrator", false, &input).await;
         // Only the well-formed line produces a response; malformed lines are
         // silently dropped (the loop writes a stderr diagnostic, not stdout).
-        assert_eq!(out.len(), 1, "malformed lines must not produce stdout: {out:?}");
+        assert_eq!(
+            out.len(),
+            1,
+            "malformed lines must not produce stdout: {out:?}"
+        );
         let v: Value = serde_json::from_str(&out[0]).unwrap();
         assert_eq!(v["result"]["tools"].as_array().unwrap().len(), 9);
+    }
+
+    #[tokio::test]
+    async fn stdio_packet_fixture_preserves_ndjson_request_response_order() {
+        let rt = Arc::new(FakeRuntime::new());
+        let input = include_str!("../../tests/fixtures/stdio_tools_packet.ndjson");
+        let out = process_mcp_stdio_batch(rt, "orchestrator", false, input).await;
+        assert_eq!(out.len(), 2);
+        let list: Value = serde_json::from_str(&out[0]).unwrap();
+        let call: Value = serde_json::from_str(&out[1]).unwrap();
+        assert_eq!(list["id"], 101);
+        assert_eq!(call["id"], 102);
+        assert_eq!(list["result"]["tools"].as_array().unwrap().len(), 9);
+        assert!(call["result"]["structuredContent"].is_object());
     }
 }

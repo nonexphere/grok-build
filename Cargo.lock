@@ -8588,6 +8588,7 @@ dependencies = [
  "oauth2",
  "pastey",
  "pin-project-lite",
+ "process-wrap",
  "reqwest 0.13.4",
  "rmcp-macros",
  "schemars 1.0.4",
@@ -13261,6 +13262,8 @@ dependencies = [
  "axum",
  "futures-util",
  "reqwest 0.12.24",
+ "reqwest 0.13.4",
+ "rmcp",
  "serde_json",
  "tokio",
  "url",
@@ -13463,7 +13466,9 @@ dependencies = [
  "futures-util",
  "libc",
  "obfstr",
+ "process-wrap",
  "reqwest 0.12.24",
+ "rmcp",
  "rustls",
  "semver",
  "serde_json",
@@ -14114,6 +14119,7 @@ dependencies = [
 name = "xai-grok-tower-tools"
 version = "0.1.0"
 dependencies = [
+ "jsonschema",
  "serde",
  "serde_json",
  "tokio",

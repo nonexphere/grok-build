@@ -1031,7 +1031,10 @@ impl JsonlStorageAdapter {
         let provider_binding_copied = {
             let src = self.provider_binding_file(source_info);
             if src.is_file() {
-                std::fs::write(self.provider_binding_file(target_info), std::fs::read(&src)?)?;
+                std::fs::write(
+                    self.provider_binding_file(target_info),
+                    std::fs::read(&src)?,
+                )?;
                 true
             } else {
                 false

@@ -314,9 +314,7 @@ async fn c1_real_adapter_start_turn_returns_unsupported_actor_gap() {
     let err = port
         .start_turn(TurnStartParams {
             session_id: s.session_id.clone(),
-            input: vec![InputBlock::Text {
-                text: "hi".into(),
-            }],
+            input: vec![InputBlock::Text { text: "hi".into() }],
             idempotency_key: "turn-1".into(),
         })
         .await
@@ -550,9 +548,8 @@ async fn c1_real_adapter_shell_runtime_adapter_wraps_real_port() {
     // port as its inner Arc<dyn GrokRuntimeFacade> and record a registry token.
     use xai_grok_shell::app_server_runtime::ShellRuntimeAdapter;
     let temp = TempDir::new().unwrap();
-    let real: Arc<dyn GrokRuntimeFacade> = Arc::new(ShellSessionActorRuntime::new(
-        temp.path().to_path_buf(),
-    ));
+    let real: Arc<dyn GrokRuntimeFacade> =
+        Arc::new(ShellSessionActorRuntime::new(temp.path().to_path_buf()));
     let adapter = ShellRuntimeAdapter::inject(real);
     let s = adapter
         .start_session(SessionStartParams {

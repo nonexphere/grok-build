@@ -50,13 +50,14 @@ facade recebe apenas handles e mensagens `Send`.
   interação e rollback/concurrency ainda não têm gate.
 - [~] PSH-06 Adicionar teste RED/GREEN com mock de inferência:
   initialize → new session → prompt → notification/history → cancel/shutdown.
-  O teste atual prova initialize/session/prompt/notification/shutdown e ainda
-  precisa comprovar a projeção durável em history e cancelamento.
+  A suíte agora prova initialize/session/prompt/notification/shutdown,
+  cancelamento observável (`Cancelled`), updates duráveis e replay através da
+  facade `ShellSessionActorRuntime`.
 - [~] PSH-07 Integrar a factory no composition root e só então habilitar
-  capabilities de turns/items/interactions. O composition root agora expõe uma
-  seam explícita `experimental_app_server_processor_with_acp_spawn`; ela não é
-  o caminho default e não promove capabilities enquanto os gates de actor,
-  Interaction e replay permanecerem incompletos.
+  capabilities de turns/items/interactions. O composition root de produção
+  agora injeta a factory ACP e promove somente `turn/start`, `turn/steer` e
+  `turn/interrupt`; o construtor explícito de root permanece storage-only para
+  testes herméticos. Interaction e item lifecycle continuam fail-closed.
 - [ ] PSH-08 Adicionar soak/concurrency/cleanup e gate black-box dos três
   binários; atualizar a matriz de readiness.
 
@@ -66,3 +67,21 @@ As suítes FakeRuntime, `experimental_local_turn_spawn`, `tools/list`,
 `initialize`, listagem JSONL ou um handshake ACP isolado não satisfazem este
 epic. A prova precisa atravessar o agente real, o mock de inferência, a
 persistência e a facade product composition.
+## Revisão de implementação
+
+Este epic só pode ser executado quando cada task tiver owner, arquivos ou
+contrato afetado, pré-condição, comando de validação e evidência esperada.
+Alterações de comportamento exigem Red-Green-Refactor; alterações de contrato
+exigem contract test e atualização da matriz de rastreabilidade.
+
+### Gate mínimo
+
+- [ ] dependências e links deste epic foram verificados;
+- [ ] interfaces, schemas, estados, erros e compatibilidade estão definidos;
+- [ ] caminho fake/conformance está separado do caminho product-backed;
+- [ ] testes unitários, integração, black-box e segurança foram classificados;
+- [ ] timeout, cancelamento, retry, restart e falhas parciais foram tratados;
+- [ ] observabilidade, limites de recurso e redaction foram especificados;
+- [ ] comando reproduzível e artefato de evidência foram registrados;
+- [ ] bloqueios humanos/externos possuem owner e condição de desbloqueio;
+- [ ] status do epic foi reconciliado com `TRACEABILITY.md` e `COMPLETION_COVERAGE.md`.

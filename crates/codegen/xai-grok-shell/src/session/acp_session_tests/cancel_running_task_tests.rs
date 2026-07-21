@@ -136,7 +136,9 @@ async fn persist_ack_waits_for_disk_flush_before_success() {
                 pending_interactions: std::sync::Arc::new(std::sync::Mutex::new(
                     std::collections::HashMap::new(),
                 )),
-                interaction_delivery_hub: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+                interaction_delivery_hub: std::sync::Arc::new(std::sync::Mutex::new(
+                    std::collections::HashMap::new(),
+                )),
 
                 current_prompt_mode: Arc::new(parking_lot::Mutex::new(PromptMode::Agent)),
                 turn_start_prompt_mode: parking_lot::Mutex::new(PromptMode::Agent),
@@ -591,7 +593,9 @@ async fn first_turn_memory_injection_disabled_does_not_persist_to_chat_history()
                 pending_interactions: std::sync::Arc::new(std::sync::Mutex::new(
                     std::collections::HashMap::new(),
                 )),
-                interaction_delivery_hub: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+                interaction_delivery_hub: std::sync::Arc::new(std::sync::Mutex::new(
+                    std::collections::HashMap::new(),
+                )),
 
                 current_prompt_mode: Arc::new(parking_lot::Mutex::new(PromptMode::Agent)),
                 turn_start_prompt_mode: parking_lot::Mutex::new(PromptMode::Agent),

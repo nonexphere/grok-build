@@ -142,8 +142,8 @@ pub enum MethodDocument {
 mod methods_tests {
     use super::*;
     use crate::{
-        InputBlock, Item, ItemBody, ItemStatus, ProviderBinding, Session, SessionStartParams,
-        SessionStatus, Turn, TurnKind, TurnStartParams, TurnStatus, PROTOCOL_VERSION,
+        InputBlock, Item, ItemBody, ItemStatus, PROTOCOL_VERSION, ProviderBinding, Session,
+        SessionStartParams, SessionStatus, Turn, TurnKind, TurnStartParams, TurnStatus,
     };
     use serde_json::json;
 
@@ -193,7 +193,8 @@ mod methods_tests {
             idempotency_key: "turn-1".into(),
         };
         assert_eq!(
-            serde_json::from_value::<TurnStartParams>(serde_json::to_value(&turn).unwrap()).unwrap(),
+            serde_json::from_value::<TurnStartParams>(serde_json::to_value(&turn).unwrap())
+                .unwrap(),
             turn
         );
 
@@ -218,8 +219,10 @@ mod methods_tests {
             idempotency_key: "int-1".into(),
         };
         assert_eq!(
-            serde_json::from_value::<TurnInterruptParams>(serde_json::to_value(&interrupt).unwrap())
-                .unwrap(),
+            serde_json::from_value::<TurnInterruptParams>(
+                serde_json::to_value(&interrupt).unwrap()
+            )
+            .unwrap(),
             interrupt
         );
 
@@ -263,9 +266,7 @@ mod methods_tests {
                 revision: 1.into(),
                 status: ItemStatus::Completed,
                 created_at_ms: 1,
-                body: ItemBody::AgentMessage {
-                    text: "ok".into(),
-                },
+                body: ItemBody::AgentMessage { text: "ok".into() },
             }],
         };
         let read_json = serde_json::to_value(&read).unwrap();

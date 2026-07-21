@@ -503,8 +503,9 @@ mod tests {
     #[test]
     fn update_catalog_rematches_short_slug_to_unique_codex_key() {
         let short = acp::ModelId::new(Arc::from("gpt-5.6-luna"));
-        let catalog_key =
-            acp::ModelId::new(Arc::from("codex/019f6a33-60f7-78c1-97e7-27fc1ccfc525/gpt-5.6-luna"));
+        let catalog_key = acp::ModelId::new(Arc::from(
+            "codex/019f6a33-60f7-78c1-97e7-27fc1ccfc525/gpt-5.6-luna",
+        ));
         let mut state = ModelState::default();
         // Session selected short routing slug (CLI --model / deferred switch).
         state.current = Some(short.clone());
@@ -513,11 +514,7 @@ mod tests {
         let mut refreshed = IndexMap::new();
         refreshed.insert(
             catalog_key.clone(),
-            model_with_effort(
-                catalog_key.0.as_ref(),
-                "GPT-5.6-Luna",
-                "medium",
-            ),
+            model_with_effort(catalog_key.0.as_ref(), "GPT-5.6-Luna", "medium"),
         );
         // Shell global default is still grok-4.5 — must not win over unique rematch.
         let shell_fallback = acp::ModelId::new(Arc::from("grok-4.5"));
@@ -542,10 +539,12 @@ mod tests {
         let mut state = ModelState::default();
         state.current = Some(short);
 
-        let key_a =
-            acp::ModelId::new(Arc::from("codex/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/gpt-5.6-luna"));
-        let key_b =
-            acp::ModelId::new(Arc::from("codex/bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb/gpt-5.6-luna"));
+        let key_a = acp::ModelId::new(Arc::from(
+            "codex/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/gpt-5.6-luna",
+        ));
+        let key_b = acp::ModelId::new(Arc::from(
+            "codex/bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb/gpt-5.6-luna",
+        ));
         let fallback = acp::ModelId::new(Arc::from("grok-4.5"));
         let mut refreshed = IndexMap::new();
         refreshed.insert(key_a, model_with_effort("k-a", "Luna A", "low"));
@@ -565,8 +564,9 @@ mod tests {
 
     #[test]
     fn set_current_rematches_short_slug_onto_catalog_key() {
-        let catalog_key =
-            acp::ModelId::new(Arc::from("codex/019f6a33-60f7-78c1-97e7-27fc1ccfc525/gpt-5.6-luna"));
+        let catalog_key = acp::ModelId::new(Arc::from(
+            "codex/019f6a33-60f7-78c1-97e7-27fc1ccfc525/gpt-5.6-luna",
+        ));
         let mut state = ModelState::default();
         state.available.insert(
             catalog_key.clone(),

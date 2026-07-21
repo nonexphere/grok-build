@@ -17,7 +17,12 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use futures_util::StreamExt;
-use serde_json::{json, Value};
+use rmcp::ServiceExt;
+use rmcp::model::{CallToolRequestParams, PaginatedRequestParams};
+use rmcp::transport::streamable_http_client::{
+    StreamableHttpClientTransport, StreamableHttpClientTransportConfig,
+};
+use serde_json::{Value, json};
 use tokio::time::timeout;
 use xai_grok_mcp_server::{
     DEFAULT_MAX_SESSION_EVENTS, MCP_PROTOCOL_VERSION, McpHttpConfig, McpSession,
@@ -27,11 +32,7 @@ use xai_grok_tower::FakeRuntime;
 
 /// Read a long-lived SSE body until `idle` passes without new bytes (or the
 /// stream ends). C4-F live-push SSE no longer terminates after the snapshot.
-async fn read_sse_until_idle(
-    resp: reqwest::Response,
-    idle: Duration,
-    overall: Duration,
-) -> String {
+async fn read_sse_until_idle(resp: reqwest::Response, idle: Duration, overall: Duration) -> String {
     let start = Instant::now();
     let mut body = String::new();
     let mut stream = resp.bytes_stream();
@@ -58,8 +59,11 @@ const TOKEN: &str = "tower-bearer-token";
 
 /// Spawn a real MCP HTTP server on an ephemeral loopback port with the given
 /// config overrides. Returns the bound address and the join handle.
-async fn spawn_server(
-) -> (std::net::SocketAddr, Arc<xai_grok_mcp_server::McpHttpState>, tokio::task::JoinHandle<()>) {
+async fn spawn_server() -> (
+    std::net::SocketAddr,
+    Arc<xai_grok_mcp_server::McpHttpState>,
+    tokio::task::JoinHandle<()>,
+) {
     spawn_server_with(McpHttpConfig {
         bearer_token: TOKEN.to_owned(),
         require_auth: true,
@@ -71,7 +75,11 @@ async fn spawn_server(
 
 async fn spawn_server_with(
     config: McpHttpConfig,
-) -> (std::net::SocketAddr, Arc<xai_grok_mcp_server::McpHttpState>, tokio::task::JoinHandle<()>) {
+) -> (
+    std::net::SocketAddr,
+    Arc<xai_grok_mcp_server::McpHttpState>,
+    tokio::task::JoinHandle<()>,
+) {
     let runtime: Arc<dyn xai_grok_tower::GrokRuntimeFacade> = Arc::new(FakeRuntime::new());
     let handle = run_mcp_http_server(runtime, config).await.unwrap();
     (handle.addr, handle.state, handle.join)
@@ -164,9 +172,211 @@ async fn post_tools_lists_exactly_nine_descriptors_matching_in_process() {
         .iter()
         .map(|t| t["name"].as_str().unwrap().to_owned())
         .collect();
+    assert_eq!(names, xai_grok_mcp_server::MCP_TOOL_NAMES.to_vec());
+}
+
+#[tokio::test]
+async fn independent_rmcp_client_lists_tools_from_real_listener() {
+    let (addr, _state, _join) = spawn_server().await;
+    let config = StreamableHttpClientTransportConfig::with_uri(format!("http://{addr}/mcp"))
+        .auth_header(TOKEN);
+    let transport = StreamableHttpClientTransport::with_client(reqwest_mcp::Client::new(), config);
+    let client = ().serve(transport).await.expect("rmcp initialize");
+    let tools = client
+        .peer()
+        .list_tools(Some(PaginatedRequestParams::default()))
+        .await
+        .expect("rmcp tools/list");
+
+    assert_eq!(tools.tools.len(), 9);
     assert_eq!(
-        names,
+        tools
+            .tools
+            .iter()
+            .map(|tool| tool.name.as_ref())
+            .collect::<Vec<_>>(),
         xai_grok_mcp_server::MCP_TOOL_NAMES.to_vec()
+    );
+    for tool in tools.tools {
+        assert!(!tool.input_schema.is_empty(), "{} input schema", tool.name);
+    }
+    client.cancel().await.expect("rmcp shutdown");
+}
+
+#[tokio::test]
+async fn independent_rmcp_client_calls_tool_and_observes_tool_error() {
+    let (addr, _state, _join) = spawn_server().await;
+    let config = StreamableHttpClientTransportConfig::with_uri(format!("http://{addr}/mcp"))
+        .auth_header(TOKEN);
+    let transport = StreamableHttpClientTransport::with_client(reqwest_mcp::Client::new(), config);
+    let client = ().serve(transport).await.expect("rmcp initialize");
+
+    let success = client
+        .peer()
+        .call_tool(
+            CallToolRequestParams::new("tower_agent_start").with_arguments(
+                serde_json::json!({
+                    "workspaceRoot": "/work",
+                    "agentType": "build",
+                    "idempotencyKey": "rmcp-call-0001"
+                })
+                .as_object()
+                .unwrap()
+                .clone(),
+            ),
+        )
+        .await
+        .expect("rmcp tools/call success");
+    assert_ne!(success.is_error, Some(true));
+    assert_eq!(
+        success.structured_content.as_ref().unwrap()["state"],
+        "completed"
+    );
+
+    let error = client
+        .peer()
+        .call_tool(
+            CallToolRequestParams::new("tower_agent_start").with_arguments(serde_json::Map::new()),
+        )
+        .await
+        .expect("rmcp tools/call tool-level error");
+    assert_eq!(error.is_error, Some(true));
+    assert_eq!(
+        error.structured_content.as_ref().unwrap()["code"],
+        "invalid_arguments"
+    );
+
+    client.cancel().await.expect("rmcp shutdown");
+}
+
+#[tokio::test]
+async fn http_product_matrix_calls_all_nine_tools_and_validates_success_outputs() {
+    let (addr, _state, _join) = spawn_server().await;
+    let c = client();
+    let (_, _, session) = post_json(&c, addr, Some(TOKEN), None, &init_request(1)).await;
+    let mcp_sid = session.as_deref().unwrap();
+
+    async fn call(
+        c: &reqwest::Client,
+        addr: std::net::SocketAddr,
+        mcp_sid: &str,
+        id: u64,
+        name: &str,
+        arguments: Value,
+    ) -> Value {
+        let (_, body, _) = post_json(
+            c,
+            addr,
+            Some(TOKEN),
+            Some(mcp_sid),
+            &json!({
+                "jsonrpc":"2.0","id":id,"method":"tools/call",
+                "params":{"name":name,"arguments":arguments}
+            }),
+        )
+        .await;
+        assert_ne!(body["result"]["isError"], true, "{name}: {body}");
+        let output = body["result"]["structuredContent"].clone();
+        xai_grok_tower_tools::validate_tool_output(name, &output)
+            .unwrap_or_else(|error| panic!("{name} output schema: {error:?}; body={body}"));
+        output
+    }
+
+    let _list = call(&c, addr, mcp_sid, 2, "tower_agent_list", json!({})).await;
+    let start = call(
+        &c,
+        addr,
+        mcp_sid,
+        3,
+        "tower_agent_start",
+        json!({
+            "workspaceRoot":"/work/all-nine",
+            "agentType":"build",
+            "idempotencyKey":"all-nine-start-0001"
+        }),
+    )
+    .await;
+    let tower_sid = start["sessionId"].as_str().unwrap().to_owned();
+    let send = call(
+        &c,
+        addr,
+        mcp_sid,
+        4,
+        "tower_agent_send",
+        json!({
+            "sessionId":tower_sid,
+            "input":[{"type":"text","text":"hello"}],
+            "mode":"new_turn",
+            "idempotencyKey":"all-nine-send-0001"
+        }),
+    )
+    .await;
+    let _turn_id = send["turnId"].as_str().unwrap().to_owned();
+    let _history = call(
+        &c,
+        addr,
+        mcp_sid,
+        5,
+        "tower_agent_history",
+        json!({"sessionId":tower_sid,"mode":"last","maxBytes":4096}),
+    )
+    .await;
+    let _resume = call(
+        &c,
+        addr,
+        mcp_sid,
+        6,
+        "tower_agent_resume",
+        json!({"sessionId":tower_sid,"idempotencyKey":"all-nine-resume-0001"}),
+    )
+    .await;
+    let _wait = call(
+        &c,
+        addr,
+        mcp_sid,
+        7,
+        "tower_agent_wait",
+        json!({"sessionId":tower_sid,"afterEventSeq":"0","timeoutMs":1}),
+    )
+    .await;
+    let _status = call(
+        &c,
+        addr,
+        mcp_sid,
+        8,
+        "tower_agent_status",
+        json!({"sessionId":tower_sid}),
+    )
+    .await;
+    let _archive = call(
+        &c,
+        addr,
+        mcp_sid,
+        9,
+        "tower_agent_archive",
+        json!({"sessionId":tower_sid,"idempotencyKey":"all-nine-archive-0001"}),
+    )
+    .await;
+
+    // FakeRuntime completes turns immediately, so interrupt has no active turn
+    // to cancel. Still exercise its public HTTP error shape as the ninth tool.
+    let (_, body, _) = post_json(
+        &c,
+        addr,
+        Some(TOKEN),
+        Some(mcp_sid),
+        &json!({
+            "jsonrpc":"2.0","id":10,"method":"tools/call",
+            "params":{"name":"tower_agent_interrupt","arguments":{
+                "sessionId":tower_sid,"turnId":"turn_missing","idempotencyKey":"all-nine-int-0001"
+            }}
+        }),
+    )
+    .await;
+    assert_eq!(body["result"]["isError"], true);
+    assert_eq!(
+        body["result"]["structuredContent"]["code"],
+        "turn_not_found"
     );
 }
 
@@ -243,11 +453,13 @@ async fn completed_tool_result_does_not_leave_an_active_turn() {
     )
     .await;
 
-    assert!(state.sessions.lock().unwrap()[&sid]
-        .active_turn_id
-        .lock()
-        .unwrap()
-        .is_none());
+    assert!(
+        state.sessions.lock().unwrap()[&sid]
+            .active_turn_id
+            .lock()
+            .unwrap()
+            .is_none()
+    );
 }
 
 #[tokio::test]
@@ -317,8 +529,7 @@ async fn concurrent_quiet_tools_calls_do_not_duplicate_replay_page() {
         .unwrap()
         .len();
     assert_eq!(
-        after,
-        baseline,
+        after, baseline,
         "concurrent quiet pulls must append no page twice"
     );
 }
@@ -349,7 +560,10 @@ async fn post_tools_call_deny_path_emits_iserror_with_forbidden_code() {
     .await;
     assert_eq!(status, reqwest::StatusCode::OK);
     assert_eq!(body["result"]["isError"], true);
-    assert_eq!(body["result"]["structuredContent"]["code"], "tower_acl_denied");
+    assert_eq!(
+        body["result"]["structuredContent"]["code"],
+        "tower_acl_denied"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -633,12 +847,11 @@ async fn open_sse_emits_resumption_error_when_buffer_expires() {
 #[tokio::test]
 async fn open_sse_emits_resumption_error_on_tower_epoch_mismatch() {
     let force_epoch_mismatch = Arc::new(std::sync::atomic::AtomicBool::new(false));
-    let runtime: Arc<dyn xai_grok_tower::GrokRuntimeFacade> =
-        Arc::new(InterruptProbeRuntime {
-            inner: FakeRuntime::new(),
-            interrupts: Arc::new(std::sync::Mutex::new(Vec::new())),
-            force_epoch_mismatch: force_epoch_mismatch.clone(),
-        });
+    let runtime: Arc<dyn xai_grok_tower::GrokRuntimeFacade> = Arc::new(InterruptProbeRuntime {
+        inner: FakeRuntime::new(),
+        interrupts: Arc::new(std::sync::Mutex::new(Vec::new())),
+        force_epoch_mismatch: force_epoch_mismatch.clone(),
+    });
     let handle = run_mcp_http_server(
         runtime,
         McpHttpConfig {
@@ -689,7 +902,10 @@ async fn tower_session_rebind_resets_mcp_replay_identity() {
     let (_, _, session) = post_json(&c, addr, Some(TOKEN), None, &init_request(1)).await;
     let sid = session.as_deref().unwrap().to_owned();
 
-    for (id, root, key) in [(2, "/work/rebind-a", "rebind-a"), (3, "/work/rebind-b", "rebind-b")] {
+    for (id, root, key) in [
+        (2, "/work/rebind-a", "rebind-a"),
+        (3, "/work/rebind-b", "rebind-b"),
+    ] {
         let (_, body, _) = post_json(
             &c,
             addr,
@@ -711,11 +927,13 @@ async fn tower_session_rebind_resets_mcp_replay_identity() {
         }
     }
 
-    assert!(state.sessions.lock().unwrap()[&sid]
-        .active_turn_id
-        .lock()
-        .unwrap()
-        .is_none());
+    assert!(
+        state.sessions.lock().unwrap()[&sid]
+            .active_turn_id
+            .lock()
+            .unwrap()
+            .is_none()
+    );
 
     // The second start binds a different Tower session. Its replay must begin
     // at cursor zero with the new session epoch, not reuse session A's epoch.
@@ -927,8 +1145,7 @@ impl xai_grok_tower::GrokRuntimeFacade for InterruptProbeRuntime {
     async fn read_session(
         &self,
         params: xai_grok_app_server_protocol::SessionReadParams,
-    ) -> Result<xai_grok_app_server_protocol::SessionReadResult, xai_grok_tower::RuntimeError>
-    {
+    ) -> Result<xai_grok_app_server_protocol::SessionReadResult, xai_grok_tower::RuntimeError> {
         self.inner.read_session(params).await
     }
     async fn start_session(
@@ -1051,8 +1268,7 @@ async fn r5_mcp_ttl_eviction_via_lookup_interrupts_active_turn() {
         let s = state.sessions.lock().unwrap().get(&sid_a).cloned().unwrap();
         *s.tower_session_id.lock().unwrap() = Some(tower.session_id.clone());
         *s.active_turn_id.lock().unwrap() = Some(turn.turn_id.clone());
-        *s.last_active.lock().unwrap() =
-            std::time::Instant::now() - Duration::from_secs(10);
+        *s.last_active.lock().unwrap() = std::time::Instant::now() - Duration::from_secs(10);
     }
 
     // Session B (fresh) — initialize is one eviction path; also prove lookup:
@@ -1084,8 +1300,7 @@ async fn r5_mcp_ttl_eviction_via_lookup_interrupts_active_turn() {
         ));
         *expired.tower_session_id.lock().unwrap() = Some(tower.session_id.clone());
         *expired.active_turn_id.lock().unwrap() = Some(turn.turn_id.clone());
-        *expired.last_active.lock().unwrap() =
-            std::time::Instant::now() - Duration::from_secs(10);
+        *expired.last_active.lock().unwrap() = std::time::Instant::now() - Duration::from_secs(10);
         state
             .sessions
             .lock()
@@ -1103,14 +1318,19 @@ async fn r5_mcp_ttl_eviction_via_lookup_interrupts_active_turn() {
         &json!({"jsonrpc":"2.0","id":3,"method":"tools/list"}),
     )
     .await;
-    assert!(list_status.is_success(), "live peer tools/list must succeed");
+    assert!(
+        list_status.is_success(),
+        "live peer tools/list must succeed"
+    );
     assert!(
         !state.sessions.lock().unwrap().contains_key(&sid_a),
         "expired peer must be removed by lookup eviction"
     );
     let calls = interrupts.lock().unwrap().clone();
     assert!(
-        calls.iter().any(|(s, t)| s == &tower.session_id && t == &turn.turn_id),
+        calls
+            .iter()
+            .any(|(s, t)| s == &tower.session_id && t == &turn.turn_id),
         "lookup TTL eviction must call interrupt_turn for the active turn, got {calls:?}"
     );
 }
@@ -1232,14 +1452,8 @@ async fn session_bearer_fingerprint_mismatch_rejects() {
     })
     .await;
     // Negotiate a session on A with bearer A.
-    let (_, _, session_a_id) = post_json(
-        &c,
-        addr_a,
-        Some("tower-bearer-A"),
-        None,
-        &init_request(1),
-    )
-    .await;
+    let (_, _, session_a_id) =
+        post_json(&c, addr_a, Some("tower-bearer-A"), None, &init_request(1)).await;
     let session_a_id = session_a_id.expect("initialize must return a session id");
     // Read the session Arc out of A's public state.
     let session_arc = state_a
@@ -1361,7 +1575,40 @@ async fn stdio_and_http_produce_identical_tools_list_and_error_shapes() {
     .await;
     let stdio_err_val: Value = serde_json::from_str(&stdio_err[0]).unwrap();
     assert_eq!(stdio_err_val["result"]["isError"], true);
-    assert_eq!(stdio_err_val["result"]["structuredContent"]["code"], "tower_acl_denied");
+    assert_eq!(
+        stdio_err_val["result"]["structuredContent"]["code"],
+        "tower_acl_denied"
+    );
+
+    let (addr, _state, _join) = spawn_server_with(McpHttpConfig {
+        bearer_token: TOKEN.to_owned(),
+        agent_type: "build".to_owned(),
+        explicit_opt_in: false,
+        ..Default::default()
+    })
+    .await;
+    let c = client();
+    let (_, _, session) = post_json(&c, addr, Some(TOKEN), None, &init_request(3)).await;
+    let (status, http_err_val, _) = post_json(
+        &c,
+        addr,
+        Some(TOKEN),
+        session.as_deref(),
+        &json!({
+            "jsonrpc":"2.0","id":4,"method":"tools/call",
+            "params":{"name":"tower_agent_list","arguments":{}}
+        }),
+    )
+    .await;
+    assert_eq!(status, reqwest::StatusCode::OK);
+    assert_eq!(http_err_val["result"]["isError"], true);
+    for field in ["code", "retryable", "operationId"] {
+        assert_eq!(
+            stdio_err_val["result"]["structuredContent"][field],
+            http_err_val["result"]["structuredContent"][field],
+            "stdio and HTTP error field drifted: {field}"
+        );
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1405,9 +1652,7 @@ fn composition_source_does_not_register_local_mcp_self_loop() {
     // MCP HTTP at all (PARTIAL — product bin not yet bound), so this guard
     // passes. It will fail if anyone adds a self-registration without an
     // explicit opt-in guard.
-    let composition = include_str!(
-        "../../xai-grok-pager-bin/src/app_server_composition.rs"
-    );
+    let composition = include_str!("../../xai-grok-pager-bin/src/app_server_composition.rs");
     assert!(
         !composition.contains("http://127.0.0.1:8788/mcp"),
         "composition must not hard-register the local MCP URL"
@@ -1485,7 +1730,11 @@ async fn post_notification_returns_202_no_body() {
 async fn healthz_returns_ok_without_auth() {
     let (addr, _state, _join) = spawn_server().await;
     let c = client();
-    let resp = c.get(format!("http://{addr}/healthz")).send().await.unwrap();
+    let resp = c
+        .get(format!("http://{addr}/healthz"))
+        .send()
+        .await
+        .unwrap();
     assert_eq!(resp.status(), reqwest::StatusCode::OK);
 }
 

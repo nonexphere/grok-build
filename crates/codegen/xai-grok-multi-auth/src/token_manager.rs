@@ -21,9 +21,9 @@ use thiserror::Error;
 use tokio::sync::Mutex;
 
 use xai_grok_auth::{
-    CredentialBinding, CredentialKey, CredentialLockPurpose, CredentialSecret,
-    CredentialStore, CredentialUpdate, ProviderError, ProviderRegistry, SecretString,
-    SentCredentialStamp, StoredCredential, TokenUseReason, UnauthorizedRecovery, ValidToken,
+    CredentialBinding, CredentialKey, CredentialLockPurpose, CredentialSecret, CredentialStore,
+    CredentialUpdate, ProviderError, ProviderRegistry, SecretString, SentCredentialStamp,
+    StoredCredential, TokenUseReason, UnauthorizedRecovery, ValidToken,
 };
 
 use crate::fingerprint;
@@ -162,11 +162,8 @@ impl TokenManager {
 
         // Step 8: Verify fingerprint didn't change.
         if let Some(ref new_account) = update.account {
-            let new_fp = fingerprint::compute_fingerprint(
-                &binding.key.provider,
-                &self.issuer,
-                new_account,
-            );
+            let new_fp =
+                fingerprint::compute_fingerprint(&binding.key.provider, &self.issuer, new_account);
             if new_fp != current_fp {
                 return Err(TokenManagerError::AccountMismatch);
             }
@@ -193,9 +190,7 @@ impl TokenManager {
             access_token: update
                 .access_token
                 .unwrap_or_else(|| credential.secret.access_token.clone()),
-            expires_at: update
-                .expires_at
-                .or(credential.metadata.expires_at),
+            expires_at: update.expires_at.or(credential.metadata.expires_at),
             generation: new_metadata.generation,
             account_fingerprint: current_fp,
         })
@@ -333,10 +328,7 @@ fn build_updated_secret(
             .refresh_token
             .clone()
             .or_else(|| old.refresh_token.clone()),
-        id_token: update
-            .id_token
-            .clone()
-            .or_else(|| old.id_token.clone()),
+        id_token: update.id_token.clone().or_else(|| old.id_token.clone()),
         fields: {
             let mut fields: BTreeMap<String, SecretString> = old.fields.clone();
             fields.extend(update.fields.clone());
@@ -355,13 +347,13 @@ mod tests {
     use std::collections::BTreeMap;
     use std::sync::atomic::{AtomicU32, Ordering};
     use xai_grok_auth::{
-        AuthFailureClass, AuthFailureResponse, AuthProvider, CredentialId,
-        CredentialKey, CredentialMetadata, CredentialSecret, LoginCompletion, LoginFlowId,
-        LoginInput, LoginRequest, LoginStart, LogoutOutcome, LogoutRequest, ModelCatalog,
-        ModelListRequest, NewCredentialRecord, ProviderAccountInfo, ProviderCapabilities,
-        ProviderCredentialUpdate, ProviderDescriptor,
-        ProviderEndpointRequest, ProviderError, ProviderId, ProviderRequestAuth,
-        RefreshRequest, RequestAuthContext, StoredCredential, TokenRequest, TokenResolution,
+        AuthFailureClass, AuthFailureResponse, AuthProvider, CredentialId, CredentialKey,
+        CredentialMetadata, CredentialSecret, LoginCompletion, LoginFlowId, LoginInput,
+        LoginRequest, LoginStart, LogoutOutcome, LogoutRequest, ModelCatalog, ModelListRequest,
+        NewCredentialRecord, ProviderAccountInfo, ProviderCapabilities, ProviderCredentialUpdate,
+        ProviderDescriptor, ProviderEndpointRequest, ProviderError, ProviderId,
+        ProviderRequestAuth, RefreshRequest, RequestAuthContext, StoredCredential, TokenRequest,
+        TokenResolution,
     };
 
     /// A mock provider that counts refresh calls.
@@ -418,7 +410,10 @@ mod tests {
                 expires_at: Some(Utc::now() + chrono::Duration::hours(1)),
             })
         }
-        async fn get_valid_token(&self, _: TokenRequest<'_>) -> Result<TokenResolution, ProviderError> {
+        async fn get_valid_token(
+            &self,
+            _: TokenRequest<'_>,
+        ) -> Result<TokenResolution, ProviderError> {
             Err(ProviderError::Disabled)
         }
         async fn logout(&self, _: LogoutRequest<'_>) -> Result<LogoutOutcome, ProviderError> {
@@ -430,7 +425,10 @@ mod tests {
         ) -> Result<ProviderAccountInfo, ProviderError> {
             Ok(cred.metadata.account.clone())
         }
-        async fn list_models(&self, _: ModelListRequest<'_>) -> Result<ModelCatalog, ProviderError> {
+        async fn list_models(
+            &self,
+            _: ModelListRequest<'_>,
+        ) -> Result<ModelCatalog, ProviderError> {
             Ok(ModelCatalog {
                 models: vec![],
                 etag: None,
@@ -439,7 +437,10 @@ mod tests {
                 is_stale: false,
             })
         }
-        fn resolve_endpoint(&self, _: ProviderEndpointRequest<'_>) -> Result<url::Url, ProviderError> {
+        fn resolve_endpoint(
+            &self,
+            _: ProviderEndpointRequest<'_>,
+        ) -> Result<url::Url, ProviderError> {
             Err(ProviderError::Disabled)
         }
         fn build_request_auth(
@@ -456,7 +457,10 @@ mod tests {
         }
     }
 
-    fn make_credential(provider: &ProviderId, expired: bool) -> (CredentialKey, CredentialMetadata, CredentialSecret) {
+    fn make_credential(
+        provider: &ProviderId,
+        expired: bool,
+    ) -> (CredentialKey, CredentialMetadata, CredentialSecret) {
         let key = CredentialKey {
             provider: provider.clone(),
             credential_id: CredentialId::new(),
@@ -537,7 +541,8 @@ mod tests {
             let tm = tm.clone();
             let binding = binding.clone();
             handles.push(tokio::spawn(async move {
-                tm.get_valid_token(&binding, TokenUseReason::Inference).await
+                tm.get_valid_token(&binding, TokenUseReason::Inference)
+                    .await
             }));
         }
 
@@ -574,10 +579,8 @@ mod tests {
 
         // Shared disk state; each manager gets its own FileCredentialStore Arc
         // (as two processes would).
-        let store_a: Arc<dyn CredentialStore> =
-            Arc::new(FileCredentialStore::new(home.clone()));
-        let store_b: Arc<dyn CredentialStore> =
-            Arc::new(FileCredentialStore::new(home.clone()));
+        let store_a: Arc<dyn CredentialStore> = Arc::new(FileCredentialStore::new(home.clone()));
+        let store_b: Arc<dyn CredentialStore> = Arc::new(FileCredentialStore::new(home.clone()));
 
         let provider_id = ProviderId::new_unchecked("mock");
         let meta = store_a
@@ -694,10 +697,7 @@ mod tests {
 
         // recover_unauthorized should see that generation 2 > 1 and retry
         // with current credential WITHOUT refreshing.
-        let recovery = tm
-            .recover_unauthorized(&binding, &sent, 401)
-            .await
-            .unwrap();
+        let recovery = tm.recover_unauthorized(&binding, &sent, 401).await.unwrap();
 
         assert_eq!(
             recovery,
@@ -754,10 +754,7 @@ mod tests {
         };
 
         let tm = TokenManager::new(store.clone(), registry);
-        let recovery = tm
-            .recover_unauthorized(&binding, &sent, 401)
-            .await
-            .unwrap();
+        let recovery = tm.recover_unauthorized(&binding, &sent, 401).await.unwrap();
         assert_eq!(
             recovery,
             UnauthorizedRecovery::RetryAfterRefresh,
@@ -774,14 +771,8 @@ mod tests {
         assert_eq!(loaded.secret.access_token.expose(), "refreshed-token");
 
         // Second recover with old stamp must NOT refresh again (stale stamp).
-        let recovery2 = tm
-            .recover_unauthorized(&binding, &sent, 401)
-            .await
-            .unwrap();
-        assert_eq!(
-            recovery2,
-            UnauthorizedRecovery::RetryWithCurrentCredential
-        );
+        let recovery2 = tm.recover_unauthorized(&binding, &sent, 401).await.unwrap();
+        assert_eq!(recovery2, UnauthorizedRecovery::RetryWithCurrentCredential);
         assert_eq!(
             refresh_count.load(Ordering::SeqCst),
             1,
@@ -831,25 +822,13 @@ mod tests {
         };
 
         let tm = TokenManager::new(store, registry);
-        let recovery = tm
-            .recover_unauthorized(&binding, &sent, 401)
-            .await
-            .unwrap();
-        assert_eq!(
-            recovery,
-            UnauthorizedRecovery::ReauthenticationRequired
-        );
+        let recovery = tm.recover_unauthorized(&binding, &sent, 401).await.unwrap();
+        assert_eq!(recovery, UnauthorizedRecovery::ReauthenticationRequired);
         assert_eq!(refresh_count.load(Ordering::SeqCst), 0);
 
         // Permanent: second call still reauth, still no refresh.
-        let recovery2 = tm
-            .recover_unauthorized(&binding, &sent, 401)
-            .await
-            .unwrap();
-        assert_eq!(
-            recovery2,
-            UnauthorizedRecovery::ReauthenticationRequired
-        );
+        let recovery2 = tm.recover_unauthorized(&binding, &sent, 401).await.unwrap();
+        assert_eq!(recovery2, UnauthorizedRecovery::ReauthenticationRequired);
         assert_eq!(refresh_count.load(Ordering::SeqCst), 0);
     }
 }

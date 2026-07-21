@@ -62,13 +62,10 @@ impl SessionRegistry {
         if let Some(existing) = self.residents.get(session_id).copied() {
             return Ok((existing, false));
         }
-        self.next_token = self
-            .next_token
-            .checked_add(1)
-            .ok_or_else(|| RuntimeError {
-                code: "registry_exhausted",
-                message: "actor token space exhausted".into(),
-            })?;
+        self.next_token = self.next_token.checked_add(1).ok_or_else(|| RuntimeError {
+            code: "registry_exhausted",
+            message: "actor token space exhausted".into(),
+        })?;
         let token = ActorToken(self.next_token);
         create(token)?;
         self.residents.insert(session_id.to_owned(), token);
@@ -80,10 +77,12 @@ impl SessionRegistry {
     }
 
     pub fn residents(&self) -> impl Iterator<Item = ResidentSession> + '_ {
-        self.residents.iter().map(|(session_id, actor)| ResidentSession {
-            session_id: session_id.clone(),
-            actor: *actor,
-        })
+        self.residents
+            .iter()
+            .map(|(session_id, actor)| ResidentSession {
+                session_id: session_id.clone(),
+                actor: *actor,
+            })
     }
 }
 
@@ -91,8 +90,8 @@ impl SessionRegistry {
 mod one_actor_tests {
     use super::*;
     use std::sync::{
-        atomic::{AtomicUsize, Ordering},
         Arc, Mutex,
+        atomic::{AtomicUsize, Ordering},
     };
 
     #[test]

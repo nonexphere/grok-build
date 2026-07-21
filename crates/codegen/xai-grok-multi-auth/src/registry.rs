@@ -5,7 +5,7 @@ use std::sync::Arc;
 use xai_grok_auth::ProviderRegistry;
 
 use crate::kill_switch;
-use crate::providers::byok::{ByokAuthProvider, ALL as BYOK_SPECS, OPENROUTER, GROQ, CLOUDFLARE};
+use crate::providers::byok::{ALL as BYOK_SPECS, ByokAuthProvider, CLOUDFLARE, GROQ, OPENROUTER};
 use crate::providers::{CodexAuthProvider, XaiAuthProvider};
 
 /// Build the default provider registry, respecting kill switches.
@@ -37,14 +37,22 @@ pub fn build_default_registry() -> ProviderRegistry {
 fn register_byok(registry: &mut ProviderRegistry) {
     // Static specs; registration order is stable (openrouter, groq, cloudflare).
     for spec in [OPENROUTER, GROQ, CLOUDFLARE] {
-        registry.register(Arc::new(ByokAuthProvider::new(spec))).ok();
+        registry
+            .register(Arc::new(ByokAuthProvider::new(spec)))
+            .ok();
     }
     // Defensive: ensure every spec in ALL is covered if the array grows.
-    debug_assert_eq!(BYOK_SPECS.len(), 3, "BYOK spec array changed; update register_byok");
+    debug_assert_eq!(
+        BYOK_SPECS.len(),
+        3,
+        "BYOK spec array changed; update register_byok"
+    );
 }
 
 /// Build a registry with a custom Codex config (for testing).
-pub fn build_registry_with_codex_config(codex_config: crate::providers::codex::CodexOAuthConfig) -> ProviderRegistry {
+pub fn build_registry_with_codex_config(
+    codex_config: crate::providers::codex::CodexOAuthConfig,
+) -> ProviderRegistry {
     let mut registry = ProviderRegistry::new();
     registry.register(Arc::new(XaiAuthProvider::new())).ok();
     if !kill_switch::codex_auth_disabled() {

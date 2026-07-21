@@ -8,6 +8,8 @@ description = "Experimental Tower tool descriptors and ACL boundary"
 [dependencies]
 serde = { workspace = true }
 serde_json = { workspace = true }
+jsonschema = { workspace = true }
+tokio = { workspace = true, features = ["time"] }
 xai-grok-app-server-protocol = { path = "../xai-grok-app-server-protocol" }
 xai-grok-tower = { path = "../xai-grok-tower" }
 

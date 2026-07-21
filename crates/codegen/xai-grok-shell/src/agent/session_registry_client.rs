@@ -225,8 +225,7 @@ impl SessionRegistryClient {
     fn record_401_attribution(&self, op: &str) {
         if let Some(manager) = self.credentials.auth_manager() {
             let resolved = self.credentials.resolve();
-            let has_sent_auth =
-                resolved.deployment_key.is_some() || resolved.user_token.is_some();
+            let has_sent_auth = resolved.deployment_key.is_some() || resolved.user_token.is_some();
             crate::auth::attribution::record_consumer_401(
                 manager.as_ref(),
                 self.session_id.as_deref(),

@@ -1005,9 +1005,7 @@ pub(crate) async fn spawn_session_actor(
     let pending_interactions: crate::session::pending_interaction::PendingInteractions =
         std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new()));
     let interaction_delivery_hub: std::sync::Arc<
-        std::sync::Mutex<
-            std::collections::HashMap<String, tokio::sync::oneshot::Sender<String>>,
-        >,
+        std::sync::Mutex<std::collections::HashMap<String, tokio::sync::oneshot::Sender<String>>>,
     > = std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new()));
     let permissions_for_handle = permissions.clone();
     let (event_tx, event_rx) = mpsc::unbounded_channel::<SessionEvent>();
@@ -1591,8 +1589,7 @@ pub(crate) async fn spawn_session_actor(
                         }
                     };
                     {
-                        let mut hub =
-                            hub_for_cleanup.lock().unwrap_or_else(|e| e.into_inner());
+                        let mut hub = hub_for_cleanup.lock().unwrap_or_else(|e| e.into_inner());
                         hub.remove(&tool_call_id_cleanup);
                     }
                     result

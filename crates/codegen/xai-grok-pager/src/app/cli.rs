@@ -385,6 +385,10 @@ pub struct ServeArgs {
 /// Arguments for the combined local Tower supervisor.
 #[derive(Debug, clap::Args, Clone)]
 pub struct TowerArgs {
+    /// Run the Tower MCP JSON-RPC protocol over stdin/stdout instead of
+    /// starting network listeners.
+    #[arg(long)]
+    pub stdio: bool,
     /// App Server WebSocket bind address.
     #[arg(long, default_value = "127.0.0.1:2419")]
     pub bind: SocketAddr,

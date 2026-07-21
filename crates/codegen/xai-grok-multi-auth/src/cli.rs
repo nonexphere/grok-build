@@ -4,7 +4,7 @@
 use std::io::{self, BufRead, Write};
 use std::path::Path;
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use xai_grok_auth::{
     CredentialStore, ModelListRequest, ProviderId, ProviderModel, ProviderRegistry,
 };
@@ -130,23 +130,13 @@ pub async fn logout_providers(
     let providers = if let Some(p) = provider {
         vec![p.clone()]
     } else {
-        store
-            .list_providers()
-            .await
-            .map_err(|e| e.to_string())?
+        store.list_providers().await.map_err(|e| e.to_string())?
     };
 
     for p in providers {
-        let accounts = store
-            .list_accounts(&p)
-            .await
-            .map_err(|e| e.to_string())?;
+        let accounts = store.list_accounts(&p).await.map_err(|e| e.to_string())?;
         for meta in accounts {
-            if store
-                .delete(&meta.key)
-                .await
-                .map_err(|e| e.to_string())?
-            {
+            if store.delete(&meta.key).await.map_err(|e| e.to_string())? {
                 removed += 1;
             }
         }
@@ -213,16 +203,11 @@ pub async fn list_codex_models(home: &Path) -> Result<CodexModelsReport, String>
     }
 
     let registry = crate::registry::build_default_registry();
-    let provider = registry
-        .get(&provider_id)
-        .map_err(|e| e.to_string())?;
+    let provider = registry.get(&provider_id).map_err(|e| e.to_string())?;
 
     let mut out = Vec::new();
     for meta in accounts {
-        let loaded = store
-            .load(&meta.key)
-            .await
-            .map_err(|e| e.to_string())?;
+        let loaded = store.load(&meta.key).await.map_err(|e| e.to_string())?;
         let Some(mut cred) = loaded else {
             out.push(CodexAccountModels {
                 alias: meta.alias,
@@ -337,11 +322,7 @@ pub fn format_codex_models_report(report: &CodexModelsReport) -> String {
                 .context_window
                 .map(|c| format!("  ctx={c}"))
                 .unwrap_or_default();
-            s.push_str(&format!(
-                "  - {} ({}){ctx}\n",
-                m.id,
-                m.display_name
-            ));
+            s.push_str(&format!("  - {} ({}){ctx}\n", m.id, m.display_name));
             if let Some(d) = &m.description {
                 s.push_str(&format!("      {d}\n"));
             }
@@ -353,10 +334,7 @@ pub fn format_codex_models_report(report: &CodexModelsReport) -> String {
 /// Build a JSON status of all providers and credentials, with NO secrets.
 ///
 /// The output never contains `access_token` or `refresh_token` substrings.
-pub async fn auth_status_json(
-    store: &dyn CredentialStore,
-    registry: &ProviderRegistry,
-) -> Value {
+pub async fn auth_status_json(store: &dyn CredentialStore, registry: &ProviderRegistry) -> Value {
     let descriptors = registry.list();
     let mut providers = serde_json::Map::new();
 
@@ -409,8 +387,8 @@ mod tests {
     use chrono::Utc;
     use std::collections::BTreeMap;
     use xai_grok_auth::{
-        CredentialSecret, NewCredentialRecord, ProviderAccountInfo, ProviderId,
-        SecretBackendKind, SecretString,
+        CredentialSecret, NewCredentialRecord, ProviderAccountInfo, ProviderId, SecretBackendKind,
+        SecretString,
     };
 
     /// Test 16: cli parse_login_provider.

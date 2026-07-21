@@ -18,19 +18,24 @@ O único caminho de criação/resume de actor é o factory canônico baseado em 
 - MCP servers outbound, WorkspaceOps e PluginRegistry;
 - thread dedicada e LocalSet exigidos pelo actor.
 
-Nenhum test echo, FakeRuntime ou factory experimental pode ser selecionado no binário de produto.
+Nenhum test echo ou `FakeRuntime` pode ser selecionado no binário de produto. O
+bridge ACP experimental só pode ser usado pela composição padrão enquanto as
+capabilities expostas permanecerem limitadas ao caminho comprovado.
 
 ### ACP bridge boundary (2026-07-19)
 
 The Shell-owned ACP host and experimental resident bridge now prove real
-initialize/auth/session/prompt/cancel, live JSONL persistence, rollback, and
-one-actor prompt serialization against `MockInferenceServer`. They are not the
+initialize/auth/session/prompt/cancel, live JSONL persistence, rollback,
+one-actor prompt serialization, and a real write-tool permission roundtrip
+against `MockInferenceServer`. They are not the
 canonical product actor factory: ACP has no native equivalent of Shell's
 `SessionCommand::Interject`, and mapping Tower steer to a second
-`session/prompt` would violate turn semantics. Until the canonical
-`spawn_session_on_thread` actor factory owns steer/interactions and the product
-black-box gate passes, turn/steer/interrupt/item/interaction capabilities stay
-false and the experimental bridge must not be wired into the binary.
+`session/prompt` would violate turn semantics. The current production
+composition injects this bridge only as a bounded seam and advertises the
+capabilities proven by its real path: turn start/steer/interrupt. Item
+item lifecycle/deltas and App Server interaction capability remain false. The bridge must not be treated
+as completion of the canonical `spawn_session_on_thread` actor factory; the
+product black-box gate and full Shell-owned actor wiring are still required.
 
 ## Startup e readiness
 

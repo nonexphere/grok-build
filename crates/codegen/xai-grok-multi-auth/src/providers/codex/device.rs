@@ -8,7 +8,7 @@ use std::time::Duration;
 use url::Url;
 
 use super::errors::CodexTokenError;
-use super::token::{exchange_authorization_code, TokenResponse};
+use super::token::{TokenResponse, exchange_authorization_code};
 
 // Device redirect URI is defined in `config::DEVICE_REDIRECT_URI`
 // (`https://auth.openai.com/deviceauth/callback`) — re-exported for callers.
@@ -111,8 +111,8 @@ pub async fn poll_device_token(
         return Err(CodexTokenError::http_status(status.as_u16(), &resp_body));
     }
 
-    let poll: DevicePollResponse =
-        serde_json::from_str(&resp_body).map_err(|e| CodexTokenError::InvalidJson(e.to_string()))?;
+    let poll: DevicePollResponse = serde_json::from_str(&resp_body)
+        .map_err(|e| CodexTokenError::InvalidJson(e.to_string()))?;
 
     if poll.authorization_code.is_some() {
         Ok(Some(poll))
@@ -181,11 +181,8 @@ mod tests {
         let client = reqwest::Client::new();
 
         // Step 1: request user code.
-        let usercode_url = Url::parse(&format!(
-            "{}/api/accounts/deviceauth/usercode",
-            base
-        ))
-        .unwrap();
+        let usercode_url =
+            Url::parse(&format!("{}/api/accounts/deviceauth/usercode", base)).unwrap();
         let usercode_resp = request_user_code(&client, &usercode_url, "test-client-id")
             .await
             .unwrap();
@@ -194,11 +191,7 @@ mod tests {
         assert_eq!(usercode_resp.interval_secs(), 5);
 
         // Mock the poll endpoint — first call pending (404), second call complete.
-        let poll_url = Url::parse(&format!(
-            "{}/api/accounts/deviceauth/token",
-            base
-        ))
-        .unwrap();
+        let poll_url = Url::parse(&format!("{}/api/accounts/deviceauth/token", base)).unwrap();
 
         let pending_mock = server
             .mock("POST", "/api/accounts/deviceauth/token")
@@ -234,7 +227,10 @@ mod tests {
             .unwrap();
         assert!(poll2.is_some());
         let poll_resp = poll2.unwrap();
-        assert_eq!(poll_resp.authorization_code.as_deref(), Some("auth-code-xyz"));
+        assert_eq!(
+            poll_resp.authorization_code.as_deref(),
+            Some("auth-code-xyz")
+        );
         assert_eq!(poll_resp.code_verifier.as_deref(), Some("verifier-abc"));
         complete_mock.assert_async().await;
     }

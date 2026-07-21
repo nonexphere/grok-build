@@ -53,17 +53,13 @@ pub fn build_codex_request_headers(
         })?;
     headers.insert(
         "ChatGPT-Account-ID",
-        HeaderValue::from_str(&account_id).map_err(|e| {
-            ProviderError::InvalidConfig(format!("invalid account ID header: {e}"))
-        })?,
+        HeaderValue::from_str(&account_id)
+            .map_err(|e| ProviderError::InvalidConfig(format!("invalid account ID header: {e}")))?,
     );
 
     // X-OpenAI-Fedramp: true (when fedramp)
     if credential.metadata.account.fedramp {
-        headers.insert(
-            "X-OpenAI-Fedramp",
-            HeaderValue::from_static("true"),
-        );
+        headers.insert("X-OpenAI-Fedramp", HeaderValue::from_static("true"));
     }
 
     Ok(headers)
@@ -74,9 +70,8 @@ pub fn resolve_codex_endpoint(
     _config: &CodexOAuthConfig,
     request: &ProviderEndpointRequest<'_>,
 ) -> Result<Url, ProviderError> {
-    let base = Url::parse(CODEX_BASE_URL).map_err(|e| {
-        ProviderError::InvalidConfig(format!("invalid Codex base URL: {e}"))
-    })?;
+    let base = Url::parse(CODEX_BASE_URL)
+        .map_err(|e| ProviderError::InvalidConfig(format!("invalid Codex base URL: {e}")))?;
 
     let path = match request.kind {
         ProviderEndpointKind::Inference => "/responses",

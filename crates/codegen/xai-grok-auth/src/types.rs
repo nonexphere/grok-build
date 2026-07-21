@@ -20,9 +20,9 @@ impl ProviderId {
     pub fn new(value: impl Into<String>) -> Result<Self, InvalidProviderId> {
         let value = value.into();
         let valid = !value.is_empty()
-            && value
-                .chars()
-                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, '.' | '_' | '-'));
+            && value.chars().all(|c| {
+                c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, '.' | '_' | '-')
+            });
 
         if !valid {
             return Err(InvalidProviderId(value));
@@ -121,10 +121,7 @@ pub enum AccountKind {
 /// human-readable display name when known.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum AccountPlan {
-    Known {
-        raw: String,
-        display_name: String,
-    },
+    Known { raw: String, display_name: String },
     Unknown(String),
 }
 

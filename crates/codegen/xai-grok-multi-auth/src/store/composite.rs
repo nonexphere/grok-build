@@ -40,16 +40,25 @@ impl CredentialStore for AutoCredentialStore {
     ) -> Result<Option<CredentialKey>, StoreError> {
         self.inner.resolve_alias(provider, alias).await
     }
-    async fn default_account(&self, provider: &ProviderId) -> Result<Option<CredentialKey>, StoreError> {
+    async fn default_account(
+        &self,
+        provider: &ProviderId,
+    ) -> Result<Option<CredentialKey>, StoreError> {
         self.inner.default_account(provider).await
     }
     async fn set_default_account(&self, key: &CredentialKey) -> Result<(), StoreError> {
         self.inner.set_default_account(key).await
     }
-    async fn load_metadata(&self, key: &CredentialKey) -> Result<Option<CredentialMetadata>, StoreError> {
+    async fn load_metadata(
+        &self,
+        key: &CredentialKey,
+    ) -> Result<Option<CredentialMetadata>, StoreError> {
         self.inner.load_metadata(key).await
     }
-    async fn load_secret(&self, key: &CredentialKey) -> Result<Option<CredentialSecret>, StoreError> {
+    async fn load_secret(
+        &self,
+        key: &CredentialKey,
+    ) -> Result<Option<CredentialSecret>, StoreError> {
         self.inner.load_secret(key).await
     }
     async fn create(&self, record: NewCredentialRecord) -> Result<CredentialMetadata, StoreError> {
@@ -60,7 +69,9 @@ impl CredentialStore for AutoCredentialStore {
         expected_generation: u64,
         update: CredentialUpdate,
     ) -> Result<CredentialMetadata, CompareAndSwapError> {
-        self.inner.compare_and_swap(expected_generation, update).await
+        self.inner
+            .compare_and_swap(expected_generation, update)
+            .await
     }
     async fn delete(&self, key: &CredentialKey) -> Result<bool, StoreError> {
         self.inner.delete(key).await

@@ -732,7 +732,7 @@ fn handle_cancellation(
         doom_loop_triggers: None,
         doom_loop_aborted_at_chunk: None,
         auth_attempt_id: None,
-};
+    };
     let _ = event_tx.send(SamplingEvent::Failed {
         request_id: request_id.clone(),
         error: info,
@@ -770,7 +770,7 @@ mod tests {
             doom_loop_triggers: None,
             doom_loop_aborted_at_chunk: None,
             auth_attempt_id: None,
-};
+        };
         let err = synthesize_from_info(&info);
         match err {
             SamplingError::IdleTimeout { elapsed_secs } => assert_eq!(elapsed_secs, 240),
@@ -791,7 +791,7 @@ mod tests {
             doom_loop_triggers: None,
             doom_loop_aborted_at_chunk: None,
             auth_attempt_id: None,
-};
+        };
         let err = synthesize_from_info(&info);
         match err {
             SamplingError::Api {
@@ -817,7 +817,7 @@ mod tests {
             doom_loop_triggers: None,
             doom_loop_aborted_at_chunk: None,
             auth_attempt_id: None,
-};
+        };
         let err = synthesize_from_info(&info);
         match err {
             SamplingError::Api {

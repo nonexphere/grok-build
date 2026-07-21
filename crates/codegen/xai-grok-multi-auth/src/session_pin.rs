@@ -56,12 +56,7 @@ pub fn session_pin_decision_for_turn(
     hint_provider: Option<&ProviderId>,
     sampling_target_is_multi_provider: bool,
 ) -> SessionPinDecision {
-    let base = session_pin_decision(
-        pin_credential,
-        pin_provider,
-        hint_credential,
-        hint_provider,
-    );
+    let base = session_pin_decision(pin_credential, pin_provider, hint_credential, hint_provider);
     if !sampling_target_is_multi_provider
         && matches!(base, SessionPinDecision::KeepPin)
         && hint_credential.is_none()
@@ -127,24 +122,12 @@ mod tests {
         );
         // Same-model rebuild (still multi-provider): keep pin when hints vanish.
         assert_eq!(
-            session_pin_decision_for_turn(
-                Some(cred),
-                Some(&provider),
-                None,
-                None,
-                true,
-            ),
+            session_pin_decision_for_turn(Some(cred), Some(&provider), None, None, true,),
             SessionPinDecision::KeepPin,
         );
         // Mid-session switch to grok-4.5 (not multi-provider): clear pin.
         assert_eq!(
-            session_pin_decision_for_turn(
-                Some(cred),
-                Some(&provider),
-                None,
-                None,
-                false,
-            ),
+            session_pin_decision_for_turn(Some(cred), Some(&provider), None, None, false,),
             SessionPinDecision::None,
             "Codex → xAI model switch must not sticky-keep Codex bearer"
         );

@@ -60,9 +60,9 @@ fn auth_error() -> xai_grok_sampler::SamplingErrorInfo {
         empty_response_context: None,
         doom_loop_triggers: None,
         doom_loop_aborted_at_chunk: None,
-            auth_attempt_id: None,
-        }
+        auth_attempt_id: None,
     }
+}
 /// Construct a test actor with the supplied `auth_manager` and
 /// session-token credentials wired in. Wraps the actor in `Arc`
 /// ready for `handle_sampling_failure`.
@@ -369,7 +369,7 @@ fn model_not_found_error() -> xai_grok_sampler::SamplingErrorInfo {
             doom_loop_aborted_at_chunk: None,
             auth_attempt_id: None,
         }
-    }
+}
 /// 404 model-not-found with a legacy WebLogin token appends a
 /// "Legacy auth detected" hint to the error message.
 #[tokio::test(flavor = "current_thread")]
@@ -436,7 +436,7 @@ fn unauthorized_401_error() -> xai_grok_sampler::SamplingErrorInfo {
             doom_loop_aborted_at_chunk: None,
             auth_attempt_id: None,
         }
-    }
+}
 /// 401 Unauthorized with a legacy WebLogin token appends a
 /// "Legacy auth detected" hint to the error message.
 #[tokio::test(flavor = "current_thread")]

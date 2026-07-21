@@ -12,9 +12,8 @@ use xai_grok_auth::{
     AuthFailureClass, AuthFailureResponse, AuthProvider, CredentialMetadata, LoginCompletion,
     LoginFlowId, LoginInput, LoginRequest, LoginStart, LogoutOutcome, LogoutRequest, ModelCatalog,
     ModelListRequest, ProviderAccountInfo, ProviderCapabilities, ProviderCredentialUpdate,
-    ProviderDescriptor, ProviderEndpointRequest, ProviderError,
-    ProviderId, ProviderRequestAuth, RefreshRequest, RequestAuthContext, StoredCredential,
-    TokenRequest, TokenResolution,
+    ProviderDescriptor, ProviderEndpointRequest, ProviderError, ProviderId, ProviderRequestAuth,
+    RefreshRequest, RequestAuthContext, StoredCredential, TokenRequest, TokenResolution,
 };
 
 /// The xAI provider ID.
@@ -108,10 +107,7 @@ impl AuthProvider for XaiAuthProvider {
         ))
     }
 
-    async fn logout(
-        &self,
-        _request: LogoutRequest<'_>,
-    ) -> Result<LogoutOutcome, ProviderError> {
+    async fn logout(&self, _request: LogoutRequest<'_>) -> Result<LogoutOutcome, ProviderError> {
         Err(ProviderError::InvalidConfig(
             "xAI logout is handled by the legacy AuthManager.".into(),
         ))

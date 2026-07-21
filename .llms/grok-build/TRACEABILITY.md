@@ -30,6 +30,24 @@ granulares vivem nos `tasks.md` de cada epic.
 
 ## Corrective completion coverage — 2026-07-19
 
+## Epic review/refinement coverage — 2026-07-21
+
+| Epic | Owner | Primary gap closed | Terminal evidence |
+|---|---|---|---|
+| `05/v1-01` / E0 | build/release | reproducible cold/warm/incremental baseline | timing, memory, link and artifact reports |
+| `20/v1-09` / E1 | Shell/Tower/product root | real actor vertical | `grok-oss` start/turn/wait/history/interrupt |
+| `20/v1-10` / E2 | Tower/Shell | identity and recovery | restart/archive/resume/crash property suite |
+| `30/v1-10` / E3 | App Server/protocol | capability and wire truth | transport contract matrix and schema drift gate |
+| `40/v1-06` / E4 | MCP | stdio/HTTP parity and sessions | independent client parity suite |
+| `40/v1-07` / E5 | security | scopes, revoke and TLS | remote security matrix and human gate |
+| `50/v1-04` / E6 | Tower tools | nine product-backed tools | all tools × adapters × ACL matrix |
+| `60/v1-03` / E7 | SDK/protocol | deterministic generation | clean regeneration and real listeners |
+| `05/v1-02` / E8 | build/dependency owners | feature/dependency slicing | before/after graph and benchmark |
+| `05/v1-03` / E9 | build/release | profiles, linker, cache and CI | reproducible CI matrix |
+| `05/v1-04` / E10 | component owners | dead/experimental path classification | terminal inventory and residual scan |
+| `20/v1-11` / E11 | runtime/platform | observability and faults | load, fault, limit and secret canary suite |
+| `30/v1-11` / E12 | release captain | final readiness | complete evidence verdict |
+
 | Gap auditado | Contrato | Epic owner | Prova |
 |---|---|---|---|
 | actor product-wired | `_shared/product-runtime-readiness.md` | `20/v1-06` | binary vertical + exactly-one actor |

@@ -2222,7 +2222,9 @@ mod inline_auto_compact_flow_tests {
             pending_interactions: std::sync::Arc::new(std::sync::Mutex::new(
                 std::collections::HashMap::new(),
             )),
-            interaction_delivery_hub: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+            interaction_delivery_hub: std::sync::Arc::new(std::sync::Mutex::new(
+                std::collections::HashMap::new(),
+            )),
 
             telemetry_enabled: false,
             supports_backend_search: std::cell::Cell::new(false),
@@ -3233,7 +3235,7 @@ mod inline_auto_compact_flow_tests {
                     doom_loop_triggers: None,
                     doom_loop_aborted_at_chunk: None,
                     auth_attempt_id: None,
-};
+                };
                 assert!(!actor.should_compact_on_error(&err).await);
             })
             .await;

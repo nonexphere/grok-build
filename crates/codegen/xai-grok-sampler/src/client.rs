@@ -98,8 +98,9 @@ impl GrokRequestHeaders<'_> {
 /// passes through unchanged.
 /// Shared map filled while decoding SSE: `message_id` → OpenResponses phase.
 /// Typed `OutputMessage` drops `phase`; stream materialize reads this side channel.
-pub type AssistantPhaseMap =
-    std::sync::Arc<std::sync::Mutex<std::collections::HashMap<String, xai_grok_sampling_types::AssistantPhase>>>;
+pub type AssistantPhaseMap = std::sync::Arc<
+    std::sync::Mutex<std::collections::HashMap<String, xai_grok_sampling_types::AssistantPhase>>,
+>;
 
 /// Capture `phase` from raw `response.output_item.*` SSE payloads before typed
 /// deserialize drops the field.
@@ -114,9 +115,7 @@ pub fn capture_assistant_phase_from_sse_data(data: &str, phases: &AssistantPhase
     let Some(item) = value.get("item") else {
         return;
     };
-    if let Some((id, phase)) =
-        xai_grok_sampling_types::extract_phase_from_output_item_json(item)
-    {
+    if let Some((id, phase)) = xai_grok_sampling_types::extract_phase_from_output_item_json(item) {
         if let Ok(mut guard) = phases.lock() {
             guard.insert(id, phase);
         }
@@ -857,7 +856,11 @@ impl SamplingClient {
         Ok(request)
     }
 
-    async fn handle_response(&self, response: reqwest::Response, auth_attempt_id: Option<u64>) -> Result<ChatCompletionResponse> {
+    async fn handle_response(
+        &self,
+        response: reqwest::Response,
+        auth_attempt_id: Option<u64>,
+    ) -> Result<ChatCompletionResponse> {
         let status = response.status();
         let model_metadata = extract_model_metadata(response.headers());
         let retry_after_secs = extract_retry_after(response.headers());
@@ -866,11 +869,15 @@ impl SamplingClient {
 
         if !status.is_success() {
             if status == reqwest::StatusCode::UNAUTHORIZED {
-                self.record_401_attribution(crate::attribution::SamplingConsumer::ChatCompletions, auth_attempt_id);
+                self.record_401_attribution(
+                    crate::attribution::SamplingConsumer::ChatCompletions,
+                    auth_attempt_id,
+                );
                 let server_message = parse_error_bytes(bytes.as_ref());
-                return Err(self.auth_error(format!(
-                    "Unauthorized (401): {server_message}"
-                ), auth_attempt_id));
+                return Err(self.auth_error(
+                    format!("Unauthorized (401): {server_message}"),
+                    auth_attempt_id,
+                ));
             }
             let message = parse_error_bytes(bytes.as_ref());
             return Err(SamplingError::Api {
@@ -925,9 +932,7 @@ impl SamplingClient {
         };
         let (post_builder, auth_attempt_id) = self.post(self.endpoint("chat/completions"));
 
-        let http_request = grok_headers
-            .apply(post_builder)
-            .json(&payload);
+        let http_request = grok_headers.apply(post_builder).json(&payload);
 
         let response = http_request.send().await.map_err(|e| {
             // Log at debug level; errors are surfaced to the caller.
@@ -1024,9 +1029,10 @@ impl SamplingClient {
                 );
                 let endpoint = self.endpoint("chat/completions");
                 let server_message = response.text().await.unwrap_or_default();
-                return Err(self.auth_error(format!(
-                    "Unauthorized (401) from {endpoint}: {server_message}"
-                ), auth_attempt_id));
+                return Err(self.auth_error(
+                    format!("Unauthorized (401) from {endpoint}: {server_message}"),
+                    auth_attempt_id,
+                ));
             }
 
             let req_headers =
@@ -1236,9 +1242,7 @@ impl SamplingClient {
         }
         let (post_builder, auth_attempt_id) = self.post(self.endpoint("responses"));
 
-        let http_request = grok_headers
-            .apply(post_builder)
-            .json(&request_body);
+        let http_request = grok_headers.apply(post_builder).json(&request_body);
 
         let response = http_request.send().await.map_err(|e| {
             tracing::debug!("HTTP request failed: {}", e);
@@ -1253,12 +1257,16 @@ impl SamplingClient {
 
         if !status.is_success() {
             if status == reqwest::StatusCode::UNAUTHORIZED {
-                self.record_401_attribution(crate::attribution::SamplingConsumer::Responses, auth_attempt_id);
+                self.record_401_attribution(
+                    crate::attribution::SamplingConsumer::Responses,
+                    auth_attempt_id,
+                );
                 let endpoint = self.endpoint("responses");
                 let server_message = parse_error_bytes(bytes.as_ref());
-                return Err(self.auth_error(format!(
-                    "Unauthorized (401) from {endpoint}: {server_message}"
-                ), auth_attempt_id));
+                return Err(self.auth_error(
+                    format!("Unauthorized (401) from {endpoint}: {server_message}"),
+                    auth_attempt_id,
+                ));
             }
 
             let req_headers =
@@ -1432,12 +1440,16 @@ impl SamplingClient {
         if !status.is_success() {
             if status == reqwest::StatusCode::UNAUTHORIZED {
                 span.record("error", "unauthorized (401)");
-                self.record_401_attribution(crate::attribution::SamplingConsumer::ResponsesStream, auth_attempt_id);
+                self.record_401_attribution(
+                    crate::attribution::SamplingConsumer::ResponsesStream,
+                    auth_attempt_id,
+                );
                 let endpoint = self.endpoint("responses");
                 let server_message = response.text().await.unwrap_or_default();
-                return Err(self.auth_error(format!(
-                    "Unauthorized (401) from {endpoint}: {server_message}"
-                ), auth_attempt_id));
+                return Err(self.auth_error(
+                    format!("Unauthorized (401) from {endpoint}: {server_message}"),
+                    auth_attempt_id,
+                ));
             }
             let model_metadata = extract_model_metadata(response.headers());
             let retry_after_secs = extract_retry_after(response.headers());
@@ -1611,9 +1623,7 @@ impl SamplingClient {
         };
         let (post_builder, auth_attempt_id) = self.post(self.endpoint("messages"));
 
-        let http_request = grok_headers
-            .apply(post_builder)
-            .json(&request.inner);
+        let http_request = grok_headers.apply(post_builder).json(&request.inner);
 
         let response = http_request.send().await.map_err(|e| {
             tracing::debug!("HTTP request failed: {}", e);
@@ -1628,12 +1638,16 @@ impl SamplingClient {
 
         if !status.is_success() {
             if status == reqwest::StatusCode::UNAUTHORIZED {
-                self.record_401_attribution(crate::attribution::SamplingConsumer::Messages, auth_attempt_id);
+                self.record_401_attribution(
+                    crate::attribution::SamplingConsumer::Messages,
+                    auth_attempt_id,
+                );
                 let endpoint = self.endpoint("messages");
                 let server_message = parse_error_bytes(bytes.as_ref());
-                return Err(self.auth_error(format!(
-                    "Unauthorized (401) from {endpoint}: {server_message}"
-                ), auth_attempt_id));
+                return Err(self.auth_error(
+                    format!("Unauthorized (401) from {endpoint}: {server_message}"),
+                    auth_attempt_id,
+                ));
             }
 
             let req_headers =
@@ -1759,12 +1773,16 @@ impl SamplingClient {
         if !status.is_success() {
             if status == reqwest::StatusCode::UNAUTHORIZED {
                 span.record("error", "unauthorized (401)");
-                self.record_401_attribution(crate::attribution::SamplingConsumer::MessagesStream, auth_attempt_id);
+                self.record_401_attribution(
+                    crate::attribution::SamplingConsumer::MessagesStream,
+                    auth_attempt_id,
+                );
                 let endpoint = self.endpoint("messages");
                 let server_message = response.text().await.unwrap_or_default();
-                return Err(self.auth_error(format!(
-                    "Unauthorized (401) from {endpoint}: {server_message}"
-                ), auth_attempt_id));
+                return Err(self.auth_error(
+                    format!("Unauthorized (401) from {endpoint}: {server_message}"),
+                    auth_attempt_id,
+                ));
             }
             let model_metadata = extract_model_metadata(response.headers());
             let retry_after_secs = extract_retry_after(response.headers());
@@ -1977,16 +1995,15 @@ impl SamplingClient {
             request.prompt_cache_key = None;
         }
         let phase_items = request.items.clone();
-        let responses_request = match xai_grok_sampling_types::try_create_response_from_conversation(
-            &request,
-        ) {
-            Ok(r) => r,
-            Err(e) => {
-                return Err(SamplingError::serialization_message(format!(
-                    "responses input convert failed: {e}"
-                )));
-            }
-        };
+        let responses_request =
+            match xai_grok_sampling_types::try_create_response_from_conversation(&request) {
+                Ok(r) => r,
+                Err(e) => {
+                    return Err(SamplingError::serialization_message(format!(
+                        "responses input convert failed: {e}"
+                    )));
+                }
+            };
 
         let mut wrapper = CreateResponseWrapper::new(responses_request);
         wrapper.x_grok_conv_id = x_grok_conv_id;
@@ -2031,16 +2048,15 @@ impl SamplingClient {
             request.prompt_cache_key = None;
         }
         let phase_items = request.items.clone();
-        let responses_request = match xai_grok_sampling_types::try_create_response_from_conversation(
-            &request,
-        ) {
-            Ok(r) => r,
-            Err(e) => {
-                return Err(SamplingError::serialization_message(format!(
-                    "responses input convert failed: {e}"
-                )));
-            }
-        };
+        let responses_request =
+            match xai_grok_sampling_types::try_create_response_from_conversation(&request) {
+                Ok(r) => r,
+                Err(e) => {
+                    return Err(SamplingError::serialization_message(format!(
+                        "responses input convert failed: {e}"
+                    )));
+                }
+            };
 
         let mut wrapper = CreateResponseWrapper::new(responses_request);
         wrapper.x_grok_conv_id = x_grok_conv_id;
@@ -2480,9 +2496,8 @@ mod tests {
     /// Tuple: (consumer, has_sent_auth, attempt_id).
     #[derive(Default, Debug)]
     struct CountingCallback {
-        invocations: std::sync::Mutex<
-            Vec<(crate::attribution::SamplingConsumer, bool, Option<u64>)>,
-        >,
+        invocations:
+            std::sync::Mutex<Vec<(crate::attribution::SamplingConsumer, bool, Option<u64>)>>,
     }
 
     #[derive(Debug)]
@@ -2516,9 +2531,7 @@ mod tests {
         }
 
         fn resolve_for_request(&self) -> Option<crate::config::ResolvedBearer> {
-            let id = self
-                .next
-                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            let id = self.next.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             Some(crate::config::ResolvedBearer {
                 token: self.token.clone(),
                 attempt_id: Some(id),
@@ -2544,14 +2557,12 @@ mod tests {
 
     impl crate::config::BearerResolver for PeekVsSendResolver {
         fn current_bearer(&self) -> Option<String> {
-            self.sends
-                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            self.sends.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             Some("send-token".into())
         }
 
         fn peek_bearer(&self) -> Option<String> {
-            self.peeks
-                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            self.peeks.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             Some("peek-token".into())
         }
     }
@@ -2615,7 +2626,10 @@ mod tests {
 
         let surfaces = [
             format!("{info:?}"),
-            format!("{:?}", crate::sampling_log::AuthInfo::scheme_only(info.auth_type)),
+            format!(
+                "{:?}",
+                crate::sampling_log::AuthInfo::scheme_only(info.auth_type)
+            ),
         ];
         let prefixes = [4usize, 8, 12, 20];
         for surface in &surfaces {
@@ -2911,14 +2925,8 @@ mod tests {
             async move { c2.chat_completion(mk_req("b")).await },
         );
 
-        let id1 = r1
-            .err()
-            .expect("r1 auth")
-            .auth_attempt_id();
-        let id2 = r2
-            .err()
-            .expect("r2 auth")
-            .auth_attempt_id();
+        let id1 = r1.err().expect("r1 auth").auth_attempt_id();
+        let id2 = r2.err().expect("r2 auth").auth_attempt_id();
 
         // Both resolves must appear, in some order; each error owns its id.
         let mut ids = [id1, id2];

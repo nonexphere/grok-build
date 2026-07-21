@@ -217,7 +217,9 @@ pub(crate) async fn create_test_actor_ex(
         pending_interactions: std::sync::Arc::new(std::sync::Mutex::new(
             std::collections::HashMap::new(),
         )),
-        interaction_delivery_hub: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+        interaction_delivery_hub: std::sync::Arc::new(std::sync::Mutex::new(
+            std::collections::HashMap::new(),
+        )),
 
         telemetry_enabled: false,
         supports_backend_search: std::cell::Cell::new(false),

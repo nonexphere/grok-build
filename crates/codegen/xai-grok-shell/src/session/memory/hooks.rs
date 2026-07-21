@@ -232,7 +232,7 @@ mod tests {
 
             phase: None,
             message_id: None,
-})
+        })
     }
 
     fn test_storage(tmp: &TempDir) -> MemoryStorage {

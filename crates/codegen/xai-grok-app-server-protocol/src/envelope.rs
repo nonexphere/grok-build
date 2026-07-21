@@ -223,7 +223,9 @@ mod initialize_envelope_tests {
             "params":{}
         }))
         .unwrap();
-        assert!(matches!(note, EnvelopeKind::Notification { method, .. } if method == "initialized"));
+        assert!(
+            matches!(note, EnvelopeKind::Notification { method, .. } if method == "initialized")
+        );
 
         let fail = parse_envelope(&json!({
             "jsonrpc":"2.0",

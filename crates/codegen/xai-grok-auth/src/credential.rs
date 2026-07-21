@@ -51,7 +51,10 @@ impl fmt::Debug for CredentialSecret {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("CredentialSecret")
             .field("access_token", &"<redacted>")
-            .field("refresh_token", &self.refresh_token.as_ref().map(|_| "<redacted>"))
+            .field(
+                "refresh_token",
+                &self.refresh_token.as_ref().map(|_| "<redacted>"),
+            )
             .field("id_token", &self.id_token.as_ref().map(|_| "<redacted>"))
             .field("field_names", &self.fields.keys().collect::<Vec<_>>())
             .finish()
@@ -183,10 +186,7 @@ pub trait CredentialStore: fmt::Debug + Send + Sync {
         Ok(Some(StoredCredential { metadata, secret }))
     }
 
-    async fn create(
-        &self,
-        record: NewCredentialRecord,
-    ) -> Result<CredentialMetadata, StoreError>;
+    async fn create(&self, record: NewCredentialRecord) -> Result<CredentialMetadata, StoreError>;
 
     async fn compare_and_swap(
         &self,

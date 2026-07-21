@@ -7,9 +7,7 @@ use tempfile::TempDir;
 use xai_grok_app_server_protocol::{
     InputBlock, SessionStartParams, SubscribeParams, TurnStartParams, WireCounter,
 };
-use xai_grok_shell::app_server_runtime::{
-    experimental_local_turn_spawn, ShellSessionActorRuntime,
-};
+use xai_grok_shell::app_server_runtime::{ShellSessionActorRuntime, experimental_local_turn_spawn};
 use xai_grok_tower::GrokRuntimeFacade;
 
 #[tokio::test]

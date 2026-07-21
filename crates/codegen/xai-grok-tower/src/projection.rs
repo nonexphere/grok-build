@@ -1,8 +1,6 @@
 //! Safe projection of runtime events to protocol Items/lifecycle events.
 
-use xai_grok_app_server_protocol::{
-    Item, ItemBody, ItemStatus, Session, Turn, WireCounter,
-};
+use xai_grok_app_server_protocol::{Item, ItemBody, ItemStatus, Session, Turn, WireCounter};
 
 use crate::RuntimeEvent;
 

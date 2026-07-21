@@ -320,12 +320,11 @@ impl SessionActor {
             // config has no MP hints. Sticky KeepPin would send the Codex
             // bearer to cli-chat-proxy and 401 with multi-provider recovery
             // thrash — clear the pin when the target is unambiguously not MP.
-            let from_hints =
-                crate::auth::multi_provider_resolve::session_auth_for_sampling_hints(
-                    cfg.model.as_str(),
-                    &cfg.base_url,
-                    &extra_headers,
-                );
+            let from_hints = crate::auth::multi_provider_resolve::session_auth_for_sampling_hints(
+                cfg.model.as_str(),
+                &cfg.base_url,
+                &extra_headers,
+            );
             let existing = self.multi_provider_auth.lock().clone();
             use crate::auth::multi_provider_resolve::SessionPinDecision;
             // Shared pure policy (unit-tested): Codex→xAI model switch clears pin.
@@ -372,15 +371,15 @@ impl SessionActor {
             resolver
         };
         #[cfg(not(feature = "native-multi-provider-auth"))]
-        let bearer_resolver: Option<xai_grok_sampler::SharedBearerResolver> =
-            if use_bearer_resolver {
-                self.auth_manager.as_ref().map(|am| {
-                    std::sync::Arc::new(AuthManagerBearerResolver(am.clone()))
-                        as xai_grok_sampler::SharedBearerResolver
-                })
-            } else {
-                None
-            };
+        let bearer_resolver: Option<xai_grok_sampler::SharedBearerResolver> = if use_bearer_resolver
+        {
+            self.auth_manager.as_ref().map(|am| {
+                std::sync::Arc::new(AuthManagerBearerResolver(am.clone()))
+                    as xai_grok_sampler::SharedBearerResolver
+            })
+        } else {
+            None
+        };
         SamplingConfig {
             api_key: creds.api_key,
             base_url: cfg.base_url,
@@ -505,7 +504,7 @@ impl SessionActor {
                         x_grok_session_id: Some(session_id),
                         x_grok_agent_id: Some(xai_grok_telemetry::id::agent_id()),
                         ..ConversationRequest::default()
-};
+                    };
                     let fut = sampling_client.conversation_collect(request);
                     let response =
                         tokio::time::timeout(std::time::Duration::from_millis(TIMEOUT_MS), fut)
@@ -831,7 +830,10 @@ impl SessionActor {
             );
         }
 
-        if auth_recovery_eligible && !multi_provider_auth_401 && let Some(ref am) = self.auth_manager {
+        if auth_recovery_eligible
+            && !multi_provider_auth_401
+            && let Some(ref am) = self.auth_manager
+        {
             if am
                 .try_recover_unauthorized(crate::auth::recovery::RecoverySource::Turn)
                 .await

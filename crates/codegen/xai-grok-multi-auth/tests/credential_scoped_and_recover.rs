@@ -4,15 +4,17 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use chrono::Utc;
+use xai_grok_auth::{CredentialBinding, SentCredentialStamp};
 use xai_grok_auth::{
     CredentialSecret, CredentialStore, NewCredentialRecord, ProviderAccountInfo, ProviderId,
     SecretBackendKind, SecretString, TokenUseReason,
 };
-use xai_grok_multi_auth::provider_model_key::{format_provider_model_key, parse_provider_model_key};
+use xai_grok_multi_auth::provider_model_key::{
+    format_provider_model_key, parse_provider_model_key,
+};
 use xai_grok_multi_auth::registry;
 use xai_grok_multi_auth::store::ephemeral::EphemeralCredentialStore;
 use xai_grok_multi_auth::token_manager::TokenManager;
-use xai_grok_auth::{CredentialBinding, SentCredentialStamp};
 
 #[test]
 fn two_accounts_same_slug_get_distinct_catalog_keys() {
@@ -79,11 +81,7 @@ async fn stale_generation_401_does_not_double_refresh() {
         .unwrap();
 
     let registry = Arc::new(registry::build_registry(false));
-    let tm = TokenManager::with_issuer(
-        store.clone(),
-        registry,
-        "https://auth.openai.com".into(),
-    );
+    let tm = TokenManager::with_issuer(store.clone(), registry, "https://auth.openai.com".into());
     let fp = xai_grok_multi_auth::fingerprint::compute_fingerprint(
         &provider,
         "https://auth.openai.com",
@@ -124,20 +122,22 @@ fn codex_oauth_login_block_reason_when_unapproved() {
 
 #[tokio::test]
 async fn journal_recovers_dual_file_commit_after_crash_marker() {
+    use std::fs;
     use xai_grok_multi_auth::store::file::FileCredentialStore;
     use xai_grok_multi_auth::store::metadata::{
-        commit_accounts_and_secrets, load_accounts, load_secrets, recover_pending_txn,
-        AccountsFile, SecretsFile, CredentialTxnJournal, TXN_JOURNAL_SCHEMA_VERSION,
+        CredentialTxnJournal, TXN_JOURNAL_SCHEMA_VERSION, commit_accounts_and_secrets,
+        load_accounts, load_secrets, recover_pending_txn,
     };
     use xai_grok_multi_auth::store::paths::StorePaths;
-    use std::fs;
 
     let dir = tempfile::tempdir().unwrap();
     let home = dir.path().to_path_buf();
     let store = FileCredentialStore::new(home.clone());
     let provider = ProviderId::new_unchecked("codex");
     let mut account = ProviderAccountInfo::default();
-    account.metadata.insert("chatgpt_account_id".into(), "a1".into());
+    account
+        .metadata
+        .insert("chatgpt_account_id".into(), "a1".into());
     let meta = store
         .create(NewCredentialRecord {
             provider: provider.clone(),
@@ -194,10 +194,10 @@ async fn journal_recovers_dual_file_commit_after_crash_marker() {
 /// Corrupt journal is quarantined and surfaces as StoreError::Corrupt (AUD-008).
 #[tokio::test]
 async fn corrupt_journal_quarantines_and_fails_loud() {
+    use std::fs;
     use xai_grok_multi_auth::store::file::FileCredentialStore;
     use xai_grok_multi_auth::store::metadata::recover_pending_txn;
     use xai_grok_multi_auth::store::paths::StorePaths;
-    use std::fs;
 
     let dir = tempfile::tempdir().unwrap();
     let home = dir.path().to_path_buf();
@@ -215,7 +215,7 @@ async fn corrupt_journal_quarantines_and_fails_loud() {
         "corrupt journal must be moved off the hot path"
     );
     let auth = paths.auth_dir();
-    let quarantined: Vec<_> = fs::read_dir(&auth)
+    let quarantined: Vec<_> = fs::read_dir(auth)
         .unwrap()
         .filter_map(|e| e.ok())
         .filter(|e| {
@@ -245,12 +245,12 @@ async fn corrupt_journal_quarantines_and_fails_loud() {
 /// silently in `FileCredentialStore::new` (AUD-008).
 #[tokio::test]
 async fn store_load_recovers_pending_journal_lazily() {
+    use std::fs;
     use xai_grok_multi_auth::store::file::FileCredentialStore;
     use xai_grok_multi_auth::store::metadata::{
-        load_accounts, load_secrets, CredentialTxnJournal, TXN_JOURNAL_SCHEMA_VERSION,
+        CredentialTxnJournal, TXN_JOURNAL_SCHEMA_VERSION, load_accounts, load_secrets,
     };
     use xai_grok_multi_auth::store::paths::StorePaths;
-    use std::fs;
 
     let dir = tempfile::tempdir().unwrap();
     let home = dir.path().to_path_buf();

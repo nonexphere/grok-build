@@ -30,8 +30,8 @@ use tempfile::TempDir;
 use tokio::sync::mpsc;
 use xai_grok_app_server_protocol::{
     InputBlock, ItemBody, SessionArchiveParams, SessionForkParams, SessionReadParams,
-    SessionResumeParams, SessionStartParams, SubscribeParams, TurnInterruptParams,
-    TurnStartParams, TurnSteerParams, WireCounter,
+    SessionResumeParams, SessionStartParams, SubscribeParams, TurnInterruptParams, TurnStartParams,
+    TurnSteerParams, WireCounter,
 };
 use xai_grok_shell::app_server_runtime::{
     ResidentHandle, SessionSpawner, ShellSessionActorRuntime,
@@ -39,7 +39,7 @@ use xai_grok_shell::app_server_runtime::{
 use xai_grok_shell::session::commands::{PromptCompletionKind, PromptTurnOk, SessionCommand};
 use xai_grok_shell::session::info::Info;
 use xai_grok_shell::session::storage::{JsonlStorageAdapter, SessionUpdate, StorageAdapter};
-use xai_grok_tower::{FakeRuntime, GrokRuntimeFacade, ReplayPage, RuntimeEvent, RuntimeError};
+use xai_grok_tower::{FakeRuntime, GrokRuntimeFacade, ReplayPage, RuntimeError, RuntimeEvent};
 
 // ---------------------------------------------------------------------------
 // Normalized outcome types — strip non-deterministic ids/timestamps/revision;
@@ -229,10 +229,7 @@ impl SessionSpawner for AutoCompleteSpawner {
                             )),
                         );
                         let _ = storage
-                            .append_update(
-                                &info_clone,
-                                &SessionUpdate::Acp(Box::new(notification)),
-                            )
+                            .append_update(&info_clone, &SessionUpdate::Acp(Box::new(notification)))
                             .await;
                         let _ = respond_to.send(Ok(PromptTurnOk {
                             stop_reason: acp::StopReason::EndTurn,
@@ -263,6 +260,7 @@ impl SessionSpawner for AutoCompleteSpawner {
             current_prompt_id,
             pending_interactions: None,
             delivery_hub: None,
+            permission_responder: None,
         })
     }
 }
@@ -307,10 +305,7 @@ impl SessionSpawner for HeldTurnSpawner {
                             )),
                         );
                         let _ = storage
-                            .append_update(
-                                &info_clone,
-                                &SessionUpdate::Acp(Box::new(notification)),
-                            )
+                            .append_update(&info_clone, &SessionUpdate::Acp(Box::new(notification)))
                             .await;
                         loop {
                             match cmd_rx.recv().await {
@@ -346,6 +341,7 @@ impl SessionSpawner for HeldTurnSpawner {
             current_prompt_id,
             pending_interactions: None,
             delivery_hub: None,
+            permission_responder: None,
         })
     }
 }
@@ -491,7 +487,11 @@ async fn c7_conformance_start_session_idempotency_conforms() {
         .await
         .unwrap_err();
 
-    assert_eq!(err_code(&f_err), err_code(&r_err), "idempotency_conflict conforms");
+    assert_eq!(
+        err_code(&f_err),
+        err_code(&r_err),
+        "idempotency_conflict conforms"
+    );
     assert_eq!(f_err.code, "idempotency_conflict");
     assert_eq!(r_err.code, "idempotency_conflict");
 }
@@ -823,8 +823,14 @@ async fn c7_conformance_archive_session_honest_divergence() {
 
     let f_list = fake.facade().list_sessions().await.unwrap();
     let r_list = real.rt.list_sessions().await.unwrap();
-    let f_row = f_list.iter().find(|s| s.session_id == fs.session_id).unwrap();
-    let r_row = r_list.iter().find(|s| s.session_id == rs.session_id).unwrap();
+    let f_row = f_list
+        .iter()
+        .find(|s| s.session_id == fs.session_id)
+        .unwrap();
+    let r_row = r_list
+        .iter()
+        .find(|s| s.session_id == rs.session_id)
+        .unwrap();
     assert_eq!(f_row.status, SessionStatus::Archived);
     assert_eq!(r_row.status, SessionStatus::Archived);
 }
@@ -902,9 +908,7 @@ async fn c7_conformance_start_turn_without_resident_real_returns_unsupported() {
         .facade()
         .start_turn(TurnStartParams {
             session_id: fs.session_id.clone(),
-            input: vec![InputBlock::Text {
-                text: "hi".into(),
-            }],
+            input: vec![InputBlock::Text { text: "hi".into() }],
             idempotency_key: "tnr-t".into(),
         })
         .await;
@@ -916,9 +920,7 @@ async fn c7_conformance_start_turn_without_resident_real_returns_unsupported() {
     let r_err = real_no_spawner
         .start_turn(TurnStartParams {
             session_id: rs.session_id,
-            input: vec![InputBlock::Text {
-                text: "hi".into(),
-            }],
+            input: vec![InputBlock::Text { text: "hi".into() }],
             idempotency_key: "tnr-t".into(),
         })
         .await
@@ -973,9 +975,7 @@ async fn c7_conformance_steer_turn_returns_item_against_running_turn() {
         port.rt
             .start_turn(TurnStartParams {
                 session_id: session_id_for_turn,
-                input: vec![InputBlock::Text {
-                    text: "run".into(),
-                }],
+                input: vec![InputBlock::Text { text: "run".into() }],
                 idempotency_key: "st-t-1".into(),
             })
             .await
@@ -1069,9 +1069,7 @@ async fn c7_conformance_interrupt_turn_running_turn_conforms() {
         port.rt
             .start_turn(TurnStartParams {
                 session_id: session_id_for_turn,
-                input: vec![InputBlock::Text {
-                    text: "run".into(),
-                }],
+                input: vec![InputBlock::Text { text: "run".into() }],
                 idempotency_key: "iv-t-1".into(),
             })
             .await
@@ -1188,8 +1186,14 @@ async fn c7_conformance_replay_after_turn_projects_events_on_both() {
         .unwrap();
 
     // Conforming: both have a non-empty stream with a SessionChanged first.
-    assert!(!f_page.events.is_empty(), "fake replay non-empty after turn");
-    assert!(!r_page.events.is_empty(), "real replay non-empty after turn");
+    assert!(
+        !f_page.events.is_empty(),
+        "fake replay non-empty after turn"
+    );
+    assert!(
+        !r_page.events.is_empty(),
+        "real replay non-empty after turn"
+    );
     assert_eq!(event_kind(&f_page.events[0]), "session_changed");
     assert_eq!(event_kind(&r_page.events[0]), "session_changed");
 
@@ -1201,7 +1205,10 @@ async fn c7_conformance_replay_after_turn_projects_events_on_both() {
     // respective authorities.
     let f_kinds: Vec<_> = f_page.events.iter().map(event_kind).collect();
     let r_kinds: Vec<_> = r_page.events.iter().map(event_kind).collect();
-    assert!(f_kinds.contains(&"turn_changed".to_string()), "fake emits turn lifecycle");
+    assert!(
+        f_kinds.contains(&"turn_changed".to_string()),
+        "fake emits turn lifecycle"
+    );
     assert!(
         !r_kinds.contains(&"turn_changed".to_string()),
         "real does not emit turn lifecycle (Shell writes none)"
@@ -1231,10 +1238,7 @@ async fn c7_conformance_suite_covers_all_minimum_scenarios() {
         "c7_conformance_interrupt_turn_running_turn_conforms",
     ];
     for name in minimum {
-        assert!(
-            src.contains(name),
-            "missing minimum scenario test: {name}"
-        );
+        assert!(src.contains(name), "missing minimum scenario test: {name}");
     }
     // The real-adapter test spawners (AutoCompleteSpawner / HeldTurnSpawner)
     // must route through the real `SessionCommand` enum and the real JSONL

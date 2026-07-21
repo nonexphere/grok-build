@@ -40,64 +40,199 @@ pub fn stream_chat_completions<'a>(
     idle_timeout: Duration,
 ) -> impl Stream<Item = SamplingEvent> + Send + 'a {
     async_stream::stream! {
-        let stream_start = Instant::now();
-        let mut chunk_timestamps: Vec<Instant> = Vec::new();
+            let stream_start = Instant::now();
+            let mut chunk_timestamps: Vec<Instant> = Vec::new();
 
-        // Emit StreamStarted before reading any chunks so subscribers
-        // can record TTFB / TTLB baselines.
-        yield SamplingEvent::StreamStarted {
-            request_id: request_id.clone(),
-            timestamp_ms: chrono::Utc::now().timestamp_millis(),
-        };
-
-        if let Some(metadata) = model_metadata {
-            yield SamplingEvent::ModelMetadata {
+            // Emit StreamStarted before reading any chunks so subscribers
+            // can record TTFB / TTLB baselines.
+            yield SamplingEvent::StreamStarted {
                 request_id: request_id.clone(),
-                metadata,
+                timestamp_ms: chrono::Utc::now().timestamp_millis(),
             };
-        }
 
-        // Per-response accumulators
-        let mut first_chunk_seen = false;
-        let mut first_choice_seen = false;
-        let mut first_token_emitted = false;
-        let mut model: String = String::new();
-        let mut model_fingerprint: Option<String> = None;
-        let mut usage: Option<TokenUsage> = None;
-        let mut cost_usd_ticks: Option<i64> = None;
-        let mut finish_reason: Option<StopReason> = None;
+            if let Some(metadata) = model_metadata {
+                yield SamplingEvent::ModelMetadata {
+                    request_id: request_id.clone(),
+                    metadata,
+                };
+            }
 
-        let mut content_acc = String::new();
-        let mut reasoning_acc = String::new();
-        // Tool call deltas keyed by positional index. Each entry is
-        // (id, name, arguments_buffer); the first chunk for an index
-        // carries id+name and starts the arguments buffer, subsequent
-        // chunks append to arguments only.
-        let mut tool_call_acc: BTreeMap<u32, (String, String, String)> = BTreeMap::new();
+            // Per-response accumulators
+            let mut first_chunk_seen = false;
+            let mut first_choice_seen = false;
+            let mut first_token_emitted = false;
+            let mut model: String = String::new();
+            let mut model_fingerprint: Option<String> = None;
+            let mut usage: Option<TokenUsage> = None;
+            let mut cost_usd_ticks: Option<i64> = None;
+            let mut finish_reason: Option<StopReason> = None;
 
-        // Index counter spanning text + reasoning chunks (matches the
-        // shell's chunk_index used for notification correlation).
-        let mut chunk_index: u64 = 0;
-        // Separate counter for AgentMessageChunk (text-only) emissions;
-        // mirrored onto ConversationResponse.message_chunks_emitted so
-        // downstream can detect lost-streaming-events scenarios.
-        let mut message_chunk_count: u64 = 0;
+            let mut content_acc = String::new();
+            let mut reasoning_acc = String::new();
+            // Tool call deltas keyed by positional index. Each entry is
+            // (id, name, arguments_buffer); the first chunk for an index
+            // carries id+name and starts the arguments buffer, subsequent
+            // chunks append to arguments only.
+            let mut tool_call_acc: BTreeMap<u32, (String, String, String)> = BTreeMap::new();
 
-        // Content-aware idle timer: the outer
-        // `tokio::time::timeout(idle_timeout, stream.next())` already
-        // catches "transport stops yielding chunks". This second timer
-        // catches the more subtle case where the model keeps emitting
-        // keepalive / empty-delta SSE events that satisfy the outer
-        // timer but make no real progress -- some inference engines
-        // do exactly that.
-        let mut last_content_chunk_at = Instant::now();
+            // Index counter spanning text + reasoning chunks (matches the
+            // shell's chunk_index used for notification correlation).
+            let mut chunk_index: u64 = 0;
+            // Separate counter for AgentMessageChunk (text-only) emissions;
+            // mirrored onto ConversationResponse.message_chunks_emitted so
+            // downstream can detect lost-streaming-events scenarios.
+            let mut message_chunk_count: u64 = 0;
 
-        let mut stream = raw_stream;
-        loop {
-            let next = match tokio::time::timeout(idle_timeout, stream.next()).await {
-                Ok(Some(next)) => next,
-                Ok(None) => break, // stream ended normally
-                Err(_elapsed) => {
+            // Content-aware idle timer: the outer
+            // `tokio::time::timeout(idle_timeout, stream.next())` already
+            // catches "transport stops yielding chunks". This second timer
+            // catches the more subtle case where the model keeps emitting
+            // keepalive / empty-delta SSE events that satisfy the outer
+            // timer but make no real progress -- some inference engines
+            // do exactly that.
+            let mut last_content_chunk_at = Instant::now();
+
+            let mut stream = raw_stream;
+            loop {
+                let next = match tokio::time::timeout(idle_timeout, stream.next()).await {
+                    Ok(Some(next)) => next,
+                    Ok(None) => break, // stream ended normally
+                    Err(_elapsed) => {
+                        let err = SamplingError::IdleTimeout {
+                            elapsed_secs: idle_timeout.as_secs(),
+                        };
+                        yield SamplingEvent::Failed {
+                            request_id: request_id.clone(),
+                            error: SamplingErrorInfo::from(&err),
+                        };
+                        return;
+                    }
+                };
+                let chunk = match next {
+                    Ok(chunk) => chunk,
+                    Err(err) => {
+                        yield SamplingEvent::Failed {
+                            request_id: request_id.clone(),
+                            error: SamplingErrorInfo::from(&err),
+                        };
+                        return;
+                    }
+                };
+
+                if !first_chunk_seen {
+                    model = chunk.model.clone();
+                    model_fingerprint = chunk
+                        .system_fingerprint
+                        .clone()
+                        .filter(|s| !s.is_empty());
+                    first_chunk_seen = true;
+                }
+
+                if let Some(u) = chunk.usage.clone() {
+                    // Wire cost is cumulative for the response, so last-write-wins.
+                    // Never clobber a known cost with missing/unreported.
+                    let chunk_cost = xai_grok_sampling_types::reported_cost_ticks(u.cost_in_usd_ticks);
+                    cost_usd_ticks = match (cost_usd_ticks, chunk_cost) {
+                        (_, Some(n)) => Some(n),
+                        (prev, None) => prev,
+                    };
+                    usage = Some(u.into());
+                }
+
+                // Track whether this chunk carried meaningful content.
+                // Set inside the choices loop and checked at the end.
+                let mut chunk_has_content = false;
+
+                for choice in chunk.choices.into_iter() {
+                    first_choice_seen = true;
+                    if let Some(fr) = choice.finish_reason {
+                        finish_reason = Some(fr.into());
+                        chunk_has_content = true;
+                    }
+
+                    let delta = choice.delta;
+
+                    if let Some(text) = delta.content
+                        && !text.is_empty()
+                    {
+                        if !first_token_emitted {
+                            first_token_emitted = true;
+                            yield SamplingEvent::FirstToken {
+                                request_id: request_id.clone(),
+                            };
+                        }
+                        chunk_has_content = true;
+                        chunk_timestamps.push(Instant::now());
+                        chunk_index += 1;
+                        message_chunk_count += 1;
+                        content_acc.push_str(&text);
+                        yield SamplingEvent::ChannelToken {
+                            request_id: request_id.clone(),
+                            channel: SamplingChannel::Text,
+                            text,
+                            chunk_index,
+                        };
+                    }
+
+                    if let Some(thought) = delta.reasoning_content
+                        && !thought.is_empty()
+                    {
+                        if !first_token_emitted {
+                            first_token_emitted = true;
+                            yield SamplingEvent::FirstToken {
+                                request_id: request_id.clone(),
+                            };
+                        }
+                        chunk_has_content = true;
+                        chunk_index += 1;
+                        reasoning_acc.push_str(&thought);
+                        yield SamplingEvent::ChannelToken {
+                            request_id: request_id.clone(),
+                            channel: SamplingChannel::Reasoning,
+                            text: thought,
+                            chunk_index,
+                        };
+                    }
+
+                    for tc_delta in delta.tool_calls.into_iter() {
+                        chunk_has_content = true;
+
+                        let entry = tool_call_acc
+                            .entry(tc_delta.index)
+                            .or_insert_with(|| (String::new(), String::new(), String::new()));
+
+                        let mut id_for_event: Option<String> = None;
+                        let mut name_for_event: Option<String> = None;
+                        let mut args_for_event: Option<String> = None;
+
+                        if let Some(id) = tc_delta.id {
+                            entry.0 = id.clone();
+                            id_for_event = Some(id);
+                        }
+                        if let Some(func) = tc_delta.function {
+                            if let Some(name) = func.name {
+                                entry.1 = name.clone();
+                                name_for_event = Some(name);
+                            }
+                            if let Some(args) = func.arguments {
+                                entry.2.push_str(&args);
+                                args_for_event = Some(args);
+                            }
+                        }
+
+                        yield SamplingEvent::ToolCallDelta {
+                            request_id: request_id.clone(),
+                            tool_index: tc_delta.index,
+                            id: id_for_event,
+                            name: name_for_event,
+                            arguments_delta: args_for_event,
+                        };
+                    }
+                }
+
+                if chunk_has_content {
+                    last_content_chunk_at = Instant::now();
+                } else if last_content_chunk_at.elapsed() > idle_timeout {
                     let err = SamplingError::IdleTimeout {
                         elapsed_secs: idle_timeout.as_secs(),
                     };
@@ -107,202 +242,67 @@ pub fn stream_chat_completions<'a>(
                     };
                     return;
                 }
+            }
+
+            // ── Build the final response ─────────────────────────────────
+            let tool_calls: Vec<ToolCall> = tool_call_acc
+                .into_values()
+                .map(|(id, name, arguments)| ToolCall {
+                    id: std::sync::Arc::<str>::from(id),
+                    name,
+                    arguments: std::sync::Arc::<str>::from(arguments),
+                })
+                .collect();
+
+            // Honor tool calls by overriding the stop reason if the model
+            // forgot to set it (mirrors the shell's behavior).
+            if !tool_calls.is_empty() {
+                finish_reason = Some(StopReason::ToolCalls);
+            }
+
+            // Build the trailing Assistant + any reasoning sibling.
+            let mut items: Vec<ConversationItem> = Vec::new();
+            if first_choice_seen {
+                if !reasoning_acc.is_empty() {
+                    items.push(ConversationItem::Reasoning(
+                        xai_grok_sampling_types::synthesized_reasoning_item(reasoning_acc),
+                    ));
+                }
+                items.push(ConversationItem::Assistant(AssistantItem {
+                    content: std::sync::Arc::<str>::from(content_acc),
+                    tool_calls,
+                    model_id: Some(model),
+                    model_fingerprint,
+                    // Chat Completions does not echo the applied reasoning effort.
+                    reasoning_effort: None,
+
+                    phase: None,
+                    message_id: None,
+    }));
+            } else {
+                items.push(ConversationItem::assistant(""));
+            }
+
+            let stream_end = Instant::now();
+            let metrics =
+                InferenceLatencyStats::from_timestamps(stream_start, &chunk_timestamps, stream_end);
+
+            let response = ConversationResponse {
+                items,
+                stop_reason: finish_reason,
+                usage,
+                cost_usd_ticks,
+                message_chunks_emitted: message_chunk_count,
+                doom_loop_signals: Vec::new(),
+                stop_message: None,
             };
-            let chunk = match next {
-                Ok(chunk) => chunk,
-                Err(err) => {
-                    yield SamplingEvent::Failed {
-                        request_id: request_id.clone(),
-                        error: SamplingErrorInfo::from(&err),
-                    };
-                    return;
-                }
+
+            yield SamplingEvent::Completed {
+                request_id: request_id.clone(),
+                response: Box::new(response),
+                metrics,
             };
-
-            if !first_chunk_seen {
-                model = chunk.model.clone();
-                model_fingerprint = chunk
-                    .system_fingerprint
-                    .clone()
-                    .filter(|s| !s.is_empty());
-                first_chunk_seen = true;
-            }
-
-            if let Some(u) = chunk.usage.clone() {
-                // Wire cost is cumulative for the response, so last-write-wins.
-                // Never clobber a known cost with missing/unreported.
-                let chunk_cost = xai_grok_sampling_types::reported_cost_ticks(u.cost_in_usd_ticks);
-                cost_usd_ticks = match (cost_usd_ticks, chunk_cost) {
-                    (_, Some(n)) => Some(n),
-                    (prev, None) => prev,
-                };
-                usage = Some(u.into());
-            }
-
-            // Track whether this chunk carried meaningful content.
-            // Set inside the choices loop and checked at the end.
-            let mut chunk_has_content = false;
-
-            for choice in chunk.choices.into_iter() {
-                first_choice_seen = true;
-                if let Some(fr) = choice.finish_reason {
-                    finish_reason = Some(fr.into());
-                    chunk_has_content = true;
-                }
-
-                let delta = choice.delta;
-
-                if let Some(text) = delta.content
-                    && !text.is_empty()
-                {
-                    if !first_token_emitted {
-                        first_token_emitted = true;
-                        yield SamplingEvent::FirstToken {
-                            request_id: request_id.clone(),
-                        };
-                    }
-                    chunk_has_content = true;
-                    chunk_timestamps.push(Instant::now());
-                    chunk_index += 1;
-                    message_chunk_count += 1;
-                    content_acc.push_str(&text);
-                    yield SamplingEvent::ChannelToken {
-                        request_id: request_id.clone(),
-                        channel: SamplingChannel::Text,
-                        text,
-                        chunk_index,
-                    };
-                }
-
-                if let Some(thought) = delta.reasoning_content
-                    && !thought.is_empty()
-                {
-                    if !first_token_emitted {
-                        first_token_emitted = true;
-                        yield SamplingEvent::FirstToken {
-                            request_id: request_id.clone(),
-                        };
-                    }
-                    chunk_has_content = true;
-                    chunk_index += 1;
-                    reasoning_acc.push_str(&thought);
-                    yield SamplingEvent::ChannelToken {
-                        request_id: request_id.clone(),
-                        channel: SamplingChannel::Reasoning,
-                        text: thought,
-                        chunk_index,
-                    };
-                }
-
-                for tc_delta in delta.tool_calls.into_iter() {
-                    chunk_has_content = true;
-
-                    let entry = tool_call_acc
-                        .entry(tc_delta.index)
-                        .or_insert_with(|| (String::new(), String::new(), String::new()));
-
-                    let mut id_for_event: Option<String> = None;
-                    let mut name_for_event: Option<String> = None;
-                    let mut args_for_event: Option<String> = None;
-
-                    if let Some(id) = tc_delta.id {
-                        entry.0 = id.clone();
-                        id_for_event = Some(id);
-                    }
-                    if let Some(func) = tc_delta.function {
-                        if let Some(name) = func.name {
-                            entry.1 = name.clone();
-                            name_for_event = Some(name);
-                        }
-                        if let Some(args) = func.arguments {
-                            entry.2.push_str(&args);
-                            args_for_event = Some(args);
-                        }
-                    }
-
-                    yield SamplingEvent::ToolCallDelta {
-                        request_id: request_id.clone(),
-                        tool_index: tc_delta.index,
-                        id: id_for_event,
-                        name: name_for_event,
-                        arguments_delta: args_for_event,
-                    };
-                }
-            }
-
-            if chunk_has_content {
-                last_content_chunk_at = Instant::now();
-            } else if last_content_chunk_at.elapsed() > idle_timeout {
-                let err = SamplingError::IdleTimeout {
-                    elapsed_secs: idle_timeout.as_secs(),
-                };
-                yield SamplingEvent::Failed {
-                    request_id: request_id.clone(),
-                    error: SamplingErrorInfo::from(&err),
-                };
-                return;
-            }
         }
-
-        // ── Build the final response ─────────────────────────────────
-        let tool_calls: Vec<ToolCall> = tool_call_acc
-            .into_values()
-            .map(|(id, name, arguments)| ToolCall {
-                id: std::sync::Arc::<str>::from(id),
-                name,
-                arguments: std::sync::Arc::<str>::from(arguments),
-            })
-            .collect();
-
-        // Honor tool calls by overriding the stop reason if the model
-        // forgot to set it (mirrors the shell's behavior).
-        if !tool_calls.is_empty() {
-            finish_reason = Some(StopReason::ToolCalls);
-        }
-
-        // Build the trailing Assistant + any reasoning sibling.
-        let mut items: Vec<ConversationItem> = Vec::new();
-        if first_choice_seen {
-            if !reasoning_acc.is_empty() {
-                items.push(ConversationItem::Reasoning(
-                    xai_grok_sampling_types::synthesized_reasoning_item(reasoning_acc),
-                ));
-            }
-            items.push(ConversationItem::Assistant(AssistantItem {
-                content: std::sync::Arc::<str>::from(content_acc),
-                tool_calls,
-                model_id: Some(model),
-                model_fingerprint,
-                // Chat Completions does not echo the applied reasoning effort.
-                reasoning_effort: None,
-
-                phase: None,
-                message_id: None,
-}));
-        } else {
-            items.push(ConversationItem::assistant(""));
-        }
-
-        let stream_end = Instant::now();
-        let metrics =
-            InferenceLatencyStats::from_timestamps(stream_start, &chunk_timestamps, stream_end);
-
-        let response = ConversationResponse {
-            items,
-            stop_reason: finish_reason,
-            usage,
-            cost_usd_ticks,
-            message_chunks_emitted: message_chunk_count,
-            doom_loop_signals: Vec::new(),
-            stop_message: None,
-        };
-
-        yield SamplingEvent::Completed {
-            request_id: request_id.clone(),
-            response: Box::new(response),
-            metrics,
-        };
-    }
 }
 
 #[cfg(test)]

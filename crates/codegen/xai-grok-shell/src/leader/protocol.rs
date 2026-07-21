@@ -525,7 +525,9 @@ mod tests {
         assert!(json.contains(r#""client_id":1"#), "{json}");
         assert!(json.contains(r#""ready":true"#), "{json}");
         assert!(
-            json.contains(&format!(r#""leader_protocol_version":{LEADER_PROTOCOL_VERSION}"#)),
+            json.contains(&format!(
+                r#""leader_protocol_version":{LEADER_PROTOCOL_VERSION}"#
+            )),
             "{json}"
         );
         let decoded: ServerMessage = serde_json::from_str(&json).unwrap();

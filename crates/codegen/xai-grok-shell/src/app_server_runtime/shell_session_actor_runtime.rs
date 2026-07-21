@@ -57,22 +57,38 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
-use tokio::sync::{mpsc, oneshot, Mutex as TokioMutex};
+use tokio::sync::{Mutex as TokioMutex, mpsc, oneshot, watch};
+use tokio::time::{Duration, timeout};
 use xai_grok_app_server_protocol::{
     InteractionResponseParams, Item, ItemBody, ItemStatus, ProviderBinding, Session,
     SessionArchiveParams, SessionForkParams, SessionReadParams, SessionReadResult,
-    SessionResumeParams, SessionStartParams, SessionStatus, SubscribeParams, Turn, TurnInterruptParams,
-    TurnKind, TurnStartParams, TurnStatus, TurnSteerParams, WireCounter,
+    SessionResumeParams, SessionStartParams, SessionStatus, SubscribeParams, Turn,
+    TurnInterruptParams, TurnKind, TurnStartParams, TurnStatus, TurnSteerParams, WireCounter,
 };
-use xai_grok_tower::{GrokRuntimeFacade, ReplayPage, RuntimeCapabilities, RuntimeError, RuntimeEvent};
+use xai_grok_tower::{
+    GrokRuntimeFacade, ReplayPage, RuntimeCapabilities, RuntimeError, RuntimeEvent,
+};
 
+use crate::app_server_runtime::acp_host::AcpCommandHandle;
 use crate::session::commands::{PromptCompletionKind, PromptTurnOk, SessionCommand};
 use crate::session::handle::SessionHandle;
 use crate::session::info::Info;
 use crate::session::pending_interaction::PendingInteractions;
 use crate::session::persistence::{Summary, default_model_id};
 use crate::session::plan_mode::PromptMode;
-use crate::session::storage::{JsonlStorageAdapter, SessionUpdate, StorageAdapter, UpdatesIterator};
+use crate::session::storage::{
+    JsonlStorageAdapter, SessionUpdate, StorageAdapter, UpdatesIterator,
+};
+
+async fn receive_prompt_response(
+    response: oneshot::Receiver<Result<PromptTurnOk, RuntimeError>>,
+    deadline: Duration,
+) -> Result<
+    Result<Result<PromptTurnOk, RuntimeError>, oneshot::error::RecvError>,
+    tokio::time::error::Elapsed,
+> {
+    timeout(deadline, response).await
+}
 
 /// History epoch fallback only when a session has no durable epoch file yet
 /// (legacy sessions). New sessions always write a unique epoch (R5-04).
@@ -118,6 +134,9 @@ pub struct ResidentHandle {
     /// [`SessionHandle::interaction_delivery_hub`] so the live actor and the
     /// facade use the same map (R5-09).
     pub delivery_hub: Option<InteractionDeliveryHub>,
+    /// ACP permission decision channel for the production resident bridge.
+    /// `None` for hermetic/local fixtures that use `delivery_hub` directly.
+    pub permission_responder: Option<AcpCommandHandle>,
 }
 
 impl ResidentHandle {
@@ -131,6 +150,7 @@ impl ResidentHandle {
             pending_interactions: Some(handle.pending_interactions),
             // R5-09: share the actor's hub — never invent a disconnected map.
             delivery_hub: Some(handle.interaction_delivery_hub),
+            permission_responder: None,
         }
     }
 
@@ -162,8 +182,11 @@ impl ResidentHandle {
 pub trait SessionSpawner: Send + Sync {
     /// Spawn (or attach to) a live actor for `info` and return its
     /// `Send`-able command-routing handle.
-    async fn spawn(&self, info: &Info, model_id: &agent_client_protocol::ModelId)
-        -> Result<ResidentHandle, RuntimeError>;
+    async fn spawn(
+        &self,
+        info: &Info,
+        model_id: &agent_client_protocol::ModelId,
+    ) -> Result<ResidentHandle, RuntimeError>;
 }
 
 /// Concrete real-spawn function injected by the composition root (C2-A).
@@ -192,183 +215,204 @@ pub type RealSpawnFn = Arc<
 /// policy, item projection, and multi-command concurrency still require the
 /// remaining product gates before composition can inject it.
 pub fn experimental_acp_resident_spawn(root: PathBuf) -> RealSpawnFn {
-    Arc::new(move |info: Info, model_id: agent_client_protocol::ModelId| {
-        let root = root.clone();
-        Box::pin(async move {
-            use agent_client_protocol::Agent as _;
-            use crate::agent::config::Config as AgentConfig;
-            use crate::app_server_runtime::acp_host::spawn_acp_host;
+    Arc::new(
+        move |info: Info, model_id: agent_client_protocol::ModelId| {
+            let root = root.clone();
+            Box::pin(async move {
+                use crate::agent::config::Config as AgentConfig;
+                use crate::app_server_runtime::acp_host::spawn_acp_host;
+                use agent_client_protocol::Agent as _;
 
-            let config = AgentConfig::default();
-            let auth_manager = Arc::new(config.create_auth_manager());
-            let mut host = spawn_acp_host(config, auth_manager, None, None).map_err(|error| {
-                RuntimeError {
-                    code: "spawn_failed",
+                let config = AgentConfig::default();
+                let auth_manager = Arc::new(config.create_auth_manager());
+                let mut host =
+                    spawn_acp_host(config, auth_manager, None, None).map_err(|error| {
+                        RuntimeError {
+                            code: "spawn_failed",
+                            message: error.to_string(),
+                        }
+                    })?;
+                let init = host
+                    .initialize(
+                        agent_client_protocol::InitializeRequest::new(
+                            agent_client_protocol::ProtocolVersion::V1,
+                        )
+                        .client_capabilities(
+                            agent_client_protocol::ClientCapabilities::new()
+                                .fs(agent_client_protocol::FileSystemCapabilities::new())
+                                .terminal(false),
+                        ),
+                    )
+                    .await
+                    .map_err(|error| RuntimeError {
+                        code: "spawn_failed",
+                        message: error.to_string(),
+                    })?;
+                let auth_method = init
+                    .auth_methods
+                    .iter()
+                    .find(|method| method.id().0.as_ref() == "xai.api_key")
+                    .ok_or_else(|| RuntimeError {
+                        code: "auth_unavailable",
+                        message: "ACP host did not advertise xai.api_key".into(),
+                    })?;
+                host.authenticate(agent_client_protocol::AuthenticateRequest::new(
+                    auth_method.id().clone(),
+                ))
+                .await
+                .map_err(|error| RuntimeError {
+                    code: "auth_failed",
                     message: error.to_string(),
+                })?;
+                let session = host
+                    .new_session(
+                        agent_client_protocol::NewSessionRequest::new(PathBuf::from(&info.cwd))
+                            .mcp_servers(vec![])
+                            .meta(
+                                serde_json::json!({
+                                    "sessionId": info.id.0.to_string(),
+                                    "modelId": model_id.0.to_string(),
+                                })
+                                .as_object()
+                                .cloned(),
+                            ),
+                    )
+                    .await
+                    .map_err(|error| RuntimeError {
+                        code: "session_spawn_failed",
+                        message: error.to_string(),
+                    })?;
+                if session.session_id != info.id {
+                    return Err(RuntimeError {
+                        code: "session_identity_mismatch",
+                        message: "ACP host returned a different session identity".into(),
+                    });
                 }
-            })?;
-            let init = host
-                .initialize(
-                    agent_client_protocol::InitializeRequest::new(
-                        agent_client_protocol::ProtocolVersion::V1,
-                    )
-                    .client_capabilities(
-                        agent_client_protocol::ClientCapabilities::new()
-                            .fs(agent_client_protocol::FileSystemCapabilities::new())
-                            .terminal(false),
-                    ),
-                )
-                .await
-                .map_err(|error| RuntimeError {
-                    code: "spawn_failed",
-                    message: error.to_string(),
-                })?;
-            let auth_method = init
-                .auth_methods
-                .iter()
-                .find(|method| method.id().0.as_ref() == "xai.api_key")
-                .ok_or_else(|| RuntimeError {
-                    code: "auth_unavailable",
-                    message: "ACP host did not advertise xai.api_key".into(),
-                })?;
-            host.authenticate(
-                agent_client_protocol::AuthenticateRequest::new(auth_method.id().clone()),
-            )
-            .await
-            .map_err(|error| RuntimeError {
-                code: "auth_failed",
-                message: error.to_string(),
-            })?;
-            let session = host
-                .new_session(
-                    agent_client_protocol::NewSessionRequest::new(
-                        PathBuf::from(&info.cwd),
-                    )
-                    .mcp_servers(vec![])
-                    .meta(
-                        serde_json::json!({
-                            "sessionId": info.id.0.to_string(),
-                            "modelId": model_id.0.to_string(),
-                        })
-                        .as_object()
-                        .cloned(),
-                    ),
-                )
-                .await
-                .map_err(|error| RuntimeError {
-                    code: "session_spawn_failed",
-                    message: error.to_string(),
-                })?;
-            if session.session_id != info.id {
-                return Err(RuntimeError {
-                    code: "session_identity_mismatch",
-                    message: "ACP host returned a different session identity".into(),
-                });
-            }
-            let storage = JsonlStorageAdapter::with_root(root);
-            storage
-                .init_session(&info, model_id.clone())
-                .await
-                .map_err(|error| RuntimeError {
-                    code: "persistence_failed",
-                    message: error.to_string(),
-                })?;
-            host.start_persistence(storage, info.clone())
-                .map_err(|error| RuntimeError {
-                    code: "persistence_failed",
-                    message: error.to_string(),
-                })?;
+                let storage = JsonlStorageAdapter::with_root(root);
+                storage
+                    .init_session(&info, model_id.clone())
+                    .await
+                    .map_err(|error| RuntimeError {
+                        code: "persistence_failed",
+                        message: error.to_string(),
+                    })?;
+                host.start_persistence(storage, info.clone())
+                    .map_err(|error| RuntimeError {
+                        code: "persistence_failed",
+                        message: error.to_string(),
+                    })?;
 
-            let (cmd_tx, mut cmd_rx) = mpsc::unbounded_channel::<SessionCommand>();
-            let acp_commands = host.command_handle();
-            let mut prompt_tasks = tokio::task::JoinSet::new();
-            let current_prompt_id = Arc::new(Mutex::new(None::<String>));
-            let pending_interactions: PendingInteractions =
-                Arc::new(Mutex::new(HashMap::new()));
-            let delivery_hub: InteractionDeliveryHub = Arc::new(Mutex::new(HashMap::new()));
-            let current_clone = current_prompt_id.clone();
-            let session_id = info.id.clone();
-            tokio::spawn(async move {
-                while let Some(command) = cmd_rx.recv().await {
-                    match command {
-                        SessionCommand::Prompt {
-                            prompt_id,
-                            prompt_blocks,
-                            respond_to,
-                            ..
-                        } => {
-                            if let Ok(mut current) = current_clone.lock() {
-                                *current = Some(prompt_id.clone());
-                            }
-                            let acp_commands = acp_commands.clone();
-                            let session_id = session_id.clone();
-                            let current = current_clone.clone();
-                            prompt_tasks.spawn(async move {
-                                let result = acp_commands
-                                    .prompt(agent_client_protocol::PromptRequest::new(
-                                        session_id,
-                                        prompt_blocks,
-                                    ))
-                                    .await
-                                    .map(|response| PromptTurnOk {
-                                        stop_reason: response.stop_reason,
+                let (cmd_tx, mut cmd_rx) = mpsc::unbounded_channel::<SessionCommand>();
+                let acp_commands = host.command_handle();
+                let permission_responder = acp_commands.clone();
+                let mut prompt_tasks = tokio::task::JoinSet::new();
+                let current_prompt_id = Arc::new(Mutex::new(None::<String>));
+                let pending_interactions: PendingInteractions =
+                    Arc::new(Mutex::new(HashMap::new()));
+                let delivery_hub: InteractionDeliveryHub = Arc::new(Mutex::new(HashMap::new()));
+                let current_clone = current_prompt_id.clone();
+                let session_id = info.id.clone();
+                tokio::spawn(async move {
+                    let (cancel_tx, _) = watch::channel(0_u64);
+                    while let Some(command) = cmd_rx.recv().await {
+                        match command {
+                            SessionCommand::Prompt {
+                                prompt_id,
+                                prompt_blocks,
+                                respond_to,
+                                ..
+                            } => {
+                                if let Ok(mut current) = current_clone.lock() {
+                                    *current = Some(prompt_id.clone());
+                                }
+                                let acp_commands = acp_commands.clone();
+                                let session_id = session_id.clone();
+                                let current = current_clone.clone();
+                                let mut cancel_rx = cancel_tx.subscribe();
+                                prompt_tasks.spawn(async move {
+                                let result = tokio::select! {
+                                    response = acp_commands.prompt_with_context(
+                                        agent_client_protocol::PromptRequest::new(
+                                            session_id,
+                                            prompt_blocks,
+                                        ),
+                                        prompt_id.clone(),
+                                    ) => response
+                                        .map(|response| PromptTurnOk {
+                                            stop_reason: response.stop_reason,
+                                            total_tokens: 0,
+                                            turn_snapshot: None,
+                                            completion_kind: PromptCompletionKind::Completed,
+                                            structured_output: None,
+                                            usage: None,
+                                        })
+                                        .map_err(|error| {
+                                            agent_client_protocol::Error::internal_error()
+                                                .data(error.to_string())
+                                        }),
+                                    _ = cancel_rx.changed() => Ok(PromptTurnOk {
+                                        stop_reason: agent_client_protocol::StopReason::Cancelled,
                                         total_tokens: 0,
                                         turn_snapshot: None,
-                                        completion_kind: PromptCompletionKind::Completed,
+                                        completion_kind: PromptCompletionKind::Cancelled {
+                                            category: None,
+                                            context: None,
+                                        },
                                         structured_output: None,
                                         usage: None,
-                                    })
-                                    .map_err(|error| {
-                                        agent_client_protocol::Error::internal_error()
-                                            .data(error.to_string())
-                                    });
+                                    }),
+                                };
                                 let _ = respond_to.send(result);
                                 if let Ok(mut current) = current.lock() {
                                     *current = None;
                                 }
                             });
-                        }
-                        SessionCommand::Interject { text, .. } => {
-                            let acp_commands = acp_commands.clone();
-                            let session_id = session_id.clone();
-                            prompt_tasks.spawn(async move {
-                                let _ = acp_commands
-                                .prompt(agent_client_protocol::PromptRequest::new(
-                                    session_id.clone(),
-                                    vec![agent_client_protocol::ContentBlock::Text(
-                                        agent_client_protocol::TextContent::new(text),
-                                    )],
-                                ))
-                                .await;
-                            });
-                        }
-                        SessionCommand::Cancel { .. } => {
-                            let _ = acp_commands
-                                .cancel(agent_client_protocol::CancelNotification::new(
-                                    session_id.clone(),
-                                ))
-                                .await;
-                            if let Ok(mut current) = current_clone.lock() {
-                                *current = None;
                             }
+                            SessionCommand::Interject { text, .. } => {
+                                let acp_commands = acp_commands.clone();
+                                let session_id = session_id.clone();
+                                prompt_tasks.spawn(async move {
+                                    let _ = acp_commands
+                                        .prompt(agent_client_protocol::PromptRequest::new(
+                                            session_id.clone(),
+                                            vec![agent_client_protocol::ContentBlock::Text(
+                                                agent_client_protocol::TextContent::new(text),
+                                            )],
+                                        ))
+                                        .await;
+                                });
+                            }
+                            SessionCommand::Cancel { .. } => {
+                                let next_cancel = cancel_tx.borrow().wrapping_add(1);
+                                let _ = cancel_tx.send(next_cancel);
+                                let _ = acp_commands
+                                    .cancel(agent_client_protocol::CancelNotification::new(
+                                        session_id.clone(),
+                                    ))
+                                    .await;
+                                if let Ok(mut current) = current_clone.lock() {
+                                    *current = None;
+                                }
+                            }
+                            SessionCommand::Shutdown => {
+                                while prompt_tasks.join_next().await.is_some() {}
+                                break;
+                            }
+                            _ => {}
                         }
-                        SessionCommand::Shutdown => {
-                            while prompt_tasks.join_next().await.is_some() {}
-                            break;
-                        }
-                        _ => {}
                     }
-                }
-                let _ = host.shutdown().await;
-            });
-            Ok(ResidentHandle {
-                cmd_tx,
-                current_prompt_id,
-                pending_interactions: Some(pending_interactions),
-                delivery_hub: Some(delivery_hub),
+                    let _ = host.shutdown().await;
+                });
+                Ok(ResidentHandle {
+                    cmd_tx,
+                    current_prompt_id,
+                    pending_interactions: Some(pending_interactions),
+                    delivery_hub: Some(delivery_hub),
+                    permission_responder: Some(permission_responder),
+                })
             })
-        })
-    })
+        },
+    )
 }
 
 /// **Test/fixture-only** offline turn factory (R5-01).
@@ -387,77 +431,79 @@ pub fn experimental_acp_resident_spawn(root: PathBuf) -> RealSpawnFn {
 /// Full `spawn_session_on_thread` with live credentials remains the EXTERNAL
 /// production path when the composition root injects a real [`RealSpawnFn`].
 pub fn experimental_local_turn_spawn(root: PathBuf) -> RealSpawnFn {
-    Arc::new(move |info: Info, _model_id: agent_client_protocol::ModelId| {
-        let root = root.clone();
-        Box::pin(async move {
-            let (cmd_tx, mut cmd_rx) = mpsc::unbounded_channel::<SessionCommand>();
-            let current_prompt_id = Arc::new(std::sync::Mutex::new(None::<String>));
-            let pending_interactions: PendingInteractions =
-                Arc::new(std::sync::Mutex::new(HashMap::new()));
-            let delivery_hub: InteractionDeliveryHub =
-                Arc::new(Mutex::new(HashMap::new()));
-            let storage = JsonlStorageAdapter::with_root(root);
-            let info_clone = info.clone();
-            let current_clone = current_prompt_id.clone();
-            tokio::spawn(async move {
-                while let Some(cmd) = cmd_rx.recv().await {
-                    match cmd {
-                        SessionCommand::Prompt {
-                            prompt_id,
-                            respond_to,
-                            ..
-                        } => {
-                            if let Ok(mut g) = current_clone.lock() {
-                                *g = Some(prompt_id.clone());
-                            }
-                            let notification = agent_client_protocol::SessionNotification::new(
-                                info_clone.id.clone(),
-                                agent_client_protocol::SessionUpdate::AgentMessageChunk(
-                                    agent_client_protocol::ContentChunk::new(
-                                        agent_client_protocol::ContentBlock::Text(
-                                            agent_client_protocol::TextContent::new(format!(
-                                                "experimental-local-reply-{prompt_id}"
-                                            )),
+    Arc::new(
+        move |info: Info, _model_id: agent_client_protocol::ModelId| {
+            let root = root.clone();
+            Box::pin(async move {
+                let (cmd_tx, mut cmd_rx) = mpsc::unbounded_channel::<SessionCommand>();
+                let current_prompt_id = Arc::new(std::sync::Mutex::new(None::<String>));
+                let pending_interactions: PendingInteractions =
+                    Arc::new(std::sync::Mutex::new(HashMap::new()));
+                let delivery_hub: InteractionDeliveryHub = Arc::new(Mutex::new(HashMap::new()));
+                let storage = JsonlStorageAdapter::with_root(root);
+                let info_clone = info.clone();
+                let current_clone = current_prompt_id.clone();
+                tokio::spawn(async move {
+                    while let Some(cmd) = cmd_rx.recv().await {
+                        match cmd {
+                            SessionCommand::Prompt {
+                                prompt_id,
+                                respond_to,
+                                ..
+                            } => {
+                                if let Ok(mut g) = current_clone.lock() {
+                                    *g = Some(prompt_id.clone());
+                                }
+                                let notification = agent_client_protocol::SessionNotification::new(
+                                    info_clone.id.clone(),
+                                    agent_client_protocol::SessionUpdate::AgentMessageChunk(
+                                        agent_client_protocol::ContentChunk::new(
+                                            agent_client_protocol::ContentBlock::Text(
+                                                agent_client_protocol::TextContent::new(format!(
+                                                    "experimental-local-reply-{prompt_id}"
+                                                )),
+                                            ),
                                         ),
                                     ),
-                                ),
-                            );
-                            let _ = storage
-                                .append_update(
-                                    &info_clone,
-                                    &SessionUpdate::Acp(Box::new(notification)),
-                                )
-                                .await;
-                            let _ = respond_to.send(Ok(PromptTurnOk {
-                                stop_reason: agent_client_protocol::StopReason::EndTurn,
-                                total_tokens: 0,
-                                turn_snapshot: None,
-                                completion_kind: PromptCompletionKind::Completed,
-                                structured_output: None,
-                                usage: None,
-                            }));
-                            if let Ok(mut g) = current_clone.lock() {
-                                *g = None;
+                                );
+                                let _ = storage
+                                    .append_update(
+                                        &info_clone,
+                                        &SessionUpdate::Acp(Box::new(notification)),
+                                    )
+                                    .await;
+                                let _ = respond_to.send(Ok(PromptTurnOk {
+                                    stop_reason: agent_client_protocol::StopReason::EndTurn,
+                                    total_tokens: 0,
+                                    turn_snapshot: None,
+                                    completion_kind: PromptCompletionKind::Completed,
+                                    structured_output: None,
+                                    usage: None,
+                                }));
+                                if let Ok(mut g) = current_clone.lock() {
+                                    *g = None;
+                                }
                             }
-                        }
-                        SessionCommand::Interject { .. } => {}
-                        SessionCommand::Cancel { .. } => {
-                            if let Ok(mut g) = current_clone.lock() {
-                                *g = None;
+                            SessionCommand::Interject { .. } => {}
+                            SessionCommand::Cancel { .. } => {
+                                if let Ok(mut g) = current_clone.lock() {
+                                    *g = None;
+                                }
                             }
+                            _ => {}
                         }
-                        _ => {}
                     }
-                }
-            });
-            Ok(ResidentHandle {
-                cmd_tx,
-                current_prompt_id,
-                pending_interactions: Some(pending_interactions),
-                delivery_hub: Some(delivery_hub),
+                });
+                Ok(ResidentHandle {
+                    cmd_tx,
+                    current_prompt_id,
+                    pending_interactions: Some(pending_interactions),
+                    delivery_hub: Some(delivery_hub),
+                    permission_responder: None,
+                })
             })
-        })
-    })
+        },
+    )
 }
 
 /// Outcome of an atomic durable idempotency claim (R5-03).
@@ -561,6 +607,9 @@ pub struct ShellSessionActorRuntime {
     residents: Mutex<HashMap<String, Resident>>,
     spawn_locks: Mutex<HashMap<String, Arc<TokioMutex<()>>>>,
     spawner: Arc<dyn SessionSpawner>,
+    /// True only when a resident factory capable of routing live commands was
+    /// injected. Storage-only ports must remain fail-closed for turn methods.
+    mutations_enabled: bool,
     last_spawn_error: Mutex<HashMap<String, String>>,
 }
 
@@ -596,6 +645,7 @@ impl ShellSessionActorRuntime {
             residents: Mutex::new(HashMap::new()),
             spawn_locks: Mutex::new(HashMap::new()),
             spawner: Arc::new(ProductionSpawner::new()),
+            mutations_enabled: false,
             last_spawn_error: Mutex::new(HashMap::new()),
         }
     }
@@ -613,6 +663,7 @@ impl ShellSessionActorRuntime {
             residents: Mutex::new(HashMap::new()),
             spawn_locks: Mutex::new(HashMap::new()),
             spawner: Arc::new(ProductionSpawner::new()),
+            mutations_enabled: false,
             last_spawn_error: Mutex::new(HashMap::new()),
         }
     }
@@ -628,6 +679,7 @@ impl ShellSessionActorRuntime {
             residents: Mutex::new(HashMap::new()),
             spawn_locks: Mutex::new(HashMap::new()),
             spawner,
+            mutations_enabled: true,
             last_spawn_error: Mutex::new(HashMap::new()),
         }
     }
@@ -642,6 +694,7 @@ impl ShellSessionActorRuntime {
             residents: Mutex::new(HashMap::new()),
             spawn_locks: Mutex::new(HashMap::new()),
             spawner: Arc::new(ProductionSpawner::with_real_spawn(real)),
+            mutations_enabled: true,
             last_spawn_error: Mutex::new(HashMap::new()),
         }
     }
@@ -665,7 +718,12 @@ impl ShellSessionActorRuntime {
         model_id: &agent_client_protocol::ModelId,
     ) -> Result<(), RuntimeError> {
         // Fast path: already resident.
-        if self.residents.lock().unwrap().contains_key(&info.id.0.to_string()) {
+        if self
+            .residents
+            .lock()
+            .unwrap()
+            .contains_key(&info.id.0.to_string())
+        {
             return Ok(());
         }
         let lock = {
@@ -676,7 +734,12 @@ impl ShellSessionActorRuntime {
                 .clone()
         };
         let _spawn_guard = lock.lock().await;
-        if self.residents.lock().unwrap().contains_key(&info.id.0.to_string()) {
+        if self
+            .residents
+            .lock()
+            .unwrap()
+            .contains_key(&info.id.0.to_string())
+        {
             return Ok(());
         }
         match self.spawner.spawn(info, model_id).await {
@@ -862,12 +925,12 @@ impl ShellSessionActorRuntime {
                 let _ = std::fs::remove_file(&tmp);
                 // Winner already claimed — load durable claim (retry briefly
                 // if the winner is still writing via the fallback path).
-                let (sid, dig) = self
-                    .load_idempotency_claim_retry(key)
-                    .ok_or_else(|| RuntimeError {
-                        code: "internal_error",
-                        message: "idempotency claim exists but could not be read".into(),
-                    })?;
+                let (sid, dig) =
+                    self.load_idempotency_claim_retry(key)
+                        .ok_or_else(|| RuntimeError {
+                            code: "internal_error",
+                            message: "idempotency claim exists but could not be read".into(),
+                        })?;
                 if dig != digest {
                     return Err(RuntimeError {
                         code: "idempotency_conflict",
@@ -1017,10 +1080,7 @@ impl ShellSessionActorRuntime {
 
     /// Load an existing session row after an idempotent claim win by another
     /// runtime/process, re-residing best-effort.
-    async fn load_existing_session_row(
-        &self,
-        session_id: &str,
-    ) -> Result<Session, RuntimeError> {
+    async fn load_existing_session_row(&self, session_id: &str) -> Result<Session, RuntimeError> {
         let info = self.find_info(session_id).await?;
         let summary = self
             .storage
@@ -1053,6 +1113,7 @@ impl ShellSessionActorRuntime {
                 current_prompt_id: r.handle.current_prompt_id.clone(),
                 pending_interactions: r.handle.pending_interactions.clone(),
                 delivery_hub: r.handle.delivery_hub.clone(),
+                permission_responder: r.handle.permission_responder.clone(),
             })
     }
 
@@ -1115,8 +1176,7 @@ impl ShellSessionActorRuntime {
             .get(session_id)
             .cloned()
             .unwrap_or_else(|| {
-                "no resident SessionActor for this session (no spawn attempted yet)."
-                    .to_string()
+                "no resident SessionActor for this session (no spawn attempted yet).".to_string()
             });
         RuntimeError {
             code: "unsupported",
@@ -1181,13 +1241,16 @@ impl ShellSessionActorRuntime {
     /// thread. The sidecar contains **no** secret material by contract
     /// (`ProviderBinding` is identifier-only — see
     /// `provider_binding_is_structured_and_contains_no_secret_material`).
-    async fn write_binding(&self, info: &Info, binding: &ProviderBinding) -> Result<(), RuntimeError> {
+    async fn write_binding(
+        &self,
+        info: &Info,
+        binding: &ProviderBinding,
+    ) -> Result<(), RuntimeError> {
         let path = self.storage.provider_binding_file(info);
-        let bytes = serde_json::to_vec_pretty(binding)
-            .map_err(|e| RuntimeError {
-                code: "storage_error",
-                message: format!("failed to serialize provider binding: {e}"),
-            })?;
+        let bytes = serde_json::to_vec_pretty(binding).map_err(|e| RuntimeError {
+            code: "storage_error",
+            message: format!("failed to serialize provider binding: {e}"),
+        })?;
         tokio::task::spawn_blocking(move || {
             // The session dir is created by `init_session` before we get here,
             // so `write` is safe. If the dir is somehow missing, create it
@@ -1255,7 +1318,9 @@ fn io_err_to_runtime(e: std::io::Error) -> RuntimeError {
 /// flatten to their `name` as text (the actor's `parse_prompt` does the rich
 /// rendering in production; the adapter only needs a faithful wire shape to
 /// enqueue the command). This is NOT a second parser — it preserves intent.
-fn input_blocks_to_content_blocks(input: &[xai_grok_app_server_protocol::InputBlock]) -> Vec<agent_client_protocol::ContentBlock> {
+fn input_blocks_to_content_blocks(
+    input: &[xai_grok_app_server_protocol::InputBlock],
+) -> Vec<agent_client_protocol::ContentBlock> {
     use agent_client_protocol as acp;
     input
         .iter()
@@ -1464,7 +1529,9 @@ fn project_line(
                         revision: WireCounter::new(1),
                         status: ItemStatus::Completed,
                         created_at_ms: 0,
-                        body: ItemBody::AgentMessage { text: text.text.clone() },
+                        body: ItemBody::AgentMessage {
+                            text: text.text.clone(),
+                        },
                     };
                     (Some(delta_event), Some(item))
                 } else {
@@ -1647,16 +1714,20 @@ fn project_updates(
         }
         seq += 1;
     }
-    ProjectedHistory { events, turns, items }
+    ProjectedHistory {
+        events,
+        turns,
+        items,
+    }
 }
 
 #[async_trait]
 impl GrokRuntimeFacade for ShellSessionActorRuntime {
     fn capabilities(&self) -> RuntimeCapabilities {
-        // Storage-backed session/replay paths are executable today. Turn and
-        // interaction mutation remain unavailable until the composition root
-        // injects the real SessionActor factory; advertise that fact instead
-        // of claiming an unsupported product capability.
+        // Storage-backed session/replay paths are executable today. Turn
+        // mutation is advertised only when a live resident factory was
+        // injected; Interaction/items remain fail-closed until their own
+        // product gates are complete.
         RuntimeCapabilities {
             session_list: true,
             session_read: true,
@@ -1665,9 +1736,9 @@ impl GrokRuntimeFacade for ShellSessionActorRuntime {
             session_fork: true,
             session_archive: true,
             session_subscribe: true,
-            turn_start: false,
-            turn_steer: false,
-            turn_interrupt: false,
+            turn_start: self.mutations_enabled,
+            turn_steer: self.mutations_enabled,
+            turn_interrupt: self.mutations_enabled,
             interaction_respond: false,
             item_lifecycle: false,
             item_deltas: false,
@@ -1689,7 +1760,12 @@ impl GrokRuntimeFacade for ShellSessionActorRuntime {
             let binding = self.load_binding(&s.info).await;
             let archived = self.storage.is_archived(&s.info);
             let epoch = self.history_epoch_for(&s.info)?;
-            sessions.push(project_summary_to_session(s, binding.as_ref(), archived, &epoch));
+            sessions.push(project_summary_to_session(
+                s,
+                binding.as_ref(),
+                archived,
+                &epoch,
+            ));
         }
         Ok(sessions)
     }
@@ -1717,8 +1793,7 @@ impl GrokRuntimeFacade for ShellSessionActorRuntime {
         // performed; `created_at_ms` is 0 (`UpdatesIterator` does not expose
         // the envelope timestamp); xAI extension updates skipped.
         let (turns, items) = if params.include_turns || params.include_items {
-            let history = self
-                .project_history(&info, &params.session_id, binding.clone());
+            let history = self.project_history(&info, &params.session_id, binding.clone());
             (
                 if params.include_turns {
                     history.turns
@@ -1752,7 +1827,8 @@ impl GrokRuntimeFacade for ShellSessionActorRuntime {
         };
         let _key_guard = key_lock.lock().await;
 
-        if let Some((existing_id, prev_digest)) = self.load_idempotency_claim(&params.idempotency_key)
+        if let Some((existing_id, prev_digest)) =
+            self.load_idempotency_claim(&params.idempotency_key)
         {
             if prev_digest != digest {
                 return Err(RuntimeError {
@@ -1849,9 +1925,7 @@ impl GrokRuntimeFacade for ShellSessionActorRuntime {
         let binding = self.load_binding(&info).await;
         // R5-02: same residency contract as start — hard errors propagate;
         // `unsupported` leaves storage-only session.
-        Self::residency_result(
-            self.ensure_resident(&info, &summary.current_model_id).await,
-        )?;
+        Self::residency_result(self.ensure_resident(&info, &summary.current_model_id).await)?;
         let archived = self.storage.is_archived(&info);
         let epoch = self.history_epoch_for(&info)?;
         Ok(project_summary_to_session(
@@ -1941,7 +2015,9 @@ impl GrokRuntimeFacade for ShellSessionActorRuntime {
         // handle exists (production PARTIAL — spawner returned `unsupported`,
         // or the session was never started/resumed here), return `unsupported`
         // honestly instead of faking a turn.
-        let resident = self.resident(&params.session_id).ok_or_else(|| self.no_resident_error(&params.session_id))?;
+        let resident = self
+            .resident(&params.session_id)
+            .ok_or_else(|| self.no_resident_error(&params.session_id))?;
         let turn_id = uuid::Uuid::now_v7().to_string();
         let blocks = input_blocks_to_content_blocks(&params.input);
         // C5-C: project the session's identifier-only ProviderBinding sidecar
@@ -1978,17 +2054,34 @@ impl GrokRuntimeFacade for ShellSessionActorRuntime {
                 message: "Session actor command channel is closed.".into(),
             });
         }
-        let result = rx
-            .await
-            .map_err(|_| {
-                // C1-H F-3 fix: the actor dropped the oneshot (likely
-                // panicked) — clear the stale running-turn slot.
-                self.clear_current_turn(&params.session_id);
-                RuntimeError {
-                    code: "session_closed",
-                    message: "Session actor dropped the prompt response.".into(),
-                }
-            })?;
+        let result = receive_prompt_response(
+            rx,
+            Duration::from_millis(xai_grok_app_server_protocol::errors::defaults::TOOL_WAIT_MAX_MS),
+        )
+        .await
+        .map_err(|_| {
+            self.clear_current_turn(&params.session_id);
+            let _ = resident.cmd_tx.send(SessionCommand::Cancel {
+                cancel_subagents: true,
+                kill_background_tasks: false,
+                rewind_if_pristine: false,
+                trigger: Some("prompt_deadline".into()),
+            });
+            RuntimeError {
+                code: "runtime_unavailable",
+                message: "Session actor did not complete the turn before the configured deadline."
+                    .into(),
+            }
+        })?
+        .map_err(|_| {
+            // C1-H F-3 fix: the actor dropped the oneshot (likely
+            // panicked) — clear the stale running-turn slot.
+            self.clear_current_turn(&params.session_id);
+            RuntimeError {
+                code: "session_closed",
+                message: "Session actor dropped the prompt response.".into(),
+            }
+        })?;
         let ordinal = self.next_ordinal(&params.session_id);
         let now = now_ms();
         let status = match &result {
@@ -2001,7 +2094,13 @@ impl GrokRuntimeFacade for ShellSessionActorRuntime {
             },
             Err(_) => TurnStatus::Failed,
         };
-        let completed_at_ms = if matches!(status, TurnStatus::Completed | TurnStatus::Interrupted | TurnStatus::Failed | TurnStatus::Declined) {
+        let completed_at_ms = if matches!(
+            status,
+            TurnStatus::Completed
+                | TurnStatus::Interrupted
+                | TurnStatus::Failed
+                | TurnStatus::Declined
+        ) {
             Some(now)
         } else {
             None
@@ -2022,7 +2121,9 @@ impl GrokRuntimeFacade for ShellSessionActorRuntime {
     }
 
     async fn steer_turn(&self, params: TurnSteerParams) -> Result<Item, RuntimeError> {
-        let resident = self.resident(&params.session_id).ok_or_else(|| self.no_resident_error(&params.session_id))?;
+        let resident = self
+            .resident(&params.session_id)
+            .ok_or_else(|| self.no_resident_error(&params.session_id))?;
         // Verify the target turn is the running turn (R8). Shell `Interject`
         // targets the running turn implicitly via `current_prompt_id`; the
         // adapter enforces the explicit `turn_id` match here.
@@ -2076,7 +2177,9 @@ impl GrokRuntimeFacade for ShellSessionActorRuntime {
     }
 
     async fn interrupt_turn(&self, params: TurnInterruptParams) -> Result<(), RuntimeError> {
-        let resident = self.resident(&params.session_id).ok_or_else(|| self.no_resident_error(&params.session_id))?;
+        let resident = self
+            .resident(&params.session_id)
+            .ok_or_else(|| self.no_resident_error(&params.session_id))?;
         // Verify the target turn is the running turn (R9).
         let current = resident.current_turn();
         if current.as_deref() != Some(params.turn_id.as_str()) {
@@ -2106,7 +2209,10 @@ impl GrokRuntimeFacade for ShellSessionActorRuntime {
         Ok(())
     }
 
-    async fn respond_interaction(&self, params: InteractionResponseParams) -> Result<(), RuntimeError> {
+    async fn respond_interaction(
+        &self,
+        params: InteractionResponseParams,
+    ) -> Result<(), RuntimeError> {
         // R10 delivery channel: deliver the caller's decision string into the
         // existing pending-interaction surface. This is NOT a second permission
         // engine — we do not re-evaluate allow/deny policy. The caller already
@@ -2119,23 +2225,53 @@ impl GrokRuntimeFacade for ShellSessionActorRuntime {
         // 2. Require a resident actor. If no resident is loaded, return
         //    `unsupported` honestly — the decision cannot be delivered to a
         //    parked future that lives in the actor's memory.
-        let resident = self.resident(&params.session_id).ok_or_else(|| RuntimeError {
-            code: "unsupported",
-            message: "respond_interaction requires a resident session actor; \
+        let resident = self
+            .resident(&params.session_id)
+            .ok_or_else(|| RuntimeError {
+                code: "unsupported",
+                message: "respond_interaction requires a resident session actor; \
                 no resident loaded for this session (C1-J PARTIAL: spawn not \
                 assembled)."
-                .into(),
-        })?;
+                    .into(),
+            })?;
+
+        // Production ACP residents park the reverse request inside the ACP
+        // host rather than in Shell's legacy pending-interaction table. Route
+        // the same interaction identity directly to that waiter when present.
+        if let Some(permission_responder) = resident.permission_responder {
+            let decision = match params.decision.as_str() {
+                "cancel" | "cancelled" | "deny" | "denied" => {
+                    crate::app_server_runtime::acp_host::AcpPermissionDecision::Cancelled
+                }
+                option_id => crate::app_server_runtime::acp_host::AcpPermissionDecision::Selected(
+                    option_id.to_owned(),
+                ),
+            };
+            return permission_responder
+                .respond_permission(params.interaction_id, decision)
+                .await
+                .map_err(|error| RuntimeError {
+                    code: if error.0.contains("not found") {
+                        "interaction_not_found"
+                    } else {
+                        "interaction_not_deliverable"
+                    },
+                    message: error.0,
+                });
+        }
 
         // 3. Require the pending-interactions surface. A resident without
         //    one (e.g. a minimal test spawner) cannot accept interaction
         //    responses — return `unsupported` honestly.
-        let pending = resident.pending_interactions.as_ref().ok_or_else(|| RuntimeError {
-            code: "unsupported",
-            message: "resident has no pending_interactions surface \
+        let pending = resident
+            .pending_interactions
+            .as_ref()
+            .ok_or_else(|| RuntimeError {
+                code: "unsupported",
+                message: "resident has no pending_interactions surface \
                 (production auto-register PARTIAL)."
-                .into(),
-        })?;
+                    .into(),
+            })?;
 
         // 4. First-answer-wins: remove the entry keyed by `interaction_id`
         //    (= `tool_call_id`). A second call for the same interaction finds
@@ -2256,13 +2392,13 @@ impl GrokRuntimeFacade for ShellSessionActorRuntime {
                 &epoch,
             )),
         )];
-        let history = self
-            .project_history(&info, &cursor.session_id, binding.clone());
+        let history = self.project_history(&info, &cursor.session_id, binding.clone());
         // R4-06: use canonical event_seq on each projected event (not the
         // compacted vector index). Gaps from omitted/corrupt lines are preserved
         // so filter is `seq > after_event_seq`.
         for e in history.events {
-            let seq = runtime_event_seq(&e).unwrap_or(numbered.last().map(|(s, _)| s + 1).unwrap_or(1));
+            let seq =
+                runtime_event_seq(&e).unwrap_or(numbered.last().map(|(s, _)| s + 1).unwrap_or(1));
             numbered.push((seq, e));
         }
         let after = cursor.after_event_seq.as_u64();
@@ -2298,12 +2434,10 @@ fn runtime_event_seq(event: &RuntimeEvent) -> Option<u64> {
     match event {
         RuntimeEvent::SessionChanged(_) => Some(0),
         RuntimeEvent::TurnChanged(t) => Some(t.revision.as_u64()),
-        RuntimeEvent::ItemStarted(i) | RuntimeEvent::ItemCompleted(i) => {
-            Some(i.event_seq.as_u64())
+        RuntimeEvent::ItemStarted(i) | RuntimeEvent::ItemCompleted(i) => Some(i.event_seq.as_u64()),
+        RuntimeEvent::ItemDelta { item_id, .. } => {
+            item_id.strip_prefix("item_").and_then(|s| s.parse().ok())
         }
-        RuntimeEvent::ItemDelta { item_id, .. } => item_id
-            .strip_prefix("item_")
-            .and_then(|s| s.parse().ok()),
         RuntimeEvent::InteractionRequested(_) => None,
     }
 }
@@ -2347,5 +2481,28 @@ mod port_invariant_tests {
         assert!(!capabilities.turn_steer);
         assert!(!capabilities.turn_interrupt);
         assert!(!capabilities.interaction_respond);
+    }
+
+    #[test]
+    fn injected_resident_factory_promotes_only_turn_capabilities() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let runtime = ShellSessionActorRuntime::with_production_spawn(
+            temp.path().to_path_buf(),
+            experimental_acp_resident_spawn(temp.path().to_path_buf()),
+        );
+        let capabilities = runtime.capabilities();
+        assert!(capabilities.turn_start);
+        assert!(capabilities.turn_steer);
+        assert!(capabilities.turn_interrupt);
+        assert!(!capabilities.interaction_respond);
+        assert!(!capabilities.item_lifecycle);
+        assert!(!capabilities.item_deltas);
+    }
+
+    #[tokio::test]
+    async fn prompt_response_deadline_returns_timeout_without_fake_success() {
+        let (_tx, rx) = oneshot::channel::<Result<PromptTurnOk, RuntimeError>>();
+        let result = receive_prompt_response(rx, Duration::from_millis(1)).await;
+        assert!(result.is_err(), "a stalled actor must hit the deadline");
     }
 }

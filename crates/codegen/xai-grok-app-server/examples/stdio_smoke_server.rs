@@ -15,10 +15,10 @@
 //!   cargo build --example stdio_smoke_server -p xai-grok-app-server
 //!   ./target/debug/examples/stdio_smoke_server < requests.ndjson
 
-use std::io::{stdin, stdout, stderr};
+use std::io::{stderr, stdin, stdout};
 use std::sync::Arc;
 
-use xai_grok_app_server::{run_stdio_loop, FacadeProcessor};
+use xai_grok_app_server::{FacadeProcessor, run_stdio_loop};
 use xai_grok_tower::FakeRuntime;
 
 #[tokio::main(flavor = "current_thread")]

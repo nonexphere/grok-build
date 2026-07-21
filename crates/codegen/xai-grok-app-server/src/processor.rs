@@ -1,18 +1,18 @@
 //! JSON-RPC processor: initialize gate + method dispatch over GrokRuntimeFacade.
 
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use async_trait::async_trait;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use xai_grok_app_server_protocol::{
-    classify_pre_init, gate_error, protocol_defaults, EnvelopeKind, InitializeParams,
-    InitializeResult, InteractionResponseParams, ProtocolLimits, ServerCapabilities,
-    SessionArchiveParams, SessionCapabilities, SessionForkParams, SessionListParams,
-    SessionListResult, SessionReadParams, SessionResumeParams, SessionStartParams,
-    SubscribeParams, TurnInterruptParams, TurnStartParams, TurnSteerParams, ClientInfo,
-    ItemCapabilities, TurnCapabilities, InteractionCapabilities, PROTOCOL_VERSION,
-    parse_envelope, InitializeGateClass,
+    ClientInfo, EnvelopeKind, InitializeGateClass, InitializeParams, InitializeResult,
+    InteractionCapabilities, InteractionResponseParams, ItemCapabilities, PROTOCOL_VERSION,
+    ProtocolLimits, ServerCapabilities, SessionArchiveParams, SessionCapabilities,
+    SessionForkParams, SessionListParams, SessionListResult, SessionReadParams,
+    SessionResumeParams, SessionStartParams, SubscribeParams, TurnCapabilities,
+    TurnInterruptParams, TurnStartParams, TurnSteerParams, classify_pre_init,
+    domain_data_for_numeric, gate_error, parse_envelope, protocol_defaults,
 };
 use xai_grok_tower::{GrokRuntimeFacade, RuntimeError, RuntimeEvent};
 
@@ -78,10 +78,7 @@ impl FacadeProcessor {
                             "error": {
                                 "code": err.code,
                                 "message": err.message,
-                                "data": {
-                                    "code": domain_code(err.code),
-                                    "retryable": retryable(err.code),
-                                }
+                                "data": domain_data_for_numeric(err.code),
                             }
                         })
                         .to_string(),
@@ -123,6 +120,20 @@ impl FacadeProcessor {
                 return Ok(json!({"ok": true}));
             }
             InitializeGateClass::AllowedInitialize => {}
+        }
+
+        // Capability truth is an executable boundary, not documentation only:
+        // a runtime that reports a method unavailable must fail before calling
+        // its facade. This prevents product adapters from advertising a safe
+        // subset while still allowing unsupported side effects through a
+        // direct JSON-RPC method name.
+        if method != "initialize"
+            && let Some(enabled) = method_capability(method, self.runtime.capabilities())
+            && !enabled
+        {
+            return Err(spec_error(
+                xai_grok_app_server_protocol::errors::RUNTIME_UNAVAILABLE,
+            ));
         }
 
         match method {
@@ -279,6 +290,29 @@ impl FacadeProcessor {
     }
 }
 
+/// Typed registry linking every callable App Server method to the runtime
+/// capability bit that governs it. Unknown methods remain JSON-RPC
+/// `method_not_found` rather than accidentally becoming capability failures.
+fn method_capability(
+    method: &str,
+    capabilities: xai_grok_tower::RuntimeCapabilities,
+) -> Option<bool> {
+    Some(match method {
+        "session/list" => capabilities.session_list,
+        "session/read" => capabilities.session_read,
+        "session/start" => capabilities.session_start,
+        "session/resume" => capabilities.session_resume,
+        "session/fork" => capabilities.session_fork,
+        "session/archive" => capabilities.session_archive,
+        "session/subscribe" => capabilities.session_subscribe,
+        "turn/start" => capabilities.turn_start,
+        "turn/steer" => capabilities.turn_steer,
+        "turn/interrupt" => capabilities.turn_interrupt,
+        "interaction/respond" => capabilities.interaction_respond,
+        _ => return None,
+    })
+}
+
 #[async_trait]
 impl AppServerProcessor for FacadeProcessor {
     async fn process(&self, method: &str, params: Value) -> Result<Value, ProcessorError> {
@@ -315,18 +349,6 @@ fn spec_error(spec: xai_grok_app_server_protocol::ErrorSpec) -> ProcessorError {
         code: spec.numeric,
         message: spec.message.into(),
     }
-}
-
-fn domain_code(numeric: i64) -> &'static str {
-    xai_grok_app_server_protocol::lookup_error_numeric(numeric)
-        .map(|s| s.code)
-        .unwrap_or("internal_error")
-}
-
-fn retryable(numeric: i64) -> bool {
-    xai_grok_app_server_protocol::lookup_error_numeric(numeric)
-        .map(|s| s.retryable)
-        .unwrap_or(false)
 }
 
 fn runtime_event_json(event: &RuntimeEvent) -> Value {
@@ -378,6 +400,15 @@ fn _gate(class: InitializeGateClass) -> Option<&'static xai_grok_app_server_prot
 mod processor_tests {
     use super::*;
     use xai_grok_tower::FakeRuntime;
+
+    #[test]
+    fn capability_registry_covers_callable_methods_and_unknowns() {
+        let mut capabilities = xai_grok_tower::RuntimeCapabilities::all();
+        capabilities.turn_start = false;
+        assert_eq!(method_capability("turn/start", capabilities), Some(false));
+        assert_eq!(method_capability("session/start", capabilities), Some(true));
+        assert_eq!(method_capability("unknown/method", capabilities), None);
+    }
 
     #[tokio::test]
     async fn processor_initialize_session_turn_vertical_slice() {

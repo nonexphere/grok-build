@@ -19,8 +19,8 @@
 //! RED-then-GREEN evidence is captured under
 //! `.llms/execution/app-server-mcp-tower-corrective/tests/c1/`.
 
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use agent_client_protocol as acp;
 use async_trait::async_trait;
@@ -78,10 +78,7 @@ impl SessionSpawner for CountingActorSpawner {
                             )),
                         );
                         let _ = storage
-                            .append_update(
-                                &info_clone,
-                                &SessionUpdate::Acp(Box::new(notification)),
-                            )
+                            .append_update(&info_clone, &SessionUpdate::Acp(Box::new(notification)))
                             .await;
                         let _ = respond_to.send(Ok(PromptTurnOk {
                             stop_reason: acp::StopReason::EndTurn,
@@ -112,6 +109,7 @@ impl SessionSpawner for CountingActorSpawner {
             current_prompt_id,
             pending_interactions: None,
             delivery_hub: None,
+            permission_responder: None,
         })
     }
 }
@@ -132,9 +130,7 @@ async fn start_session(port: &ShellSessionActorRuntime, cwd: &str, key: &str) ->
 /// the spawn-call counter alongside. This exercises the production seam
 /// (`ProductionSpawner::with_real_spawn`) with a real offline `cmd_tx`
 /// consumer — NOT `FakeRuntime`.
-fn real_spawn_fn(
-    root: std::path::PathBuf,
-) -> (RealSpawnFn, Arc<AtomicUsize>) {
+fn real_spawn_fn(root: std::path::PathBuf) -> (RealSpawnFn, Arc<AtomicUsize>) {
     let spawn_calls = Arc::new(AtomicUsize::new(0));
     let counter = spawn_calls.clone();
     let root_for_closure = root.clone();
@@ -142,7 +138,10 @@ fn real_spawn_fn(
         let counter = spawn_calls.clone();
         let root = root_for_closure.clone();
         Box::pin(async move {
-            let spawner = CountingActorSpawner { root, spawn_calls: counter };
+            let spawner = CountingActorSpawner {
+                root,
+                spawn_calls: counter,
+            };
             // Delegate to the real `SessionSpawner` impl so the closure
             // exercises the same real `cmd_tx` consumer path the trait does.
             SessionSpawner::spawn(&spawner, &info, &_model_id).await
@@ -159,10 +158,7 @@ async fn c1_prod_spawn_seam_routes_real_resident_when_spawn_fn_injected() {
     // obtain a real resident SessionHandle and route the prompt.
     let temp = TempDir::new().unwrap();
     let (real, _counter) = real_spawn_fn(temp.path().to_path_buf());
-    let port = ShellSessionActorRuntime::with_production_spawn(
-        temp.path().to_path_buf(),
-        real,
-    );
+    let port = ShellSessionActorRuntime::with_production_spawn(temp.path().to_path_buf(), real);
     let session_id = start_session(&port, "/work/prod-seam", "ps-1").await;
 
     let turn = port
@@ -202,9 +198,7 @@ async fn c1_prod_spawn_seam_without_spawn_fn_returns_unsupported_with_missing_de
     let err = port
         .start_turn(TurnStartParams {
             session_id,
-            input: vec![InputBlock::Text {
-                text: "hi".into(),
-            }],
+            input: vec![InputBlock::Text { text: "hi".into() }],
             idempotency_key: "ns-t".into(),
         })
         .await
@@ -213,8 +207,16 @@ async fn c1_prod_spawn_seam_without_spawn_fn_returns_unsupported_with_missing_de
     // The message must name the concrete missing dependencies so the
     // BLOCKER is actionable (not a vague "needs creds").
     assert!(err.message.contains("credentials"), "msg: {}", err.message);
-    assert!(err.message.contains("AgentDefinition"), "msg: {}", err.message);
-    assert!(err.message.contains("spawn_session_on_thread"), "msg: {}", err.message);
+    assert!(
+        err.message.contains("AgentDefinition"),
+        "msg: {}",
+        err.message
+    );
+    assert!(
+        err.message.contains("spawn_session_on_thread"),
+        "msg: {}",
+        err.message
+    );
     assert!(err.message.contains("C2-A"), "msg: {}", err.message);
 }
 
@@ -224,10 +226,7 @@ async fn c1_prod_spawn_seam_resume_re_residents_and_routes_turn() {
     // routes after resume.
     let temp = TempDir::new().unwrap();
     let (real, _counter) = real_spawn_fn(temp.path().to_path_buf());
-    let port = ShellSessionActorRuntime::with_production_spawn(
-        temp.path().to_path_buf(),
-        real,
-    );
+    let port = ShellSessionActorRuntime::with_production_spawn(temp.path().to_path_buf(), real);
     let session_id = start_session(&port, "/work/prod-resume", "pr-1").await;
     let resumed = port
         .resume_session(SessionResumeParams {
@@ -272,9 +271,7 @@ async fn c1_f1_steer_turn_event_seq_is_monotonic_not_wall_clock() {
         port_for_turn
             .start_turn(TurnStartParams {
                 session_id: sid_for_turn,
-                input: vec![InputBlock::Text {
-                    text: "run".into(),
-                }],
+                input: vec![InputBlock::Text { text: "run".into() }],
                 idempotency_key: "f1-t-1".into(),
             })
             .await
@@ -336,7 +333,10 @@ async fn c1_f2_next_ordinal_seeds_from_summary_on_resume() {
         cwd: "/work/f2-seed".to_string(),
     };
     let _summary = storage
-        .init_session(&info, xai_grok_shell::session::persistence::default_model_id())
+        .init_session(
+            &info,
+            xai_grok_shell::session::persistence::default_model_id(),
+        )
         .await
         .unwrap();
     // Append 5 user-message updates so num_messages advances. Use the real
@@ -506,7 +506,10 @@ async fn c1_f4_concurrent_ensure_resident_does_not_double_spawn() {
         cwd: "/work/f4".to_string(),
     };
     let _ = storage
-        .init_session(&info, xai_grok_shell::session::persistence::default_model_id())
+        .init_session(
+            &info,
+            xai_grok_shell::session::persistence::default_model_id(),
+        )
         .await
         .unwrap();
 
@@ -611,6 +614,7 @@ impl SessionSpawner for HeldTurnSpawner {
             current_prompt_id,
             pending_interactions: None,
             delivery_hub: None,
+            permission_responder: None,
         })
     }
 }
@@ -677,6 +681,7 @@ impl SessionSpawner for DropableActorSpawner {
             current_prompt_id,
             pending_interactions: None,
             delivery_hub: None,
+            permission_responder: None,
         })
     }
 }

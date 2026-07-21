@@ -889,7 +889,10 @@ mod tests {
         use xai_grok_shell::agent::auth_method::multi_provider_auth_method;
         let methods = vec![multi_provider_auth_method()];
         let (needs, label, method_id, mode) = startup_auth_metadata(&methods);
-        assert!(!needs, "Codex multi-provider must not force interactive login");
+        assert!(
+            !needs,
+            "Codex multi-provider must not force interactive login"
+        );
         assert!(label.is_none());
         assert!(method_id.is_none());
         assert_eq!(mode, AuthStartMode::Pending);

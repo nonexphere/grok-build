@@ -257,7 +257,10 @@ pub fn format_sampling_error(err: &SamplingError, retry_count: Option<u32>) -> S
     };
 
     match err {
-        SamplingError::Auth { message: msg, attempt_id: _ } => {
+        SamplingError::Auth {
+            message: msg,
+            attempt_id: _,
+        } => {
             format!(
                 "{}Authentication failed: {}. Please check your API key configuration.",
                 retry_prefix, msg
@@ -383,7 +386,13 @@ pub fn format_sampling_error(err: &SamplingError, retry_count: Option<u32>) -> S
 /// retry budget re-generating a response that fails the same way.
 pub(crate) fn clone_error(err: &SamplingError) -> SamplingError {
     match err {
-        SamplingError::Auth { message: msg, attempt_id } => SamplingError::Auth { message: msg.clone(), attempt_id: *attempt_id },
+        SamplingError::Auth {
+            message: msg,
+            attempt_id,
+        } => SamplingError::Auth {
+            message: msg.clone(),
+            attempt_id: *attempt_id,
+        },
         SamplingError::InvalidConfiguration(msg) => SamplingError::InvalidConfiguration(msg),
         SamplingError::Http(e) => {
             // reqwest::Error is not Clone; preserve the rendered message

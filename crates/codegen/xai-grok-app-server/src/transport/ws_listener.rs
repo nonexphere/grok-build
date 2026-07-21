@@ -37,25 +37,25 @@
 //! listener-level behavior is exercised by
 //! `ws_listener_bounded_writer_survives_burst`.
 
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use futures_util::{SinkExt, StreamExt};
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
+use tokio_tungstenite::accept_hdr_async_with_config;
+use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::tungstenite::handshake::server::{ErrorResponse, Request, Response};
 use tokio_tungstenite::tungstenite::http::{HeaderValue, StatusCode};
 use tokio_tungstenite::tungstenite::protocol::WebSocketConfig;
-use tokio_tungstenite::tungstenite::Message;
-use tokio_tungstenite::accept_hdr_async_with_config;
 
-use xai_grok_app_server_protocol::PROTOCOL_VERSION;
+use xai_grok_app_server_protocol::{PROTOCOL_VERSION, domain_data_for_numeric};
 
+use crate::ProcessorError;
 use crate::processor::FacadeProcessor;
 use crate::security;
 use crate::transport::websocket::{validate_bearer_header, validate_ws_text_frame};
-use crate::ProcessorError;
 
 /// Subprotocol advertised on the wire. Inference (R-WS-2): no spec evidence;
 /// reuse the protocol version so clients negotiate the same JSON-RPC envelope.
@@ -227,9 +227,7 @@ async fn serve_connection(
                     HeaderValue::from_static(WS_SUBPROTOCOL),
                 );
             } else {
-                return Err(bad_request_response(
-                    "Requested subprotocol not supported",
-                ));
+                return Err(bad_request_response("Requested subprotocol not supported"));
             }
         }
         Ok(resp)
@@ -390,10 +388,7 @@ fn error_envelope(id: Option<&serde_json::Value>, err: &ProcessorError) -> Strin
         "error": {
             "code": err.code,
             "message": err.message,
-            "data": {
-                "code": domain_code(err.code),
-                "retryable": retryable(err.code),
-            }
+            "data": domain_data_for_numeric(err.code)
         }
     })
     .to_string()
@@ -420,18 +415,6 @@ fn bad_request_response(message: &str) -> ErrorResponse {
         .status(StatusCode::BAD_REQUEST)
         .body(Some(message.to_owned()))
         .expect("static bad-request response")
-}
-
-fn domain_code(numeric: i64) -> &'static str {
-    xai_grok_app_server_protocol::lookup_error_numeric(numeric)
-        .map(|s| s.code)
-        .unwrap_or("internal_error")
-}
-
-fn retryable(numeric: i64) -> bool {
-    xai_grok_app_server_protocol::lookup_error_numeric(numeric)
-        .map(|s| s.retryable)
-        .unwrap_or(false)
 }
 
 // ---------------------------------------------------------------------------

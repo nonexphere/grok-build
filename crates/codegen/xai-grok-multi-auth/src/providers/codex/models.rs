@@ -92,9 +92,8 @@ pub async fn fetch_codex_models_with_etag(
         )));
     }
 
-    let parsed: ModelsResponse = serde_json::from_str(&body).map_err(|e| {
-        ProviderError::ModelDiscovery(format!("invalid /models JSON: {e}"))
-    })?;
+    let parsed: ModelsResponse = serde_json::from_str(&body)
+        .map_err(|e| ProviderError::ModelDiscovery(format!("invalid /models JSON: {e}")))?;
 
     let models: Vec<ProviderModel> = parsed
         .models
@@ -140,9 +139,7 @@ fn urlencoding_encode(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for b in s.bytes() {
         match b {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'.' | b'-' | b'_' => {
-                out.push(b as char)
-            }
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'.' | b'-' | b'_' => out.push(b as char),
             _ => out.push_str(&format!("%{b:02X}")),
         }
     }

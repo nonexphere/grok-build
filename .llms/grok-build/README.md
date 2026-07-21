@@ -21,6 +21,7 @@ segundo runtime. [provenance: user-input, code, inferred]
 
 | Ordem | Programa | Papel | Estado do código | Release core |
 |---:|---|---|---|---|
+| 05 | [Build e Release](./05-build-and-release/) | baseline, grafo, cache, CI e limpeza | baseline em execução; otimizações planejadas | **MUST** |
 | 10 | [Providers](./10-providers/) | Codex/multi-auth + BYOK | Codex avançado; BYOK manual | paralelo controlado |
 | 20 | [Tower Core](./20-tower-core/) | daemon, registry e instâncias | supervisor existe; actor product-wired falta | **MUST** |
 | 30 | [App Server](./30-app-server/) | Session/Turn/Item + stdio/WS | protocol/listeners existem; capabilities reais parciais | **MUST** |
@@ -54,6 +55,17 @@ segundo runtime. [provenance: user-input, code, inferred]
 | C4 | `40/v1-04`, `60/v1-02` | MCP/SDK por clientes black-box reais |
 | C5 | `40/v1-05` | token lifecycle, scopes e TLS remote GA |
 | C6 | `30/v1-07`, `20/v1-04` | conformance/load/security/cleanup/release final |
+
+### Build and readiness completion waves (2026-07-21)
+
+| Wave | Epics | Gate |
+|---|---|---|
+| B0 | `05/v1-01` | baseline frio, warm, incremental, release e CI |
+| B1 | `20/v1-09`, `20/v1-10`, `30/v1-10` | runtime real, lifecycle e capability truth |
+| B2 | `40/v1-06`, `50/v1-04` | MCP parity e nove tools product-backed |
+| B3 | `40/v1-07`, `60/v1-03`, `20/v1-11` | segurança, SDK, carga e fault testing |
+| B4 | `05/v1-02`, `05/v1-03`, `05/v1-04` | compilação, CI, cache e dívida terminal |
+| B5 | `30/v1-11` | release verdict completo |
 
 ## Status e estimativas dos epics
 
@@ -112,6 +124,22 @@ segundo runtime. [provenance: user-input, code, inferred]
 - [40/v1-05 token scopes and TLS](40-mcp-control-plane/v1-05-token-scopes-tls-release/)
 - [50/v1-03 all nine tool semantics](50-tower-agent-tools/v1-03-nine-tool-semantic-completion/)
 - [60/v1-02 generated SDK black-box GA](60-sdk-typescript/v1-02-generated-sdk-black-box-ga/)
+
+### Complementary execution epics
+
+- [E0 — build baseline](05-build-and-release/v1-01-build-baseline-instrumentation/)
+- [E1 — product runtime](20-tower-core/v1-09-product-runtime-vertical-completion/)
+- [E2 — lifecycle/recovery](20-tower-core/v1-10-lifecycle-recovery-hardening/)
+- [E3 — App Server GA contract](30-app-server/v1-10-product-contract-capability-ga/)
+- [E4 — MCP parity](40-mcp-control-plane/v1-06-parity-multisession/)
+- [E5 — MCP security](40-mcp-control-plane/v1-07-security-scopes-tls-ga/)
+- [E6 — nine tools GA](50-tower-agent-tools/v1-04-nine-tools-product-ga/)
+- [E7 — SDK regeneration](60-sdk-typescript/v1-03-generated-sdk-black-box-regeneration/)
+- [E8 — dependency slicing](05-build-and-release/v1-02-dependency-feature-slicing/)
+- [E9 — profiles/linker/CI](05-build-and-release/v1-03-profiles-linker-cache-ci/)
+- [E10 — dead code](05-build-and-release/v1-04-dead-code-experimental-paths/)
+- [E11 — observability/faults](20-tower-core/v1-11-observability-fault-testing/)
+- [E12 — release readiness](30-app-server/v1-11-release-readiness/)
 
 ### Grafo de dependências
 

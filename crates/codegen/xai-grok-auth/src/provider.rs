@@ -162,10 +162,7 @@ pub trait AuthProvider: fmt::Debug + Send + Sync {
         input: LoginInput,
     ) -> Result<LoginCompletion, ProviderError>;
 
-    async fn cancel_login(
-        &self,
-        flow_id: crate::login::LoginFlowId,
-    ) -> Result<(), ProviderError>;
+    async fn cancel_login(&self, flow_id: crate::login::LoginFlowId) -> Result<(), ProviderError>;
 
     async fn refresh(
         &self,
@@ -177,10 +174,7 @@ pub trait AuthProvider: fmt::Debug + Send + Sync {
         request: TokenRequest<'_>,
     ) -> Result<TokenResolution, ProviderError>;
 
-    async fn logout(
-        &self,
-        request: LogoutRequest<'_>,
-    ) -> Result<LogoutOutcome, ProviderError>;
+    async fn logout(&self, request: LogoutRequest<'_>) -> Result<LogoutOutcome, ProviderError>;
 
     async fn get_account_info(
         &self,
@@ -192,10 +186,7 @@ pub trait AuthProvider: fmt::Debug + Send + Sync {
         request: ModelListRequest<'_>,
     ) -> Result<ModelCatalog, ProviderError>;
 
-    fn resolve_endpoint(
-        &self,
-        request: ProviderEndpointRequest<'_>,
-    ) -> Result<Url, ProviderError>;
+    fn resolve_endpoint(&self, request: ProviderEndpointRequest<'_>) -> Result<Url, ProviderError>;
 
     fn build_request_auth(
         &self,
@@ -321,10 +312,7 @@ mod tests {
             Ok(())
         }
 
-        async fn start_login(
-            &self,
-            _request: LoginRequest,
-        ) -> Result<LoginStart, ProviderError> {
+        async fn start_login(&self, _request: LoginRequest) -> Result<LoginStart, ProviderError> {
             Err(ProviderError::Disabled)
         }
 
@@ -405,10 +393,7 @@ mod tests {
         registry.register(p).unwrap();
         let p2: Arc<dyn AuthProvider> = Arc::new(MockProvider::new("xai"));
         let err = registry.register(p2).unwrap_err();
-        assert!(matches!(
-            err,
-            ProviderRegistrationError::Duplicate(_)
-        ));
+        assert!(matches!(err, ProviderRegistrationError::Duplicate(_)));
     }
 
     #[test]
@@ -473,7 +458,11 @@ mod tests {
         assert!(caps.contains(ProviderCapabilities::BROWSER_PKCE));
         assert!(caps.contains(ProviderCapabilities::REFRESH_TOKEN));
         assert!(!caps.contains(ProviderCapabilities::DEVICE_CODE));
-        assert!(caps.intersects(ProviderCapabilities::DEVICE_CODE | ProviderCapabilities::REFRESH_TOKEN));
+        assert!(
+            caps.intersects(
+                ProviderCapabilities::DEVICE_CODE | ProviderCapabilities::REFRESH_TOKEN
+            )
+        );
         assert_eq!(
             caps.bits(),
             ProviderCapabilities::BROWSER_PKCE.bits() | ProviderCapabilities::REFRESH_TOKEN.bits()

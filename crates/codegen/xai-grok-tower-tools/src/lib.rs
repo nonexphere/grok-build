@@ -89,10 +89,20 @@ pub fn tool_schema(name: &str, output: bool) -> Option<serde_json::Value> {
     ))
     .ok()?;
     let suffix = if output { "_output" } else { "_input" };
-    schema
+    let mut projected = schema
         .get("$defs")?
         .get(format!("{name}{suffix}"))
-        .cloned()
+        .cloned()?;
+    // Keep the selected boundary as the root, but carry the canonical shared
+    // definitions it references. Without this, a client compiling the
+    // published schema cannot resolve refs such as `providerBinding` or
+    // `inputBlock` after receiving tools/list.
+    if let Some(definitions) = schema.get("$defs").cloned()
+        && let Some(object) = projected.as_object_mut()
+    {
+        object.insert("$defs".into(), definitions);
+    }
+    Some(projected)
 }
 
 const fn descriptor(
@@ -179,15 +189,35 @@ mod tests {
             assert!(tool_schema(descriptor.name, true).is_some());
         }
     }
+
+    #[test]
+    fn every_published_boundary_schema_compiles_independently() {
+        for descriptor in TOWER_TOOL_DESCRIPTORS {
+            for output in [false, true] {
+                let schema = tool_schema(descriptor.name, output)
+                    .expect("descriptor schema must be published");
+                jsonschema::validator_for(&schema).unwrap_or_else(|error| {
+                    panic!(
+                        "{} schema must compile independently: {error}",
+                        if output {
+                            descriptor.output_schema_ref
+                        } else {
+                            descriptor.input_schema_ref
+                        }
+                    )
+                });
+            }
+        }
+    }
 }
 
+use serde_json::{Value, json};
 use std::sync::Arc;
-use serde_json::{json, Value};
 use xai_grok_app_server_protocol::{
     InputBlock, SessionArchiveParams, SessionReadParams, SessionResumeParams, SessionStartParams,
     SubscribeParams, TurnInterruptParams, TurnStartParams,
 };
-use xai_grok_tower::{GrokRuntimeFacade, RuntimeError};
+use xai_grok_tower::{GrokRuntimeFacade, RuntimeError, RuntimeEvent};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ToolError {
@@ -230,6 +260,42 @@ impl From<RuntimeError> for ToolError {
     }
 }
 
+fn validate_tool_arguments(name: &str, arguments: &Value) -> Result<(), ToolError> {
+    let schema = tool_schema(name, false).ok_or_else(|| ToolError {
+        code: "method_not_found",
+        message: format!("unknown Tower tool: {name}"),
+    })?;
+    let validator = jsonschema::validator_for(&schema).map_err(|error| ToolError {
+        code: "unsupported",
+        message: format!("tool schema is not executable: {error}"),
+    })?;
+    if let Err(error) = validator.validate(arguments) {
+        return Err(ToolError {
+            code: "invalid_params",
+            message: format!("invalid arguments for {name}: {error}"),
+        });
+    }
+    Ok(())
+}
+
+/// Validate a successful tool's structured output against the published
+/// boundary schema. Adapters use this at their boundary so transport tests
+/// cannot pass a semantically shaped but schema-invalid result.
+pub fn validate_tool_output(name: &str, output: &Value) -> Result<(), ToolError> {
+    let schema = tool_schema(name, true).ok_or_else(|| ToolError {
+        code: "method_not_found",
+        message: format!("unknown Tower tool: {name}"),
+    })?;
+    let validator = jsonschema::validator_for(&schema).map_err(|error| ToolError {
+        code: "unsupported",
+        message: format!("tool output schema is not executable: {error}"),
+    })?;
+    validator.validate(output).map_err(|error| ToolError {
+        code: "invalid_result",
+        message: format!("invalid structured output for {name}: {error}"),
+    })
+}
+
 /// Shared semantic core for all nine tools (in-process and MCP).
 pub async fn invoke_tower_tool(
     runtime: Arc<dyn GrokRuntimeFacade>,
@@ -244,6 +310,7 @@ pub async fn invoke_tower_tool(
             message: format!("agent type {agent_type} is not authorized for tower_agent tools"),
         });
     }
+    validate_tool_arguments(name, &arguments)?;
     match name {
         "tower_agent_list" => {
             let mut sessions = runtime.list_sessions().await?;
@@ -258,16 +325,28 @@ pub async fn invoke_tower_tool(
             if let Some(workspace_root) = arguments.get("workspaceRoot").and_then(Value::as_str) {
                 sessions.retain(|session| session.workspace_root == workspace_root);
             }
-            if !arguments.get("includeArchived").and_then(Value::as_bool).unwrap_or(false) {
-                sessions.retain(|session| session.status != xai_grok_app_server_protocol::SessionStatus::Archived);
+            if !arguments
+                .get("includeArchived")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+            {
+                sessions.retain(|session| {
+                    session.status != xai_grok_app_server_protocol::SessionStatus::Archived
+                });
             }
             if let Some(status) = arguments.get("status").and_then(Value::as_str) {
                 sessions.retain(|session| session_status_name(&session.status) == status);
             }
             sessions.sort_by(|left, right| {
-                right.updated_at_ms.cmp(&left.updated_at_ms).then_with(|| left.session_id.cmp(&right.session_id))
+                right
+                    .updated_at_ms
+                    .cmp(&left.updated_at_ms)
+                    .then_with(|| left.session_id.cmp(&right.session_id))
             });
-            let page_size = arguments.get("pageSize").and_then(Value::as_u64).unwrap_or(50);
+            let page_size = arguments
+                .get("pageSize")
+                .and_then(Value::as_u64)
+                .unwrap_or(50);
             if !(1..=100).contains(&page_size) {
                 return Err(ToolError {
                     code: "invalid_params",
@@ -450,12 +529,14 @@ pub async fn invoke_tower_tool(
                     message: "historyEpoch does not match the session history".into(),
                 });
             }
-            if arguments["afterEventSeq"].as_str().is_some_and(|cursor| cursor != "0") {
-                return Err(ToolError {
-                    code: "unsupported",
-                    message: "afterEventSeq history projection is not available yet".into(),
-                });
-            }
+            let after_event_seq = arguments["afterEventSeq"]
+                .as_str()
+                .unwrap_or("0")
+                .parse::<u64>()
+                .map_err(|_| ToolError {
+                    code: "invalid_params",
+                    message: "afterEventSeq must be a non-negative decimal string".into(),
+                })?;
             let last_items = arguments["lastItems"].as_u64().unwrap_or(20);
             if !(1..=100).contains(&last_items) {
                 return Err(ToolError {
@@ -463,12 +544,44 @@ pub async fn invoke_tower_tool(
                     message: "lastItems must be between 1 and 100".into(),
                 });
             }
-            let (items, truncated) = limit_history_items(read.items, mode, last_items as usize, max_bytes as usize);
+            let (items, next_event_seq) = if after_event_seq == 0 {
+                (
+                    read.items
+                        .into_iter()
+                        .filter_map(|item| serde_json::to_value(item).ok())
+                        .collect::<Vec<_>>(),
+                    0_u64,
+                )
+            } else {
+                let page = runtime
+                    .replay(SubscribeParams {
+                        session_id: session_id.clone(),
+                        after_event_seq: after_event_seq.into(),
+                        history_epoch: arguments["historyEpoch"].as_str().map(str::to_owned),
+                    })
+                    .await?;
+                let items = page
+                    .events
+                    .into_iter()
+                    .filter_map(|event| match event {
+                        RuntimeEvent::ItemStarted(item) | RuntimeEvent::ItemCompleted(item) => {
+                            serde_json::to_value(item).ok()
+                        }
+                        RuntimeEvent::ItemDelta { .. }
+                        | RuntimeEvent::SessionChanged(_)
+                        | RuntimeEvent::TurnChanged(_)
+                        | RuntimeEvent::InteractionRequested(_) => None,
+                    })
+                    .collect::<Vec<_>>();
+                (items, page.replayed_through.as_u64())
+            };
+            let (items, truncated) =
+                limit_history_items(items, mode, last_items as usize, max_bytes as usize);
             Ok(json!({
                 "sessionId": session_id,
                 "historyEpoch": read.session.history_epoch,
                 "items": items,
-                "nextEventSeq": "0",
+                "nextEventSeq": next_event_seq.to_string(),
                 "truncated": truncated,
                 "redacted": true,
             }))
@@ -490,10 +603,12 @@ pub async fn invoke_tower_tool(
         }
         "tower_agent_wait" => {
             let session_id = required_string(&arguments, "sessionId")?;
-            let after = arguments["afterEventSeq"].as_str().ok_or_else(|| ToolError {
-                code: "invalid_params",
-                message: "afterEventSeq must be a non-negative decimal string".into(),
-            })?;
+            let after = arguments["afterEventSeq"]
+                .as_str()
+                .ok_or_else(|| ToolError {
+                    code: "invalid_params",
+                    message: "afterEventSeq must be a non-negative decimal string".into(),
+                })?;
             let after_event_seq = after.parse::<u64>().map_err(|_| ToolError {
                 code: "invalid_params",
                 message: "afterEventSeq must be a non-negative decimal string".into(),
@@ -508,9 +623,7 @@ pub async fn invoke_tower_tool(
                     message: "timeoutMs must be between 1 and 300000".into(),
                 });
             }
-            let history_epoch = arguments["historyEpoch"]
-                .as_str()
-                .map(str::to_owned);
+            let history_epoch = arguments["historyEpoch"].as_str().map(str::to_owned);
             // The wait response must echo the runtime's canonical epoch. Do
             // not synthesize a process-wide/test-only `epoch_1` value: the
             // replay cursor is scoped to the persisted session identity.
@@ -523,13 +636,22 @@ pub async fn invoke_tower_tool(
                 .await?
                 .session
                 .history_epoch;
-            let page = runtime
-                .replay(SubscribeParams {
-                    session_id: session_id.clone(),
-                    after_event_seq: after_event_seq.into(),
-                    history_epoch,
-                })
-                .await?;
+            let deadline =
+                tokio::time::Instant::now() + std::time::Duration::from_millis(timeout_ms);
+            let page = loop {
+                let page = runtime
+                    .replay(SubscribeParams {
+                        session_id: session_id.clone(),
+                        after_event_seq: after_event_seq.into(),
+                        history_epoch: history_epoch.clone(),
+                    })
+                    .await?;
+                if !page.events.is_empty() || tokio::time::Instant::now() >= deadline {
+                    break page;
+                }
+                let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+                tokio::time::sleep(remaining.min(std::time::Duration::from_millis(20))).await;
+            };
             // Schema (`tower_agent_wait_output`) requires `events` to be an
             // array of objects and `wakeReason` to be one of
             // `event|terminal|interaction|timeout|resync_required`. The
@@ -540,11 +662,7 @@ pub async fn invoke_tower_tool(
                 .iter()
                 .map(project_runtime_event_to_json)
                 .collect();
-            let wake_reason = if !page.events.is_empty() {
-                "event"
-            } else {
-                "timeout"
-            };
+            let wake_reason = wake_reason_for_events(&page.events);
             Ok(json!({
                 "sessionId": session_id,
                 "historyEpoch": response_epoch,
@@ -649,7 +767,7 @@ fn session_residency(session: &xai_grok_app_server_protocol::Session) -> &'stati
 }
 
 fn limit_history_items(
-    mut items: Vec<xai_grok_app_server_protocol::Item>,
+    mut items: Vec<Value>,
     mode: &str,
     last_items: usize,
     max_bytes: usize,
@@ -663,8 +781,7 @@ fn limit_history_items(
     let mut output = Vec::new();
     let mut bytes = 0usize;
     for item in items {
-        let value = serde_json::to_value(item).unwrap_or_else(|_| json!({}));
-        let item_bytes = serde_json::to_vec(&value).map_or(0, |bytes| bytes.len());
+        let item_bytes = serde_json::to_vec(&item).map_or(0, |bytes| bytes.len());
         if !output.is_empty() && bytes.saturating_add(item_bytes) > max_bytes {
             truncated = true;
             break;
@@ -674,7 +791,7 @@ fn limit_history_items(
             break;
         }
         bytes = bytes.saturating_add(item_bytes);
-        output.push(value);
+        output.push(item);
     }
     (output, truncated)
 }
@@ -692,10 +809,12 @@ fn required_string(arguments: &Value, field: &str) -> Result<String, ToolError> 
 
 fn required_idempotency_key(arguments: &Value, fallback: &str) -> Result<String, ToolError> {
     let _ = fallback;
-    let key = arguments["idempotencyKey"].as_str().ok_or_else(|| ToolError {
-        code: "invalid_params",
-        message: "idempotencyKey required".into(),
-    })?;
+    let key = arguments["idempotencyKey"]
+        .as_str()
+        .ok_or_else(|| ToolError {
+            code: "invalid_params",
+            message: "idempotencyKey required".into(),
+        })?;
     if key.len() < 8 || key.len() > 128 {
         return Err(ToolError {
             code: "invalid_params",
@@ -739,10 +858,12 @@ fn parse_input_blocks(arguments: &Value) -> Result<Vec<InputBlock>, ToolError> {
     }
     blocks
         .iter()
-        .map(|block| serde_json::from_value(block.clone()).map_err(|error| ToolError {
-            code: "invalid_params",
-            message: format!("invalid input block: {error}"),
-        }))
+        .map(|block| {
+            serde_json::from_value(block.clone()).map_err(|error| ToolError {
+                code: "invalid_params",
+                message: format!("invalid input block: {error}"),
+            })
+        })
         .collect()
 }
 
@@ -790,6 +911,19 @@ fn project_runtime_event_to_json(event: &xai_grok_tower::RuntimeEvent) -> Value 
     }
 }
 
+fn wake_reason_for_events(events: &[xai_grok_tower::RuntimeEvent]) -> &'static str {
+    if events.is_empty() {
+        "timeout"
+    } else if events
+        .iter()
+        .any(|event| matches!(event, RuntimeEvent::InteractionRequested(_)))
+    {
+        "interaction"
+    } else {
+        "event"
+    }
+}
+
 #[cfg(test)]
 mod invoke_tests {
     use super::*;
@@ -799,19 +933,19 @@ mod invoke_tests {
     async fn tool_contract_all_nine_tools_invoke_facade() {
         let rt = Arc::new(FakeRuntime::new());
         // deny closed
-        let denied = invoke_tower_tool(
+        let denied =
+            invoke_tower_tool(rt.clone(), "build", false, "tower_agent_list", json!({})).await;
+        assert_eq!(denied.unwrap_err().code, "forbidden");
+
+        let list = invoke_tower_tool(
             rt.clone(),
-            "build",
+            "orchestrator",
             false,
             "tower_agent_list",
             json!({}),
         )
-        .await;
-        assert_eq!(denied.unwrap_err().code, "forbidden");
-
-        let list = invoke_tower_tool(rt.clone(), "orchestrator", false, "tower_agent_list", json!({}))
-            .await
-            .unwrap();
+        .await
+        .unwrap();
         assert!(list["sessions"].as_array().unwrap().is_empty());
 
         let start = invoke_tower_tool(
@@ -828,12 +962,18 @@ mod invoke_tests {
         for name in TOWER_TOOL_NAMES {
             let args = match name {
                 "tower_agent_list" => json!({}),
-                "tower_agent_start" => json!({"workspaceRoot":"/work","agentType":"build","idempotencyKey": format!("k-{name}-0001")}),
-                "tower_agent_send" => json!({"sessionId": sid, "input":[{"type":"text","text":"hi"}],"mode":"new_turn","idempotencyKey":"send1-0001"}),
+                "tower_agent_start" => {
+                    json!({"workspaceRoot":"/work","agentType":"build","idempotencyKey": format!("k-{name}-0001")})
+                }
+                "tower_agent_send" => {
+                    json!({"sessionId": sid, "input":[{"type":"text","text":"hi"}],"mode":"new_turn","idempotencyKey":"send1-0001"})
+                }
                 "tower_agent_history" => json!({"sessionId": sid, "mode":"last","maxBytes":4096}),
                 "tower_agent_resume" => json!({"sessionId": sid, "idempotencyKey":"resume1-0001"}),
                 "tower_agent_wait" => json!({"sessionId": sid, "afterEventSeq":"0","timeoutMs":1}),
-                "tower_agent_interrupt" => json!({"sessionId": sid, "turnId":"turn_missing","idempotencyKey":"int1-0001"}),
+                "tower_agent_interrupt" => {
+                    json!({"sessionId": sid, "turnId":"turn_missing","idempotencyKey":"int1-0001"})
+                }
                 "tower_agent_archive" => json!({"sessionId": sid, "idempotencyKey":"arch1-0001"}),
                 "tower_agent_status" => json!({"sessionId": sid}),
                 _ => unreachable!(),
@@ -929,9 +1069,9 @@ mod invoke_tests {
 #[cfg(test)]
 mod acl_parity_tests {
     use super::*;
+    use serde_json::json;
     use std::sync::Arc;
     use xai_grok_tower::FakeRuntime;
-    use serde_json::json;
 
     #[test]
     fn acl_matrix_orchestrator_default_deny_custom_opt_in() {
@@ -954,7 +1094,8 @@ mod acl_parity_tests {
     #[tokio::test]
     async fn adapter_parity_mcp_and_in_process_normalized() {
         let rt = Arc::new(FakeRuntime::new());
-        let start_args = json!({"workspaceRoot":"/work","agentType":"build","idempotencyKey":"parity-1"});
+        let start_args =
+            json!({"workspaceRoot":"/work","agentType":"build","idempotencyKey":"parity-1"});
         let in_process = invoke_tower_tool(
             rt.clone(),
             "orchestrator",
@@ -1026,7 +1167,11 @@ mod acl_parity_tests {
     #[tokio::test]
     async fn list_applies_workspace_filter_and_cursor_pagination() {
         let rt = Arc::new(FakeRuntime::new());
-        for (workspace, key) in [("/a", "list-a-0001"), ("/a", "list-a-0002"), ("/b", "list-b-0001")] {
+        for (workspace, key) in [
+            ("/a", "list-a-0001"),
+            ("/a", "list-a-0002"),
+            ("/b", "list-b-0001"),
+        ] {
             invoke_tower_tool(
                 rt.clone(),
                 "orchestrator",
@@ -1089,10 +1234,14 @@ mod acl_parity_tests {
     #[tokio::test]
     async fn list_rejects_unsupported_agent_filter_and_invalid_cursor() {
         let rt = Arc::new(FakeRuntime::new());
-        for args in [json!({"agentType":"build"}), json!({"cursor":"not-a-cursor"})] {
-            let error = invoke_tower_tool(rt.clone(), "orchestrator", false, "tower_agent_list", args)
-                .await
-                .unwrap_err();
+        for args in [
+            json!({"agentType":"build"}),
+            json!({"cursor":"not-a-cursor"}),
+        ] {
+            let error =
+                invoke_tower_tool(rt.clone(), "orchestrator", false, "tower_agent_list", args)
+                    .await
+                    .unwrap_err();
             assert_eq!(error.code, "invalid_params");
         }
     }
@@ -1105,11 +1254,37 @@ mod acl_parity_tests {
             json!({"sessionId":"missing","afterEventSeq":"0","timeoutMs":0}),
             json!({"sessionId":"missing","afterEventSeq":"0","timeoutMs":300001}),
         ] {
-            let error = invoke_tower_tool(rt.clone(), "orchestrator", false, "tower_agent_wait", args)
-                .await
-                .unwrap_err();
+            let error =
+                invoke_tower_tool(rt.clone(), "orchestrator", false, "tower_agent_wait", args)
+                    .await
+                    .unwrap_err();
             assert_eq!(error.code, "invalid_params");
         }
+    }
+
+    #[tokio::test]
+    async fn wait_polls_until_timeout_after_cursor_without_events() {
+        let rt = Arc::new(FakeRuntime::new());
+        let started = invoke_tower_tool(
+            rt.clone(),
+            "orchestrator",
+            false,
+            "tower_agent_start",
+            json!({"workspaceRoot":"/work","agentType":"build","idempotencyKey":"wait-timeout-0001"}),
+        )
+        .await
+        .unwrap();
+        let result = invoke_tower_tool(
+            rt,
+            "orchestrator",
+            false,
+            "tower_agent_wait",
+            json!({"sessionId":started["sessionId"],"afterEventSeq":"1","timeoutMs":25}),
+        )
+        .await
+        .unwrap();
+        assert_eq!(result["wakeReason"], "timeout");
+        assert!(result["events"].as_array().unwrap().is_empty());
     }
 
     #[tokio::test]
@@ -1133,9 +1308,10 @@ mod acl_parity_tests {
             json!({"workspaceRoot":"x".repeat(4097),"agentType":"build","idempotencyKey":"start-size-0001"}),
             json!({"workspaceRoot":"/work","agentType":"x".repeat(129),"idempotencyKey":"start-type-0001"}),
         ] {
-            let error = invoke_tower_tool(rt.clone(), "orchestrator", false, "tower_agent_start", args)
-                .await
-                .unwrap_err();
+            let error =
+                invoke_tower_tool(rt.clone(), "orchestrator", false, "tower_agent_start", args)
+                    .await
+                    .unwrap_err();
             assert_eq!(error.code, "invalid_params");
         }
     }
@@ -1171,7 +1347,10 @@ mod acl_parity_tests {
             })
             .await
             .unwrap();
-        assert_eq!(read.session.provider_binding.as_ref().unwrap().provider_id, "xai");
+        assert_eq!(
+            read.session.provider_binding.as_ref().unwrap().provider_id,
+            "xai"
+        );
     }
 }
 
@@ -1195,9 +1374,15 @@ mod swarm_limits_tests {
             .await
             .unwrap();
         }
-        let list = invoke_tower_tool(rt, "orchestrator", false, "tower_agent_list", serde_json::json!({}))
-            .await
-            .unwrap();
+        let list = invoke_tower_tool(
+            rt,
+            "orchestrator",
+            false,
+            "tower_agent_list",
+            serde_json::json!({}),
+        )
+        .await
+        .unwrap();
         assert_eq!(list["sessions"].as_array().unwrap().len(), 5);
         assert!(!TOWER_TOOL_NAMES.iter().any(|n| n.contains("hub")));
     }
@@ -1257,7 +1442,7 @@ mod history_parity_tests {
         .unwrap();
         let sid = start["sessionId"].as_str().unwrap();
         let hist = invoke_tower_tool(
-            rt,
+            rt.clone(),
             "orchestrator",
             false,
             "tower_agent_history",
@@ -1267,5 +1452,46 @@ mod history_parity_tests {
         .unwrap();
         assert_eq!(hist["historyEpoch"], "epoch_1");
         assert_eq!(hist["redacted"], true);
+
+        let cursor_hist = invoke_tower_tool(
+            rt,
+            "orchestrator",
+            false,
+            "tower_agent_history",
+            serde_json::json!({
+                "sessionId": sid,
+                "mode":"full",
+                "maxBytes":4096,
+                "afterEventSeq":"1"
+            }),
+        )
+        .await;
+        assert!(
+            cursor_hist.is_ok(),
+            "non-zero history cursor must use replay: {cursor_hist:?}"
+        );
+    }
+}
+
+#[cfg(test)]
+mod wait_wake_reason_tests {
+    use super::*;
+    use xai_grok_app_server_protocol::{InteractionKind, InteractionRequest};
+
+    #[test]
+    fn interaction_event_gets_interaction_wake_reason() {
+        let request = InteractionRequest {
+            interaction_id: "interaction_1".into(),
+            session_id: "session_1".into(),
+            turn_id: "turn_1".into(),
+            item_id: "item_1".into(),
+            kind: InteractionKind::Approval,
+            prompt: "approve".into(),
+            choices: vec!["allow".into(), "deny".into()],
+            expires_at_ms: None,
+        };
+        let event = xai_grok_tower::RuntimeEvent::InteractionRequested(request);
+        assert_eq!(wake_reason_for_events(&[event]), "interaction");
+        assert_eq!(wake_reason_for_events(&[]), "timeout");
     }
 }

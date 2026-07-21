@@ -97,12 +97,7 @@ pub trait Auth401AttributionCallback: Send + Sync + std::fmt::Debug {
     ///
     /// `has_sent_auth` is true when the request carried Authorization/x-api-key.
     /// `attempt_id` is the multi-provider stamp id for the failing request when known.
-    fn record_401(
-        &self,
-        consumer: SamplingConsumer,
-        has_sent_auth: bool,
-        attempt_id: Option<u64>,
-    );
+    fn record_401(&self, consumer: SamplingConsumer, has_sent_auth: bool, attempt_id: Option<u64>);
 }
 
 /// Shared, cheap-to-clone alias for the attribution callback.

@@ -11,6 +11,33 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  fake-conformance:
+    name: fake-conformance
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: App Server protocol and fake conformance
+        run: |
+          cargo test --locked -p xai-grok-app-server-protocol
+          cargo test --locked -p xai-grok-app-server conformance
+          cargo test --locked -p xai-grok-mcp-server --features streamable-http --test streamable_http
+
+  product-integration:
+    name: product-integration
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: App Server product composition
+        run: cargo test --locked -p xai-grok-pager-bin composition_root_initialize_session_turn
+      - name: Tower MCP stdio product smoke
+        run: cargo test --locked -p xai-grok-pager-bin --features mcp-stdio --test mcp_stdio_rmcp -- --nocapture
+
   identity-and-build:
     name: build-grok-oss (${{ matrix.os }})
     runs-on: ${{ matrix.os }}

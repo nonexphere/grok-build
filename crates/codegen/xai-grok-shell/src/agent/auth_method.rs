@@ -279,8 +279,7 @@ fn build_unpinned(
     if has_multi_provider_ready {
         methods.push(multi_provider_auth_method());
         if default_auth_method_id.is_none() {
-            default_auth_method_id =
-                Some(acp::AuthMethodId::new(MULTI_PROVIDER_AUTH_METHOD_ID));
+            default_auth_method_id = Some(acp::AuthMethodId::new(MULTI_PROVIDER_AUTH_METHOD_ID));
         }
     }
 

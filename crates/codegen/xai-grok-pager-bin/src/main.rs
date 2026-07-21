@@ -129,17 +129,30 @@ fn print_app_server_ws_startup_info(bind: &str, token: &str, require_auth: bool)
     eprintln!("   Bind:      {bind}");
     eprintln!(
         "   Auth:      {}",
-        if require_auth { "Bearer (required)" } else { "DISABLED (--insecure-no-auth)" }
+        if require_auth {
+            "Bearer (required)"
+        } else {
+            "DISABLED (--insecure-no-auth)"
+        }
     );
     eprintln!("   TLS:       not provided (HUMAN gate D-SEC.13 — cleartext only)");
     let host = bind.split(':').next().unwrap_or("127.0.0.1");
-    if app_server_composition::app_server_serve_env_enabled() && host != "127.0.0.1"
-        && host != "localhost" && host != "::1"
+    if app_server_composition::app_server_serve_env_enabled()
+        && host != "127.0.0.1"
+        && host != "localhost"
+        && host != "::1"
     {
         eprintln!("   WARNING:   non-loopback cleartext bind is experimental/unsafe");
     }
     eprintln!();
-    eprintln!("   Connect:   ws://{bind}/{}", if require_auth { " (Authorization: Bearer <token>)" } else { " (no authentication)" });
+    eprintln!(
+        "   Connect:   ws://{bind}/{}",
+        if require_auth {
+            " (Authorization: Bearer <token>)"
+        } else {
+            " (no authentication)"
+        }
+    );
     eprintln!();
     // R4-01 / R5-08: never print the raw bearer or any derived value.
     eprintln!("{}", format_startup_auth_status(token, require_auth));
@@ -213,7 +226,7 @@ impl Drop for McpHttpGuard {
 async fn wait_for_shutdown_signal() {
     #[cfg(unix)]
     {
-        use tokio::signal::unix::{signal, SignalKind};
+        use tokio::signal::unix::{SignalKind, signal};
         let mut term = signal(SignalKind::terminate()).ok();
         let mut hup = signal(SignalKind::hangup()).ok();
         tokio::select! {
@@ -230,6 +243,35 @@ async fn wait_for_shutdown_signal() {
 
 /// Run both product listeners under one lifecycle when requested by `tower`.
 async fn run_tower_command(args: TowerArgs) -> Result<()> {
+    if args.stdio {
+        #[cfg(feature = "mcp-stdio")]
+        {
+            use std::io::{self, BufReader};
+            let runtime = app_server_composition::experimental_mcp_stdio_runtime();
+            let agent_type = std::env::var("GROK_OSS_TOWER_AGENT_TYPE")
+                .unwrap_or_else(|_| "orchestrator".into());
+            let stdin = io::stdin();
+            let stdout = io::stdout();
+            let stderr = io::stderr();
+            xai_grok_mcp_server::transport::stdio::run_mcp_stdio(
+                runtime,
+                &agent_type,
+                false,
+                BufReader::new(stdin.lock()),
+                stdout.lock(),
+                stderr.lock(),
+            )
+            .await
+            .map_err(|error| anyhow::anyhow!("Tower MCP stdio failed: {error}"))?;
+            return Ok(());
+        }
+        #[cfg(not(feature = "mcp-stdio"))]
+        {
+            anyhow::bail!(
+                "Tower MCP stdio support is not compiled into this binary (enable mcp-stdio)"
+            );
+        }
+    }
     if args.no_mcp && args.no_app_server {
         anyhow::bail!("grok-oss tower requires at least one listener; remove one --no-* flag");
     }
@@ -288,7 +330,10 @@ async fn run_tower_command(args: TowerArgs) -> Result<()> {
             Err(error) => {
                 #[cfg(feature = "app-server-ws")]
                 drop(app_guard);
-                return Err(anyhow::anyhow!("MCP HTTP failed to bind {}: {error}", args.mcp_bind));
+                return Err(anyhow::anyhow!(
+                    "MCP HTTP failed to bind {}: {error}",
+                    args.mcp_bind
+                ));
             }
         }
     } else {
@@ -1563,8 +1608,8 @@ async fn run_agent_command(
             #[cfg(feature = "mcp-streamable-http")]
             if app_server_composition::mcp_http_serve_env_enabled() {
                 let bind = a.bind.to_string();
-                let tower_id = app_server_composition::select_tower_instance_id(None)
-                    .map_err(|e| {
+                let tower_id =
+                    app_server_composition::select_tower_instance_id(None).map_err(|e| {
                         anyhow::anyhow!(
                             "invalid Tower instance id from GROK_OSS_TOWER / GROK_TOWER_INSTANCE \
                              (R4-10 fail-fast; will not silently use 'default'): {e:?}"
@@ -2233,22 +2278,18 @@ async fn async_main() -> Result<()> {
                 // Multi-provider routing (goblin fork): parse --provider and
                 // dispatch Codex to the native multi-auth path; xAI / default
                 // still uses the existing AuthManager login flow.
-                let mut provider_arg = xai_grok_multi_auth::cli::parse_login_provider(
-                    provider.as_deref(),
-                )
-                .map_err(|e| anyhow::anyhow!("{e}"))?;
+                let mut provider_arg =
+                    xai_grok_multi_auth::cli::parse_login_provider(provider.as_deref())
+                        .map_err(|e| anyhow::anyhow!("{e}"))?;
 
                 // No --provider → interactive multi-provider picker.
                 if matches!(
                     provider_arg,
                     xai_grok_multi_auth::cli::LoginProviderArg::Interactive
                 ) {
-                    let registry =
-                        xai_grok_multi_auth::registry::build_default_registry();
-                    provider_arg = xai_grok_multi_auth::cli::prompt_provider_selection(
-                        &registry,
-                    )
-                    .map_err(|e| anyhow::anyhow!("{e}"))?;
+                    let registry = xai_grok_multi_auth::registry::build_default_registry();
+                    provider_arg = xai_grok_multi_auth::cli::prompt_provider_selection(&registry)
+                        .map_err(|e| anyhow::anyhow!("{e}"))?;
                 }
 
                 match provider_arg {
@@ -2274,9 +2315,7 @@ async fn async_main() -> Result<()> {
                             let _ = oauth;
                             xai_grok_auth::LoginTransport::BrowserPkce
                         };
-                        println!(
-                            "Native Codex login ({transport:?}) — no Codex CLI required"
-                        );
+                        println!("Native Codex login ({transport:?}) — no Codex CLI required");
 
                         let home = xai_grok_multi_auth::token_resolve::grok_home();
                         let store = std::sync::Arc::new(
@@ -2290,8 +2329,7 @@ async fn async_main() -> Result<()> {
                             xai_grok_multi_auth::login_coordinator::LoginCoordinator::new(
                                 store, registry,
                             );
-                        let provider_id =
-                            xai_grok_auth::ProviderId::new_unchecked("codex");
+                        let provider_id = xai_grok_auth::ProviderId::new_unchecked("codex");
 
                         // Full loop: loopback bind + complete, or device poll + complete.
                         let meta = coordinator
@@ -2305,10 +2343,8 @@ async fn async_main() -> Result<()> {
                         xai_grok_shell::instrumentation::finalize_and_exit(0);
                     }
                     xai_grok_multi_auth::cli::LoginProviderArg::Xai => {
-                        xai_grok_shell::auth::run_cli_login(
-                            &config, oauth, device_auth, devbox,
-                        )
-                        .await?;
+                        xai_grok_shell::auth::run_cli_login(&config, oauth, device_auth, devbox)
+                            .await?;
                         println!();
                         xai_grok_shell::instrumentation::finalize_and_exit(0);
                     }
@@ -2319,8 +2355,7 @@ async fn async_main() -> Result<()> {
                         // the credential to the durable file store. The secret is
                         // read from `GROK_BYOK_API_KEY` (non-TTY) for now; an
                         // interactive prompt is a follow-on.
-                        let provider_id =
-                            xai_grok_auth::ProviderId::new_unchecked(&id);
+                        let provider_id = xai_grok_auth::ProviderId::new_unchecked(&id);
                         let home = xai_grok_multi_auth::token_resolve::grok_home();
                         let store = std::sync::Arc::new(
                             xai_grok_multi_auth::store::FileCredentialStore::new(home),
@@ -2356,14 +2391,11 @@ async fn async_main() -> Result<()> {
                     xai_grok_pager::app::cli::AuthCommand::Status { json: _ } => {
                         // Prefer durable file store under product home (~/.grok-oss).
                         let home = xai_grok_multi_auth::token_resolve::grok_home();
-                        let file_store =
-                            xai_grok_multi_auth::store::FileCredentialStore::new(home);
-                        let registry =
-                            xai_grok_multi_auth::registry::build_default_registry();
-                        let status = xai_grok_multi_auth::cli::auth_status_json(
-                            &file_store, &registry,
-                        )
-                        .await;
+                        let file_store = xai_grok_multi_auth::store::FileCredentialStore::new(home);
+                        let registry = xai_grok_multi_auth::registry::build_default_registry();
+                        let status =
+                            xai_grok_multi_auth::cli::auth_status_json(&file_store, &registry)
+                                .await;
                         println!("{}", serde_json::to_string_pretty(&status)?);
                         // Never print tokens — status JSON is secret-free by construction.
                         xai_grok_shell::instrumentation::finalize_and_exit(0);
@@ -2380,16 +2412,10 @@ async fn async_main() -> Result<()> {
                 // Multi-provider logout (Codex + any native store accounts) and
                 // legacy xAI auth.json clear.
                 let home = xai_grok_multi_auth::token_resolve::grok_home();
-                let store =
-                    xai_grok_multi_auth::store::FileCredentialStore::new(home);
-                let report = xai_grok_multi_auth::cli::logout_providers(
-                    &store,
-                    None,
-                    || {
-                        xai_grok_shell::auth::run_cli_logout(&config)
-                            .map_err(|e| format!("{e:#}"))
-                    },
-                )
+                let store = xai_grok_multi_auth::store::FileCredentialStore::new(home);
+                let report = xai_grok_multi_auth::cli::logout_providers(&store, None, || {
+                    xai_grok_shell::auth::run_cli_logout(&config).map_err(|e| format!("{e:#}"))
+                })
                 .await
                 .map_err(|e| anyhow::anyhow!("{e}"))?;
                 println!(

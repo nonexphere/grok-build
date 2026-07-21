@@ -128,6 +128,7 @@ impl SessionSpawner for TurnSpawner {
             current_prompt_id,
             pending_interactions: None,
             delivery_hub: None,
+            permission_responder: None,
         })
     }
 }
@@ -195,7 +196,9 @@ async fn c5_start_with_binding_read_session_returns_same_identifiers() {
     let s = start_with(&port, "/work/c5/read", "c5-read", Some(binding.clone())).await;
 
     assert_eq!(
-        s.provider_binding.as_ref().expect("binding projected on start"),
+        s.provider_binding
+            .as_ref()
+            .expect("binding projected on start"),
         &binding,
         "start_session returns the same identifier-only binding it was given"
     );
@@ -291,7 +294,10 @@ async fn c5_resume_session_projects_persisted_binding() {
         .await
         .unwrap();
     assert_eq!(
-        resumed.provider_binding.as_ref().expect("binding on resume"),
+        resumed
+            .provider_binding
+            .as_ref()
+            .expect("binding on resume"),
         &binding,
     );
 }
@@ -385,7 +391,9 @@ async fn c5_read_session_turns_carry_session_binding() {
     );
     for turn in &result.turns {
         assert_eq!(
-            turn.provider_binding.as_ref().expect("binding on every turn"),
+            turn.provider_binding
+                .as_ref()
+                .expect("binding on every turn"),
             &binding,
             "every inferred turn carries the session's identifier-only binding"
         );
@@ -444,7 +452,9 @@ async fn c5_idempotent_restart_projects_persisted_binding() {
     let s2 = start_with(&port, "/work/c5/idem", "c5-idem", Some(binding.clone())).await;
     assert_eq!(s.session_id, s2.session_id);
     assert_eq!(
-        s2.provider_binding.as_ref().expect("binding on idempotent restart"),
+        s2.provider_binding
+            .as_ref()
+            .expect("binding on idempotent restart"),
         &binding,
     );
 }

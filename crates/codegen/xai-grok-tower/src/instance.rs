@@ -155,7 +155,10 @@ mod two_instances_tests {
         // Same session id string may exist in both instances without shared token identity.
         assert_eq!(ta.as_u64(), 1);
         assert_eq!(tb.as_u64(), 1);
-        assert_ne!(dir.get(&a).unwrap().instance_id(), dir.get(&b).unwrap().instance_id());
+        assert_ne!(
+            dir.get(&a).unwrap().instance_id(),
+            dir.get(&b).unwrap().instance_id()
+        );
         // No cross-registry steal: removing from a does not affect b.
         reg_a.remove("s1");
         assert!(reg_a.get("s1").is_none());

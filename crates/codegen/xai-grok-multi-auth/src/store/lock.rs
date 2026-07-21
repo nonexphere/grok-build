@@ -52,10 +52,12 @@ fn acquire_blocking_sync(lock_path: &Path, timeout: Duration) -> Result<FileLock
         .map_err(io_to_store)?;
 
     match file.try_lock_exclusive() {
-        Ok(()) => return Ok(FileLockGuard {
-            _file: file,
-            path: lock_path.to_path_buf(),
-        }),
+        Ok(()) => {
+            return Ok(FileLockGuard {
+                _file: file,
+                path: lock_path.to_path_buf(),
+            });
+        }
         Err(e) if e.kind() != io::ErrorKind::WouldBlock => {
             return Err(io_to_store(e));
         }
@@ -64,7 +66,10 @@ fn acquire_blocking_sync(lock_path: &Path, timeout: Duration) -> Result<FileLock
 
     let deadline = std::time::Instant::now() + timeout;
     loop {
-        if deadline.saturating_duration_since(std::time::Instant::now()).is_zero() {
+        if deadline
+            .saturating_duration_since(std::time::Instant::now())
+            .is_zero()
+        {
             return Err(StoreError::LockTimeout);
         }
         match file.try_lock_exclusive() {
@@ -72,7 +77,7 @@ fn acquire_blocking_sync(lock_path: &Path, timeout: Duration) -> Result<FileLock
                 return Ok(FileLockGuard {
                     _file: file,
                     path: lock_path.to_path_buf(),
-                })
+                });
             }
             Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
                 std::thread::sleep(std::time::Duration::from_millis(20));

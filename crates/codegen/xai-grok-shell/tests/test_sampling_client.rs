@@ -706,7 +706,8 @@ async fn test_responses_api_streaming_text() {
         ConversationItem::user("Say hello"),
     ]);
 
-    let (mut stream, _metadata, _) = client.conversation_stream_responses(request).await.unwrap();
+    let (mut stream, _metadata, _, _phase_map) =
+        client.conversation_stream_responses(request).await.unwrap();
 
     let mut content = String::new();
     let mut completed = false;
@@ -750,7 +751,8 @@ async fn test_responses_api_streaming_tool_call() {
             parameters: json!({"type": "object"}),
         }]);
 
-    let (mut stream, _metadata, _) = client.conversation_stream_responses(request).await.unwrap();
+    let (mut stream, _metadata, _, _phase_map) =
+        client.conversation_stream_responses(request).await.unwrap();
 
     let mut function_call_found = false;
     while let Some(event_result) = stream.next().await {
@@ -790,7 +792,8 @@ async fn test_responses_api_with_reasoning_and_encrypted_content() {
         "What is the meaning of life?",
     )]);
 
-    let (mut stream, _metadata, _) = client.conversation_stream_responses(request).await.unwrap();
+    let (mut stream, _metadata, _, _phase_map) =
+        client.conversation_stream_responses(request).await.unwrap();
 
     let mut found_reasoning = false;
     let mut found_encrypted = false;
@@ -856,7 +859,8 @@ async fn test_responses_api_reasoning_without_encrypted() {
     let request =
         ConversationRequest::from_items(vec![ConversationItem::user("Analyze this code")]);
 
-    let (mut stream, _metadata, _) = client.conversation_stream_responses(request).await.unwrap();
+    let (mut stream, _metadata, _, _phase_map) =
+        client.conversation_stream_responses(request).await.unwrap();
 
     let mut found_reasoning = false;
     while let Some(event_result) = stream.next().await {
@@ -1046,7 +1050,8 @@ async fn test_stream_error_during_responses_streaming() {
 
     let request = ConversationRequest::from_items(vec![ConversationItem::user("Hello")]);
 
-    let (mut stream, _metadata, _) = client.conversation_stream_responses(request).await.unwrap();
+    let (mut stream, _metadata, _, _phase_map) =
+        client.conversation_stream_responses(request).await.unwrap();
 
     let mut got_event = false;
     let mut got_error = false;
@@ -1162,7 +1167,8 @@ async fn test_responses_api_request_format() {
     .with_temperature(0.5)
     .with_max_output_tokens(500);
 
-    let (mut stream, _metadata, _) = client.conversation_stream_responses(request).await.unwrap();
+    let (mut stream, _metadata, _, _phase_map) =
+        client.conversation_stream_responses(request).await.unwrap();
     while stream.next().await.is_some() {}
 
     let body = server.request_bodies().pop().unwrap();
@@ -1201,7 +1207,7 @@ async fn test_doom_loop_check_enabled_sends_header_and_absorbs_check_event() {
     let client = Client::new(config).unwrap();
 
     let request = ConversationRequest::from_items(vec![ConversationItem::user("Hello")]);
-    let (mut stream, _metadata, collector) =
+    let (mut stream, _metadata, collector, _phase_map) =
         client.conversation_stream_responses(request).await.unwrap();
     assert!(collector.is_some(), "set policy must arm a collector");
 
@@ -1239,7 +1245,7 @@ async fn test_doom_loop_check_disabled_sends_no_header_and_drops_check_frames() 
 
     let client = create_test_client(&server.url(), ApiBackend::Responses);
     let request = ConversationRequest::from_items(vec![ConversationItem::user("Hello")]);
-    let (mut stream, _metadata, collector) =
+    let (mut stream, _metadata, collector, _phase_map) =
         client.conversation_stream_responses(request).await.unwrap();
     assert!(
         collector.is_none(),
@@ -1315,7 +1321,8 @@ async fn test_responses_api_multi_turn_with_tool_calls() {
         ConversationItem::tool_result("call_abc", r#"{"key": "value"}"#),
     ]);
 
-    let (mut stream, _metadata, _) = client.conversation_stream_responses(request).await.unwrap();
+    let (mut stream, _metadata, _, _phase_map) =
+        client.conversation_stream_responses(request).await.unwrap();
 
     let mut completed = false;
     while let Some(event_result) = stream.next().await {
@@ -1381,7 +1388,7 @@ async fn test_responses_backend_hits_responses_endpoint_not_chat_completions() {
     match client.api_backend() {
         ApiBackend::Responses => {
             let request = ConversationRequest::from_items(vec![ConversationItem::user("Hello")]);
-            let (mut stream, _metadata, _) =
+            let (mut stream, _metadata, _, _phase_map) =
                 client.conversation_stream_responses(request).await.unwrap();
             while stream.next().await.is_some() {}
         }

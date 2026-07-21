@@ -14,8 +14,8 @@ use std::path::PathBuf;
 
 use tempfile::TempDir;
 use xai_grok_tower::{
-    instance_state_root, InstanceDirectory, InstanceLock, InstanceLockError, SessionRegistry,
-    TowerHandle, TowerInstanceId,
+    InstanceDirectory, InstanceLock, InstanceLockError, SessionRegistry, TowerHandle,
+    TowerInstanceId, instance_state_root,
 };
 
 /// Two instances get disjoint state-root directories under the same home,
@@ -79,7 +79,10 @@ fn two_instances_have_disjoint_registries_and_directories() {
     assert_eq!(tb.as_u64(), 1);
     reg_a.remove("s1");
     assert!(reg_a.get("s1").is_none());
-    assert!(reg_b.get("s1").is_some(), "instance B registry is independent");
+    assert!(
+        reg_b.get("s1").is_some(),
+        "instance B registry is independent"
+    );
 
     // InstanceDirectory refuses a duplicate id (contention guard).
     let mut dir = InstanceDirectory::default();
@@ -202,7 +205,10 @@ mod flock_isolation_tests {
         // Releasing the winner lets a new claimer acquire.
         drop(winner);
         let reacquired = InstanceLock::try_acquire(&home_path, &id);
-        assert!(reacquired.is_ok(), "reacquire after release: {reacquired:?}");
+        assert!(
+            reacquired.is_ok(),
+            "reacquire after release: {reacquired:?}"
+        );
         assert!(reacquired.unwrap().is_held());
     }
 
@@ -280,7 +286,10 @@ mod flock_isolation_tests {
         }
         assert_eq!(endpoint.file_name().unwrap().to_str().unwrap(), "endpoint");
         assert_eq!(token.file_name().unwrap().to_str().unwrap(), "token");
-        assert_eq!(metadata.file_name().unwrap().to_str().unwrap(), "metadata.json");
+        assert_eq!(
+            metadata.file_name().unwrap().to_str().unwrap(),
+            "metadata.json"
+        );
         // Disjoint from a second instance's scaffold paths.
         let id2: TowerInstanceId = "branch-b".parse().unwrap();
         let lock2 = InstanceLock::try_acquire(&home_path, &id2).expect("acquire 2");

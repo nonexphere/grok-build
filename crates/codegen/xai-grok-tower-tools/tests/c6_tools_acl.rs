@@ -15,12 +15,11 @@
 //! MCP server into its local MCP client config; this file asserts the
 //! `tower_agent_hub` symbol is absent from the production surface.
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::sync::Arc;
 use xai_grok_tower::FakeRuntime;
 use xai_grok_tower_tools::{
-    invoke_tower_tool, is_authorized, TowerToolDescriptor, TOWER_TOOL_DESCRIPTORS,
-    TOWER_TOOL_NAMES,
+    TOWER_TOOL_DESCRIPTORS, TOWER_TOOL_NAMES, TowerToolDescriptor, invoke_tower_tool, is_authorized,
 };
 
 /// A non-orchestrator agent type used to exercise the fail-closed default.
@@ -106,7 +105,15 @@ async fn c6_all_nine_descriptors_have_input_and_output_schema() {
 #[tokio::test]
 async fn c6_acl_is_fail_closed_by_default() {
     // Built-in non-orchestrator agents and unknown agents are all denied.
-    for agent in ["build", "review", "explore", "repo-explore", "architect", "general", "unknown"] {
+    for agent in [
+        "build",
+        "review",
+        "explore",
+        "repo-explore",
+        "architect",
+        "general",
+        "unknown",
+    ] {
         assert!(
             !is_authorized(agent, false),
             "agent {agent} should be denied by default"
@@ -353,8 +360,16 @@ async fn c6_tower_agent_wait_invoke_path() {
     assert!(out["nextEventSeq"].is_string());
     // wakeReason is one of the schema enum values.
     let reason = out["wakeReason"].as_str().unwrap();
-    assert!(["event", "terminal", "interaction", "timeout", "resync_required"]
-        .contains(&reason));
+    assert!(
+        [
+            "event",
+            "terminal",
+            "interaction",
+            "timeout",
+            "resync_required"
+        ]
+        .contains(&reason)
+    );
 }
 
 #[tokio::test]
@@ -426,15 +441,9 @@ async fn c6_tower_agent_status_invoke_path() {
 async fn c6_custom_explicit_opt_in_is_allowed() {
     let runtime = rt();
     let (agent, opt_in) = custom_opt_in();
-    let out = invoke_tower_tool(
-        runtime,
-        agent,
-        opt_in,
-        "tower_agent_list",
-        json!({}),
-    )
-    .await
-    .unwrap();
+    let out = invoke_tower_tool(runtime, agent, opt_in, "tower_agent_list", json!({}))
+        .await
+        .unwrap();
     assert!(out["sessions"].is_array());
 }
 
@@ -579,15 +588,9 @@ async fn c6_in_process_path_has_no_mcp_loop() {
 
 #[tokio::test]
 async fn c6_unknown_tool_is_method_not_found() {
-    let err = invoke_tower_tool(
-        rt(),
-        "orchestrator",
-        false,
-        "tower_agent_hub",
-        json!({}),
-    )
-    .await
-    .unwrap_err();
+    let err = invoke_tower_tool(rt(), "orchestrator", false, "tower_agent_hub", json!({}))
+        .await
+        .unwrap_err();
     assert_eq!(err.code, "method_not_found");
 }
 

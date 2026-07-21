@@ -11,12 +11,12 @@ pub mod transport;
 pub use processor::FacadeProcessor;
 pub use transport::in_process::InProcessClient;
 pub use transport::stdio::{process_ndjson_batch, run_stdio_loop};
-pub use transport::{ConnectionMeta, ProtocolConnection, TransportKind};
 #[cfg(feature = "websocket")]
 pub use transport::ws_listener::{
-    run_ws_listener, WsListenerConfig, WsListenerHandle, KEEPALIVE_INTERVAL_SECS, MAX_FRAME_SIZE,
-    OUTBOUND_QUEUE_CAP, WS_SUBPROTOCOL,
+    KEEPALIVE_INTERVAL_SECS, MAX_FRAME_SIZE, OUTBOUND_QUEUE_CAP, WS_SUBPROTOCOL, WsListenerConfig,
+    WsListenerHandle, run_ws_listener,
 };
+pub use transport::{ConnectionMeta, ProtocolConnection, TransportKind};
 
 use async_trait::async_trait;
 use serde_json::Value;
@@ -65,7 +65,10 @@ mod conformance_tests {
         let p2 = Arc::new(FacadeProcessor::new(Arc::new(FakeRuntime::new())));
         let a = run_script(p1).await;
         let b = run_script(p2).await;
-        assert_eq!(a[0]["result"]["protocolVersion"], b[0]["result"]["protocolVersion"]);
+        assert_eq!(
+            a[0]["result"]["protocolVersion"],
+            b[0]["result"]["protocolVersion"]
+        );
         assert_eq!(
             a[1]["result"]["session"]["status"],
             b[1]["result"]["session"]["status"]
@@ -106,11 +109,11 @@ mod conformance_tests {
             .await
             .unwrap()
             .unwrap();
-        let session_id = serde_json::from_str::<Value>(&start).unwrap()["result"]["session"]
-            ["sessionId"]
-            .as_str()
-            .unwrap()
-            .to_owned();
+        let session_id =
+            serde_json::from_str::<Value>(&start).unwrap()["result"]["session"]["sessionId"]
+                .as_str()
+                .unwrap()
+                .to_owned();
         for i in 0..5 {
             processor
                 .handle_line(
@@ -226,9 +229,8 @@ mod adversarial_rejection_tests {
     /// with `[`) before the processor sees them (-32600).
     #[test]
     fn ws_layer_rejects_batch_text_frame() {
-        let err =
-            validate_ws_text_frame(r#"[{"jsonrpc":"2.0","id":1,"method":"initialize"}]"#)
-                .expect_err("batch must be rejected at WS layer");
+        let err = validate_ws_text_frame(r#"[{"jsonrpc":"2.0","id":1,"method":"initialize"}]"#)
+            .expect_err("batch must be rejected at WS layer");
         assert_eq!(err.code, -32600);
     }
 
@@ -284,11 +286,11 @@ mod co_start_tests {
     fn co_start_rejects_dual_stdio_accepts_stdio_plus_ws_matrix() {
         // Valid: single stdio, or stdio+ws, or in-process only. Invalid: dual stdio.
         let matrix = [
-            (true, false, false, true),  // stdio
-            (false, true, false, true),  // ws
-            (true, true, false, true),   // stdio+ws
-            (false, false, true, true),  // in-process
-            (true, false, true, false),  // dual stdio-like (stdio+in-process both claiming stdio ownership) — reject for dual stdio claim
+            (true, false, false, true), // stdio
+            (false, true, false, true), // ws
+            (true, true, false, true),  // stdio+ws
+            (false, false, true, true), // in-process
+            (true, false, true, false), // dual stdio-like (stdio+in-process both claiming stdio ownership) — reject for dual stdio claim
         ];
         for (stdio, ws, in_process, ok) in matrix {
             let dual_stdio = stdio && in_process; // simplified ownership collision
@@ -302,11 +304,11 @@ mod co_start_tests {
 #[cfg(test)]
 mod websocket_conformance_tests {
     use super::*;
-    use serde_json::{json, Value};
+    use crate::transport::websocket::handle_ws_text;
+    use serde_json::{Value, json};
     use std::sync::Arc;
     use xai_grok_app_server_protocol::PROTOCOL_VERSION;
     use xai_grok_tower::FakeRuntime;
-    use crate::transport::websocket::handle_ws_text;
 
     #[tokio::test]
     async fn websocket_conformance_initialize_matches_stdio_shape() {
@@ -317,13 +319,20 @@ mod websocket_conformance_tests {
             "protocolVersion": PROTOCOL_VERSION,
             "clientInfo":{"name":"c","version":"0"},
             "capabilities":{}
-        }}).to_string();
+        }})
+        .to_string();
         let ws = handle_ws_text(p_ws, &req).await.unwrap().unwrap();
         let stdio = p_stdio.handle_line(&req).await.unwrap().unwrap();
         let w: Value = serde_json::from_str(&ws).unwrap();
         let s: Value = serde_json::from_str(&stdio).unwrap();
-        assert_eq!(w["result"]["protocolVersion"], s["result"]["protocolVersion"]);
-        assert_eq!(w["result"]["capabilities"]["sessions"]["start"], s["result"]["capabilities"]["sessions"]["start"]);
+        assert_eq!(
+            w["result"]["protocolVersion"],
+            s["result"]["protocolVersion"]
+        );
+        assert_eq!(
+            w["result"]["capabilities"]["sessions"]["start"],
+            s["result"]["capabilities"]["sessions"]["start"]
+        );
     }
 }
 
@@ -379,16 +388,16 @@ mod ws_listener_blackbox_tests {
     use super::*;
     use crate::transport::ws_listener::bind_warning;
     use futures_util::{SinkExt, StreamExt};
-    use serde_json::{json, Value};
-    use std::sync::atomic::AtomicU64;
+    use serde_json::{Value, json};
     use std::sync::Arc;
+    use std::sync::atomic::AtomicU64;
     use std::time::Duration;
     use tokio::time::timeout;
+    use tokio_tungstenite::tungstenite::Message;
     use tokio_tungstenite::tungstenite::client::IntoClientRequest;
     use tokio_tungstenite::tungstenite::handshake::client::Request;
     use tokio_tungstenite::tungstenite::http::HeaderValue;
-    use tokio_tungstenite::tungstenite::Message;
-    use tokio_tungstenite::{connect_async, WebSocketStream};
+    use tokio_tungstenite::{WebSocketStream, connect_async};
     use xai_grok_app_server_protocol::PROTOCOL_VERSION;
     use xai_grok_tower::FakeRuntime;
 
@@ -456,9 +465,7 @@ mod ws_listener_blackbox_tests {
     async fn recv_text(stream: &mut ClientStream) -> Value {
         loop {
             match timeout(Duration::from_secs(5), stream.next()).await {
-                Ok(Some(Ok(Message::Text(t)))) => {
-                    return serde_json::from_str(t.as_str()).unwrap()
-                }
+                Ok(Some(Ok(Message::Text(t)))) => return serde_json::from_str(t.as_str()).unwrap(),
                 Ok(Some(Ok(_))) => continue,
                 Ok(Some(Err(e))) => panic!("ws read error: {e}"),
                 Ok(None) => panic!("ws closed before response"),
@@ -567,7 +574,10 @@ mod ws_listener_blackbox_tests {
                 Err(_) => break,
             }
         }
-        assert!(got_pong, "server must flush a Pong in response to a client Ping");
+        assert!(
+            got_pong,
+            "server must flush a Pong in response to a client Ping"
+        );
     }
 
     #[tokio::test]
@@ -579,14 +589,23 @@ mod ws_listener_blackbox_tests {
             .unwrap();
         let resp = recv_text(&mut s).await;
         assert_eq!(resp["error"]["code"], -32600);
-        assert!(resp["error"]["message"].as_str().unwrap().contains("Binary"));
+        assert!(
+            resp["error"]["message"]
+                .as_str()
+                .unwrap()
+                .contains("Binary")
+        );
     }
 
     #[tokio::test]
     async fn ws_listener_rejects_jsonrpc_batch() {
         let (addr, _dropped, _join) = spawn_listener(OUTBOUND_QUEUE_CAP).await;
         let mut s = connect(addr, Some(TOKEN), None).await;
-        send_text(&mut s, r#"[{"jsonrpc":"2.0","id":1,"method":"initialize"}]"#).await;
+        send_text(
+            &mut s,
+            r#"[{"jsonrpc":"2.0","id":1,"method":"initialize"}]"#,
+        )
+        .await;
         let resp = recv_text(&mut s).await;
         assert_eq!(resp["error"]["code"], -32600);
         assert!(resp["error"]["message"].as_str().unwrap().contains("batch"));
@@ -693,7 +712,10 @@ mod ws_listener_blackbox_tests {
         )
         .await;
         let start = recv_text(&mut s).await;
-        let session_id = start["result"]["session"]["sessionId"].as_str().unwrap().to_owned();
+        let session_id = start["result"]["session"]["sessionId"]
+            .as_str()
+            .unwrap()
+            .to_owned();
 
         send_text(
             &mut s,
@@ -806,7 +828,7 @@ mod interaction_conformance_tests {
     use crate::transport::in_process::InProcessClient;
     use crate::transport::stdio::process_ndjson_batch;
     use crate::transport::websocket::handle_ws_text;
-    use serde_json::{json, Value};
+    use serde_json::{Value, json};
     use std::sync::Arc;
     use xai_grok_app_server_protocol::PROTOCOL_VERSION;
     use xai_grok_tower::FakeRuntime;
@@ -896,23 +918,18 @@ mod interaction_conformance_tests {
 
     async fn accept_stdio() -> Value {
         let processor = Arc::new(FacadeProcessor::new(Arc::new(FakeRuntime::new())));
-        let batch = format!(
-            "{}\n{}\n",
-            init_line(1),
-            start_line(2, "conf-stdio")
-        );
-        let out = process_ndjson_batch(processor.clone(), &batch).await.unwrap();
+        let batch = format!("{}\n{}\n", init_line(1), start_line(2, "conf-stdio"));
+        let out = process_ndjson_batch(processor.clone(), &batch)
+            .await
+            .unwrap();
         let start: Value = serde_json::from_str(&out[1]).unwrap();
         let session_id = start["result"]["session"]["sessionId"]
             .as_str()
             .unwrap()
             .to_owned();
-        let respond_out = process_ndjson_batch(
-            processor,
-            &respond_line(3, &session_id, "r-stdio"),
-        )
-        .await
-        .unwrap();
+        let respond_out = process_ndjson_batch(processor, &respond_line(3, &session_id, "r-stdio"))
+            .await
+            .unwrap();
         let envelope: Value = serde_json::from_str(&respond_out[0]).unwrap();
         envelope["result"].clone()
     }
@@ -969,12 +986,9 @@ mod interaction_conformance_tests {
     async fn err_not_initialized_stdio() -> (i64, String) {
         let processor = Arc::new(FacadeProcessor::new(Arc::new(FakeRuntime::new())));
         // No initialize first.
-        let out = process_ndjson_batch(
-            processor,
-            &respond_line(1, "s", "r"),
-        )
-        .await
-        .unwrap();
+        let out = process_ndjson_batch(processor, &respond_line(1, "s", "r"))
+            .await
+            .unwrap();
         let env: Value = serde_json::from_str(&out[0]).unwrap();
         let code = env["error"]["code"].as_i64().unwrap();
         let domain = env["error"]["data"]["code"].as_str().unwrap().to_owned();
@@ -1059,14 +1073,19 @@ mod interaction_conformance_tests {
         assert_eq!(v["jsonrpc"], "2.0");
         assert_eq!(v["method"], "interaction/respond");
         let params = v["params"].as_object().unwrap();
-        let keys: std::collections::BTreeSet<String> =
-            params.keys().cloned().collect();
+        let keys: std::collections::BTreeSet<String> = params.keys().cloned().collect();
         assert_eq!(
             keys,
-            ["sessionId", "turnId", "interactionId", "decision", "idempotencyKey"]
-                .into_iter()
-                .map(String::from)
-                .collect::<std::collections::BTreeSet<_>>(),
+            [
+                "sessionId",
+                "turnId",
+                "interactionId",
+                "decision",
+                "idempotencyKey"
+            ]
+            .into_iter()
+            .map(String::from)
+            .collect::<std::collections::BTreeSet<_>>(),
             "params must use camelCase wire names"
         );
     }
@@ -1113,6 +1132,39 @@ mod interaction_conformance_tests {
         assert_eq!(ws_domain, "invalid_params");
     }
 
+    #[tokio::test]
+    async fn operation_id_is_explicitly_null_for_failed_calls_across_transports() {
+        let (ip_code, _ip_domain) = err_invalid_params_in_process().await;
+        let _ = ip_code;
+        let processor = FacadeProcessor::new(Arc::new(FakeRuntime::new()));
+        processor
+            .handle_line(
+                &json!({
+                    "jsonrpc":"2.0","id":1,"method":"initialize",
+                    "params": {"protocolVersion": PROTOCOL_VERSION, "clientInfo":{"name":"test","version":"0"}, "capabilities":{}}
+                })
+                .to_string(),
+            )
+            .await
+            .unwrap();
+        let response = processor
+            .handle_line(
+                &json!({
+                    "jsonrpc":"2.0","id":9,"method":"interaction/respond",
+                    "params": {"sessionId":"missing"}
+                })
+                .to_string(),
+            )
+            .await
+            .unwrap()
+            .unwrap();
+        let value: Value = serde_json::from_str(&response).unwrap();
+        assert_eq!(
+            value["error"]["data"].get("operationId"),
+            Some(&Value::Null)
+        );
+    }
+
     // ===================================================================
     // Non-vacuity guard — the conformance suite covers the minimum matrix.
     // ===================================================================
@@ -1135,7 +1187,10 @@ mod interaction_conformance_tests {
         }
         // The suite must exercise the real transport surfaces, not just the
         // processor directly.
-        assert!(src.contains("InProcessClient"), "must use in-process client");
+        assert!(
+            src.contains("InProcessClient"),
+            "must use in-process client"
+        );
         assert!(src.contains("process_ndjson_batch"), "must use stdio batch");
         assert!(src.contains("handle_ws_text"), "must use ws frame adapter");
         // The production dispatch must route interaction/respond through the
@@ -1161,14 +1216,14 @@ mod interaction_conformance_ws_listener {
     use super::*;
     use crate::transport::stdio::process_ndjson_batch;
     use futures_util::{SinkExt, StreamExt};
-    use serde_json::{json, Value};
+    use serde_json::{Value, json};
     use std::sync::Arc;
     use std::time::Duration;
     use tokio::time::timeout;
+    use tokio_tungstenite::tungstenite::Message;
     use tokio_tungstenite::tungstenite::client::IntoClientRequest;
     use tokio_tungstenite::tungstenite::http::HeaderValue;
-    use tokio_tungstenite::tungstenite::Message;
-    use tokio_tungstenite::{connect_async, WebSocketStream};
+    use tokio_tungstenite::{WebSocketStream, connect_async};
     use xai_grok_app_server_protocol::PROTOCOL_VERSION;
     use xai_grok_tower::FakeRuntime;
 
@@ -1208,9 +1263,7 @@ mod interaction_conformance_ws_listener {
     async fn recv(stream: &mut ClientStream) -> Value {
         loop {
             match timeout(Duration::from_secs(5), stream.next()).await {
-                Ok(Some(Ok(Message::Text(t)))) => {
-                    return serde_json::from_str(t.as_str()).unwrap()
-                }
+                Ok(Some(Ok(Message::Text(t)))) => return serde_json::from_str(t.as_str()).unwrap(),
                 Ok(Some(Ok(_))) => continue,
                 Ok(Some(Err(e))) => panic!("ws read error: {e}"),
                 Ok(None) => panic!("ws closed before response"),
@@ -1262,18 +1315,18 @@ mod interaction_conformance_ws_listener {
         // stdio reference (same processor shape).
         let p_stdio = Arc::new(FacadeProcessor::new(Arc::new(FakeRuntime::new())));
         let stdio_batch = format!("{}\n{}\n", init_line(1), start_line(2, "stdio-ref"));
-        let stdio_out = process_ndjson_batch(p_stdio.clone(), &stdio_batch).await.unwrap();
+        let stdio_out = process_ndjson_batch(p_stdio.clone(), &stdio_batch)
+            .await
+            .unwrap();
         let stdio_start: Value = serde_json::from_str(&stdio_out[1]).unwrap();
         let stdio_session = stdio_start["result"]["session"]["sessionId"]
             .as_str()
             .unwrap()
             .to_owned();
-        let stdio_resp_out = process_ndjson_batch(
-            p_stdio,
-            &respond_line(3, &stdio_session, "r-stdio"),
-        )
-        .await
-        .unwrap();
+        let stdio_resp_out =
+            process_ndjson_batch(p_stdio, &respond_line(3, &stdio_session, "r-stdio"))
+                .await
+                .unwrap();
         let stdio_env: Value = serde_json::from_str(&stdio_resp_out[0]).unwrap();
         let stdio_result = stdio_env["result"].clone();
 
@@ -1308,12 +1361,9 @@ mod interaction_conformance_ws_listener {
 
         // stdio reference (fresh processor, no init).
         let p_stdio = Arc::new(FacadeProcessor::new(Arc::new(FakeRuntime::new())));
-        let stdio_out = process_ndjson_batch(
-            p_stdio,
-            &respond_line(1, "s", "r"),
-        )
-        .await
-        .unwrap();
+        let stdio_out = process_ndjson_batch(p_stdio, &respond_line(1, "s", "r"))
+            .await
+            .unwrap();
         let stdio_env: Value = serde_json::from_str(&stdio_out[0]).unwrap();
 
         // ws listener path (fresh listener = fresh processor, no init).

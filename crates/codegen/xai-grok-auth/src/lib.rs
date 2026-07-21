@@ -62,16 +62,14 @@ pub use login::{
     LoginStart, LoginTransport,
 };
 #[cfg(feature = "native-multi-provider-auth")]
-pub use provider::{
-    AuthProvider, ProviderCapabilities, ProviderDescriptor, ProviderRegistry,
-};
+pub use provider::{AuthProvider, ProviderCapabilities, ProviderDescriptor, ProviderRegistry};
 #[cfg(feature = "native-multi-provider-auth")]
 pub use request_auth::{
     AuthFailureClass, AuthFailureResponse, CredentialBinding, LogoutOutcome, LogoutRequest,
-    ModelCatalog, ModelCatalogSource, ModelListRequest, ProviderCredentialUpdate, ProviderEndpointKind,
-    ProviderEndpointRequest, ProviderModel, ProviderRequestAuth, RefreshRequest,
-    RequestAuthContext, RequestKind, SentCredentialStamp, TokenRequest, TokenResolution,
-    TokenUseReason, UnauthorizedRecovery, ValidToken,
+    ModelCatalog, ModelCatalogSource, ModelListRequest, ProviderCredentialUpdate,
+    ProviderEndpointKind, ProviderEndpointRequest, ProviderModel, ProviderRequestAuth,
+    RefreshRequest, RequestAuthContext, RequestKind, SentCredentialStamp, TokenRequest,
+    TokenResolution, TokenUseReason, UnauthorizedRecovery, ValidToken,
 };
 #[cfg(feature = "native-multi-provider-auth")]
 pub use secret::SecretString;

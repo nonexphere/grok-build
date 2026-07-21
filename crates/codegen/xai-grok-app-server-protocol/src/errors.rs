@@ -2,7 +2,7 @@
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 /// One row from the protocol error catalog.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -19,7 +19,7 @@ pub struct ErrorSpec {
 pub struct DomainErrorData {
     pub code: String,
     pub retryable: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub operation_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub field: Option<String>,
@@ -121,12 +121,18 @@ impl ErrorSpec {
         json!({
             "code": self.numeric,
             "message": self.message,
-            "data": {
-                "code": self.code,
-                "retryable": self.retryable,
-            }
+            "data": self.domain_data(),
         })
     }
+}
+
+/// Canonical domain projection for a numeric JSON-RPC error. Unknown runtime
+/// numbers fail closed to the catalog's internal error row so every adapter
+/// emits the same typed shape.
+pub fn domain_data_for_numeric(numeric: i64) -> DomainErrorData {
+    lookup_numeric(numeric)
+        .unwrap_or(&INTERNAL_ERROR)
+        .domain_data()
 }
 
 /// Pure classify helper for pre-initialize method classes (connection gate).
@@ -178,6 +184,7 @@ mod errors_tests {
             assert_eq!(wire["code"], spec.numeric);
             assert_eq!(wire["data"]["code"], spec.code);
             assert_eq!(wire["data"]["retryable"], spec.retryable);
+            assert_eq!(wire["data"]["operationId"], Value::Null);
         }
     }
 

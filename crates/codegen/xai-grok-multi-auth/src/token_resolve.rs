@@ -31,8 +31,7 @@ const OPENAI_ISSUER: &str = "https://auth.openai.com";
 /// Shared store + TokenManager per absolute grok home (single-flight refresh).
 type SharedManager = (Arc<dyn CredentialStore>, Arc<TokenManager>);
 
-static SHARED_MANAGERS: Lazy<DashMap<PathBuf, SharedManager>> =
-    Lazy::new(DashMap::new);
+static SHARED_MANAGERS: Lazy<DashMap<PathBuf, SharedManager>> = Lazy::new(DashMap::new);
 
 fn make_store_and_manager(
     home: &Path,
@@ -75,7 +74,8 @@ async fn credential_binding(
         .await
         .map_err(|e| e.to_string())?
         .ok_or_else(|| format!("credential not found: {provider}/{credential_id}"))?;
-    let fp = fingerprint::compute_fingerprint(provider, OPENAI_ISSUER, &credential.metadata.account);
+    let fp =
+        fingerprint::compute_fingerprint(provider, OPENAI_ISSUER, &credential.metadata.account);
     Ok(CredentialBinding {
         key,
         expected_account: fp,
@@ -173,9 +173,8 @@ pub async fn recover_unauthorized_with_stamp(
         .map_err(|e| e.to_string())?;
 
     match outcome {
-        UnauthorizedRecovery::RetryAfterRefresh | UnauthorizedRecovery::RetryWithCurrentCredential => {
-            Ok(true)
-        }
+        UnauthorizedRecovery::RetryAfterRefresh
+        | UnauthorizedRecovery::RetryWithCurrentCredential => Ok(true),
         UnauthorizedRecovery::ReauthenticationRequired
         | UnauthorizedRecovery::NotAuthenticationFailure => Ok(false),
     }
@@ -227,9 +226,9 @@ pub fn resolve_access_token_with_stamp_blocking(
 ) -> Result<(String, SentCredentialStamp), String> {
     let home = home.to_path_buf();
     let provider = provider.clone();
-    block_on_safe(async move {
-        resolve_access_token_with_stamp(&home, &provider, credential_id).await
-    })
+    block_on_safe(
+        async move { resolve_access_token_with_stamp(&home, &provider, credential_id).await },
+    )
 }
 
 /// Run an async future from sync code without panicking on current-thread

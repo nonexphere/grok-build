@@ -1,5 +1,23 @@
 # 70 — Goal Runtime
 
+## Revisão de implementação
+
+Este epic só pode ser executado quando cada task tiver owner, arquivos ou
+contrato afetado, pré-condição, comando de validação e evidência esperada.
+Alterações de comportamento exigem Red-Green-Refactor; alterações de contrato
+exigem contract test e atualização da matriz de rastreabilidade.
+
+### Gate mínimo
+
+- [ ] dependências e links deste epic foram verificados;
+- [ ] interfaces, schemas, estados, erros e compatibilidade estão definidos;
+- [ ] caminho fake/conformance está separado do caminho product-backed;
+- [ ] testes unitários, integração, black-box e segurança foram classificados;
+- [ ] timeout, cancelamento, retry, restart e falhas parciais foram tratados;
+- [ ] observabilidade, limites de recurso e redaction foram especificados;
+- [ ] comando reproduzível e artefato de evidência foram registrados;
+- [ ] bloqueios humanos/externos possuem owner e condição de desbloqueio;
+- [ ] status do epic foi reconciliado com `TRACEABILITY.md` e `COMPLETION_COVERAGE.md`.
 ## O que é
 
 Programa futuro que preserva o `/goal` atual como **v1 legado**, caracteriza
@@ -34,4 +52,3 @@ descreve o target v2, ainda não implementado.
 App Server v1 somente inventaria hot paths e define port que futuramente aceita
 `disabled|v1|v2`. Nenhum epic core depende de Goal v2. Retrocompat/dual-version
 é obrigatória **somente** neste programa. [provenance: user-input]
-

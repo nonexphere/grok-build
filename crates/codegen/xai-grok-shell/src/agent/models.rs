@@ -1775,9 +1775,7 @@ pub(crate) fn resolve_default_model(
                         | config::ConfigSource::Config
                 );
                 if is_explicit {
-                    if let Some(msg) =
-                        multi_provider_ambiguous_slug_error(&visible, &pref.value)
-                    {
+                    if let Some(msg) = multi_provider_ambiguous_slug_error(&visible, &pref.value) {
                         tracing::error!(model_id = %pref.value, source = %pref.source, "{msg}");
                     } else {
                         tracing::warn!(
@@ -2131,8 +2129,7 @@ pub fn merge_codex_report_into_catalog(
         for m in &acct.models {
             // Runtime identity includes credential so two accounts with the
             // same upstream slug remain independently selectable (B2).
-            let key =
-                format_provider_model_key(&provider_id, acct.credential_id, &m.id);
+            let key = format_provider_model_key(&provider_id, acct.credential_id, &m.id);
             if catalog.contains_key(&key) {
                 continue;
             }
@@ -2158,10 +2155,8 @@ pub fn merge_codex_report_into_catalog(
             // Stable binding for request auth without async account scan.
             // Provider id is internal (never on the wire) and lets ACP/cache
             // derive catalog keys from sampling config alone.
-            info.extra_headers.insert(
-                "x-goblin-provider-id".to_string(),
-                "codex".to_string(),
-            );
+            info.extra_headers
+                .insert("x-goblin-provider-id".to_string(), "codex".to_string());
             info.extra_headers.insert(
                 "x-goblin-credential-id".to_string(),
                 acct.credential_id.to_string(),
@@ -2224,8 +2219,6 @@ pub fn set_codex_merge_report_override_for_test(
 pub fn clear_codex_merge_report_override_for_test() {
     CODEX_MERGE_REPORT_OVERRIDE.with(|cell| *cell.borrow_mut() = None);
 }
-
-
 
 /// Whether `effort` is a value this model will accept on the wire.
 ///
@@ -2807,8 +2800,7 @@ mod tests {
             uuid::Uuid::parse_str("019f6a33-60f7-78c1-97e7-27fc1ccfc525").unwrap(),
         );
         let provider = xai_grok_auth::ProviderId::new_unchecked("codex");
-        let catalog_key =
-            format_provider_model_key(&provider, credential_id, "gpt-5.6-luna");
+        let catalog_key = format_provider_model_key(&provider, credential_id, "gpt-5.6-luna");
 
         // Inject one-shot report so resolve_model_catalog exercises the real
         // merge → stamp order (not a reimplemented path).
@@ -2853,7 +2845,11 @@ mod tests {
             "CLI --effort high must override merge default Medium on Codex entry"
         );
         assert!(
-            entry.info.reasoning_efforts.iter().any(|o| o.value == ReasoningEffort::High),
+            entry
+                .info
+                .reasoning_efforts
+                .iter()
+                .any(|o| o.value == ReasoningEffort::High),
             "effort menu must include high"
         );
         assert!(
@@ -2948,9 +2944,7 @@ mod tests {
         use xai_grok_multi_auth::cli::{CodexAccountModels, CodexModelsReport};
         use xai_grok_multi_auth::provider_model_key::format_provider_model_key;
 
-        let credential_id = CredentialId::from_uuid(
-            uuid::Uuid::parse_str(credential_hex).unwrap(),
-        );
+        let credential_id = CredentialId::from_uuid(uuid::Uuid::parse_str(credential_hex).unwrap());
         let provider = xai_grok_auth::ProviderId::new_unchecked("codex");
         let key = format_provider_model_key(&provider, credential_id, slug);
         set_codex_merge_report_override_for_test(CodexModelsReport {
@@ -2996,7 +2990,9 @@ mod tests {
             "merged Codex entry must be non-selectable under keep-* allowlist"
         );
         assert!(
-            catalog.get("keep-1").is_some_and(|e| e.info.user_selectable),
+            catalog
+                .get("keep-1")
+                .is_some_and(|e| e.info.user_selectable),
             "allowed model remains selectable"
         );
         assert!(
@@ -3055,7 +3051,8 @@ mod tests {
             "hidden full catalog key must mark Codex entry"
         );
 
-        let key_slug = inject_codex_fixture("55555555-5555-5555-5555-555555555555", "gpt-hide-slug");
+        let key_slug =
+            inject_codex_fixture("55555555-5555-5555-5555-555555555555", "gpt-hide-slug");
         let cfg_slug = config_from_toml(
             r#"
             [models]
@@ -3064,9 +3061,7 @@ mod tests {
         );
         let catalog_slug = resolve_model_catalog(&cfg_slug, None);
         assert!(
-            catalog_slug
-                .get(&key_slug)
-                .is_some_and(|e| e.info.hidden),
+            catalog_slug.get(&key_slug).is_some_and(|e| e.info.hidden),
             "hidden wire slug must mark Codex entry"
         );
     }
@@ -4150,9 +4145,7 @@ mod tests {
                 resolve_catalog_key_for_slug(&models, "gpt-5.6-luna").is_none(),
                 "two multi-provider accounts with same slug must not first-wins"
             );
-            assert!(
-                multi_provider_ambiguous_slug_error(&models, "gpt-5.6-luna").is_some()
-            );
+            assert!(multi_provider_ambiguous_slug_error(&models, "gpt-5.6-luna").is_some());
             // Full catalog keys still work.
             assert!(
                 resolve_catalog_key(

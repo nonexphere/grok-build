@@ -11,30 +11,27 @@ use std::sync::Arc;
 
 use xai_grok_app_server::FacadeProcessor;
 use xai_grok_shell::app_server_runtime::{
-    experimental_acp_resident_spawn, ShellRuntimeAdapter, ShellSessionActorRuntime,
+    ShellRuntimeAdapter, ShellSessionActorRuntime, experimental_acp_resident_spawn,
 };
 use xai_grok_tower::{GrokRuntimeFacade, TowerInstanceId, TowerInstanceIdError};
 
 /// Build the experimental App Server processor for the product path.
 ///
-/// Uses the real Shell session-actor runtime rooted at `grok_home()` **without**
-/// an offline echo spawn factory (R5-01). Storage-backed session methods work;
-/// turns require a real `spawn_session_on_thread` factory (credentials + agent
-/// context) injected via [`ShellSessionActorRuntime::with_production_spawn`].
-/// Absence of that factory yields explicit `unsupported` — never product echo.
+/// Uses the real Shell session-actor runtime rooted at `grok_home()` with the
+/// shell-owned ACP resident factory. The factory remains fail-closed on auth or
+/// bootstrap failure and never falls back to an offline echo.
 pub fn experimental_app_server_processor() -> FacadeProcessor {
     let root = xai_grok_shell::util::grok_home::grok_home();
-    experimental_app_server_processor_with_root(root)
+    experimental_app_server_processor_with_acp_spawn(root)
 }
 
 /// Build the experimental App Server processor with an explicit storage root.
 ///
 /// Test seam: tests pass a `TempDir` so they never touch the real `grok_home()`.
-/// R5-01: product composition does **not** inject `experimental_local_turn_spawn`
-/// (test/fixture-only). Default runtime is storage-honest fail-closed for turns.
-pub fn experimental_app_server_processor_with_root(
-    root: std::path::PathBuf,
-) -> FacadeProcessor {
+/// The explicit-root constructor remains storage-only so hermetic tests do not
+/// require credentials or network setup. Production uses the ACP constructor
+/// above.
+pub fn experimental_app_server_processor_with_root(root: std::path::PathBuf) -> FacadeProcessor {
     let real: Arc<dyn GrokRuntimeFacade> = Arc::new(ShellSessionActorRuntime::new(root));
     let adapter = ShellRuntimeAdapter::inject(real);
     FacadeProcessor::new(Arc::new(adapter))
@@ -42,19 +39,27 @@ pub fn experimental_app_server_processor_with_root(
 
 /// Build the App Server processor with the shell-owned ACP resident factory.
 ///
-/// This is an explicit promotion seam, not the default product constructor:
-/// the ACP host can now be composed without reaching into shell internals, but
-/// the runtime still advertises mutation capabilities only after the remaining
-/// actor, Interaction, and replay gates prove the full contract.
+/// This constructor is also used by the production default above. The runtime
+/// advertises only the Turn capabilities proven by the ACP bridge; Interaction
+/// and item lifecycle remain fail-closed until their own gates complete.
 pub fn experimental_app_server_processor_with_acp_spawn(
     root: std::path::PathBuf,
 ) -> FacadeProcessor {
     let spawn = experimental_acp_resident_spawn(root.clone());
-    let real: Arc<dyn GrokRuntimeFacade> = Arc::new(
-        ShellSessionActorRuntime::with_production_spawn(root, spawn),
-    );
+    let real: Arc<dyn GrokRuntimeFacade> =
+        Arc::new(ShellSessionActorRuntime::with_production_spawn(root, spawn));
     let adapter = ShellRuntimeAdapter::inject(real);
     FacadeProcessor::new(Arc::new(adapter))
+}
+
+/// Build the shared real runtime for the product MCP stdio launcher.
+#[cfg(feature = "mcp-stdio")]
+pub fn experimental_mcp_stdio_runtime() -> Arc<dyn GrokRuntimeFacade> {
+    let root = xai_grok_shell::util::grok_home::grok_home();
+    Arc::new(ShellSessionActorRuntime::with_production_spawn(
+        root.clone(),
+        experimental_acp_resident_spawn(root),
+    ))
 }
 
 // ---------------------------------------------------------------------------
@@ -270,7 +275,10 @@ pub fn mcp_http_serve_env_enabled() -> bool {
 #[cfg(feature = "mcp-streamable-http")]
 pub fn experimental_mcp_http_runtime() -> Arc<dyn GrokRuntimeFacade> {
     let root = xai_grok_shell::util::grok_home::grok_home();
-    experimental_mcp_http_runtime_with_root(root)
+    Arc::new(ShellSessionActorRuntime::with_production_spawn(
+        root.clone(),
+        experimental_acp_resident_spawn(root),
+    ))
 }
 
 /// Same as [`experimental_mcp_http_runtime`] but with an explicit storage
@@ -344,7 +352,8 @@ pub async fn run_mcp_http_with_auth(
     require_auth: bool,
 ) -> std::io::Result<xai_grok_mcp_server::McpHttpHandle> {
     let runtime = experimental_mcp_http_runtime();
-    let config = mcp_http_server_config_with_auth(bind, bearer_token, tower_instance_id, require_auth);
+    let config =
+        mcp_http_server_config_with_auth(bind, bearer_token, tower_instance_id, require_auth);
     xai_grok_mcp_server::run_mcp_http_server(runtime, config).await
 }
 
@@ -406,9 +415,7 @@ pub fn resolve_tower_instance_id(
 /// Returns the validated id string, or an error when explicit/env config is
 /// invalid. Callers at the CLI/env boundary must abort on error rather than
 /// silently mapping to `default` (which would connect to the wrong instance).
-pub fn select_tower_instance_id(
-    explicit: Option<&str>,
-) -> Result<String, TowerInstanceIdError> {
+pub fn select_tower_instance_id(explicit: Option<&str>) -> Result<String, TowerInstanceIdError> {
     resolve_tower_instance_id(explicit).map(|id| id.to_string())
 }
 
@@ -463,7 +470,7 @@ mod composition_tests {
     }
 
     #[test]
-    fn acp_composition_seam_builds_without_promoting_unverified_capabilities() {
+    fn acp_composition_seam_builds_with_only_verified_turn_capabilities() {
         let temp = tempfile::TempDir::new().unwrap();
         let processor = experimental_app_server_processor_with_acp_spawn(temp.path().to_path_buf());
         // Construction must be side-effect free: the ACP host is created only
@@ -498,9 +505,83 @@ mod composition_tests {
         assert_eq!(value["result"]["capabilities"]["turns"]["interrupt"], false);
         assert_eq!(value["result"]["capabilities"]["items"]["lifecycle"], false);
         assert_eq!(value["result"]["capabilities"]["items"]["deltas"], false);
-        assert_eq!(value["result"]["capabilities"]["interactions"]["approvals"], false);
-        assert_eq!(value["result"]["capabilities"]["interactions"]["questions"], false);
-        assert_eq!(value["result"]["capabilities"]["interactions"]["mcpElicitation"], false);
+        assert_eq!(
+            value["result"]["capabilities"]["interactions"]["approvals"],
+            false
+        );
+        assert_eq!(
+            value["result"]["capabilities"]["interactions"]["questions"],
+            false
+        );
+        assert_eq!(
+            value["result"]["capabilities"]["interactions"]["mcpElicitation"],
+            false
+        );
+    }
+
+    #[tokio::test]
+    async fn product_rejects_unadvertised_methods_before_runtime_validation() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let processor = experimental_app_server_processor_with_root(temp.path().to_path_buf());
+        processor
+            .handle_line(
+                &json!({
+                    "jsonrpc":"2.0","id":1,"method":"initialize",
+                    "params":{
+                        "protocolVersion": PROTOCOL_VERSION,
+                        "clientInfo":{"name":"pager-bin","version":"0"},
+                        "capabilities":{}
+                    }
+                })
+                .to_string(),
+            )
+            .await
+            .unwrap();
+
+        for (id, method) in [(2, "turn/start"), (3, "turn/steer"), (4, "turn/interrupt")] {
+            let response = processor
+                .handle_line(
+                    &json!({"jsonrpc":"2.0","id":id,"method":method,"params":{}}).to_string(),
+                )
+                .await
+                .unwrap()
+                .unwrap();
+            let value: serde_json::Value = serde_json::from_str(&response).unwrap();
+            assert_eq!(value["error"]["data"]["code"], "runtime_unavailable");
+            assert_eq!(
+                value["error"]["data"]["operationId"],
+                serde_json::Value::Null
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn production_default_composes_acp_turn_capabilities() {
+        let processor = experimental_app_server_processor();
+        let response = processor
+            .handle_line(
+                &json!({
+                    "jsonrpc":"2.0","id":1,"method":"initialize",
+                    "params":{
+                        "protocolVersion": PROTOCOL_VERSION,
+                        "clientInfo":{"name":"pager-bin","version":"0"},
+                        "capabilities":{}
+                    }
+                })
+                .to_string(),
+            )
+            .await
+            .unwrap()
+            .unwrap();
+        let value: serde_json::Value = serde_json::from_str(&response).unwrap();
+        assert_eq!(value["result"]["capabilities"]["turns"]["start"], true);
+        assert_eq!(value["result"]["capabilities"]["turns"]["steer"], true);
+        assert_eq!(value["result"]["capabilities"]["turns"]["interrupt"], true);
+        assert_eq!(
+            value["result"]["capabilities"]["interactions"]["approvals"],
+            false
+        );
+        assert_eq!(value["result"]["capabilities"]["items"]["lifecycle"], false);
     }
 }
 
@@ -677,22 +758,24 @@ mod tower_selection_tests {
 mod app_server_ws_composition_tests {
     use super::*;
     use futures_util::{SinkExt, StreamExt};
-    use serde_json::{json, Value};
+    use serde_json::{Value, json};
     use std::time::Duration;
     use tokio::time::timeout;
+    use tokio_tungstenite::tungstenite::Message;
     use tokio_tungstenite::tungstenite::client::IntoClientRequest;
     use tokio_tungstenite::tungstenite::http::HeaderValue;
-    use tokio_tungstenite::tungstenite::Message;
-    use tokio_tungstenite::{connect_async, WebSocketStream};
+    use tokio_tungstenite::{WebSocketStream, connect_async};
     use xai_grok_app_server_protocol::PROTOCOL_VERSION;
 
-    type ClientStream =
-        WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
+    type ClientStream = WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
 
     const TOKEN: &str = "comp-bearer-secret";
 
     /// Build a WS client request with a bearer header.
-    fn ws_request(addr: std::net::SocketAddr, bearer: &str) -> tokio_tungstenite::tungstenite::handshake::client::Request {
+    fn ws_request(
+        addr: std::net::SocketAddr,
+        bearer: &str,
+    ) -> tokio_tungstenite::tungstenite::handshake::client::Request {
         let url = format!("ws://{addr}/");
         let mut req = url.as_str().into_client_request().unwrap();
         req.headers_mut().insert(
@@ -718,9 +801,7 @@ mod app_server_ws_composition_tests {
     async fn recv_text(stream: &mut ClientStream) -> Value {
         loop {
             match timeout(Duration::from_secs(10), stream.next()).await {
-                Ok(Some(Ok(Message::Text(t)))) => {
-                    return serde_json::from_str(t.as_str()).unwrap()
-                }
+                Ok(Some(Ok(Message::Text(t)))) => return serde_json::from_str(t.as_str()).unwrap(),
                 Ok(Some(Ok(_))) => continue,
                 Ok(Some(Err(e))) => panic!("ws read error: {e}"),
                 Ok(None) => panic!("ws closed before response"),
@@ -872,12 +953,12 @@ mod app_server_ws_composition_tests {
     /// invariant — no unauthenticated WS listener on the real shell runtime).
     #[test]
     fn app_server_ws_config_requires_auth_by_default() {
-        let config = app_server_ws_listener_config(
-            "127.0.0.1:0".to_owned(),
-            "t".to_owned(),
-        );
+        let config = app_server_ws_listener_config("127.0.0.1:0".to_owned(), "t".to_owned());
         assert!(config.require_auth, "product WS path must require auth");
-        assert_eq!(config.outbound_queue_cap, xai_grok_app_server::OUTBOUND_QUEUE_CAP);
+        assert_eq!(
+            config.outbound_queue_cap,
+            xai_grok_app_server::OUTBOUND_QUEUE_CAP
+        );
         assert!(config.bind.starts_with("127.0.0.1"));
     }
 
@@ -931,7 +1012,7 @@ mod app_server_ws_composition_tests {
 #[cfg(all(test, feature = "mcp-streamable-http"))]
 mod mcp_http_composition_tests {
     use super::*;
-    use serde_json::{json, Value};
+    use serde_json::{Value, json};
     use std::time::Duration;
     use tokio::time::timeout;
     use xai_grok_mcp_server::MCP_PROTOCOL_VERSION;
@@ -1139,11 +1220,8 @@ mod mcp_http_composition_tests {
     #[cfg(feature = "app-server-ws")]
     #[test]
     fn product_configs_can_explicitly_disable_authentication() {
-        let ws = app_server_ws_listener_config_with_auth(
-            "127.0.0.1:0".to_owned(),
-            String::new(),
-            false,
-        );
+        let ws =
+            app_server_ws_listener_config_with_auth("127.0.0.1:0".to_owned(), String::new(), false);
         assert!(!ws.require_auth);
         let mcp = mcp_http_server_config_with_auth(
             "127.0.0.1:0".to_owned(),
@@ -1197,7 +1275,10 @@ mod mcp_http_composition_tests {
             "t".to_owned(),
             TOWER_ID.to_owned(),
         );
-        assert!(config.require_auth, "product MCP HTTP path must require auth");
+        assert!(
+            config.require_auth,
+            "product MCP HTTP path must require auth"
+        );
         assert_eq!(
             config.max_message_bytes,
             xai_grok_mcp_server::DEFAULT_MAX_MESSAGE_BYTES
@@ -1270,10 +1351,7 @@ mod mcp_http_composition_tests {
         // Reconstruct the forbidden self-loop URL without writing it as a
         // contiguous literal (the mcp-server integration guard scans this
         // file for the contiguous form).
-        let forbidden = format!(
-            "{}{}{}",
-            "http://127.0.0.1:8788", "/m", "cp"
-        );
+        let forbidden = format!("{}{}{}", "http://127.0.0.1:8788", "/m", "cp");
         assert!(
             !production.contains(&forbidden),
             "composition must not hard-register the local MCP URL"

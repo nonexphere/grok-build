@@ -11,9 +11,7 @@
 use std::sync::Arc;
 
 use xai_grok_auth::{CredentialId, ModelBinding, ProviderId, SentCredentialStamp};
-use xai_grok_multi_auth::provider_model_key::{
-    parse_provider_model_key, ProviderModelKey,
-};
+use xai_grok_multi_auth::provider_model_key::{ProviderModelKey, parse_provider_model_key};
 use xai_grok_multi_auth::token_resolve;
 use xai_grok_sampler::{BearerResolver, ResolvedBearer, SharedBearerResolver};
 
@@ -28,7 +26,11 @@ pub struct MultiProviderSessionAuth {
 }
 
 impl MultiProviderSessionAuth {
-    pub fn new(provider: ProviderId, credential_id: CredentialId, model: impl Into<String>) -> Self {
+    pub fn new(
+        provider: ProviderId,
+        credential_id: CredentialId,
+        model: impl Into<String>,
+    ) -> Self {
         let home = token_resolve::grok_home();
         let resolver = Arc::new(MultiProviderBearerResolver::new(
             provider.clone(),
@@ -85,9 +87,7 @@ impl MultiProviderSessionAuth {
             return false;
         };
         let Some(id) = attempt_id else {
-            tracing::error!(
-                "multi-provider 401: no attempt_id on error; fail closed (no FIFO)"
-            );
+            tracing::error!("multi-provider 401: no attempt_id on error; fail closed (no FIFO)");
             return false;
         };
         let Some(stamp) = self.resolver.take_attempt(id) else {
@@ -143,11 +143,7 @@ pub fn binding_from_model_entry(model: &ModelEntry) -> Option<ProviderModelKey> 
         .filter(|s| !s.is_empty())
         .or_else(|| {
             let m = model.info.model.as_str();
-            if m.contains('/') {
-                Some(m)
-            } else {
-                None
-            }
+            if m.contains('/') { Some(m) } else { None }
         })?;
     parse_provider_model_key(key)
 }
@@ -217,16 +213,13 @@ pub fn session_auth_for_codex_account_header(
     ))
 }
 
-pub fn bearer_resolver_for_codex_account_header(
-    account_id: &str,
-) -> Option<SharedBearerResolver> {
-    session_auth_for_codex_account_header(account_id, "unknown")
-        .map(|a| a.shared_bearer_resolver())
+pub fn bearer_resolver_for_codex_account_header(account_id: &str) -> Option<SharedBearerResolver> {
+    session_auth_for_codex_account_header(account_id, "unknown").map(|a| a.shared_bearer_resolver())
 }
 
 // A4 pin policy lives in multi-auth so unit tests run without shell harness.
 pub use xai_grok_multi_auth::{
-    session_pin_decision, session_pin_decision_for_turn, SessionPinDecision,
+    SessionPinDecision, session_pin_decision, session_pin_decision_for_turn,
 };
 
 /// Whether this sampling config still targets multi-provider inference.
@@ -301,7 +294,11 @@ pub fn session_auth_for_sampling_hints(
             .next()
             .unwrap_or(model_id_or_slug)
             .to_string();
-        return Some(MultiProviderSessionAuth::new(provider, credential_id, model));
+        return Some(MultiProviderSessionAuth::new(
+            provider,
+            credential_id,
+            model,
+        ));
     }
     None
 }
@@ -363,9 +360,7 @@ pub fn try_recover_unauthorized_for_sampling(
 ) -> bool {
     // Prefer building session auth so we still have a typed binding; stamp
     // will only be present if this same resolver instance was used for resolve.
-    if let Some(auth) =
-        session_auth_for_sampling_hints(model_id_or_slug, base_url, extra_headers)
-    {
+    if let Some(auth) = session_auth_for_sampling_hints(model_id_or_slug, base_url, extra_headers) {
         // New resolver instance → no stamp from the failed request. Callers
         // must use session-held MultiProviderSessionAuth instead.
         return auth.try_recover_unauthorized();
@@ -416,10 +411,7 @@ fn find_codex_credential_for_account(
             if let Ok(Some(cred)) = store.load(&meta.key).await {
                 let acct = &cred.metadata.account;
                 if acct.provider_account_id.as_deref() == Some(account_id.as_str())
-                    || acct
-                        .metadata
-                        .get("chatgpt_account_id")
-                        .map(|s| s.as_str())
+                    || acct.metadata.get("chatgpt_account_id").map(|s| s.as_str())
                         == Some(account_id.as_str())
                 {
                     return Ok(Some(meta.key.credential_id));
@@ -734,17 +726,21 @@ mod tests {
             uuid::Uuid::parse_str("cccccccc-cccc-cccc-cccc-cccccccccccc").unwrap(),
         );
         let auth = MultiProviderSessionAuth::new(provider.clone(), cred, "gpt-test");
-        auth.resolver().set_last_stamp_for_test(SentCredentialStamp {
-            key: CredentialKey {
-                provider: provider.clone(),
-                credential_id: cred,
-            },
-            generation: 7,
-            account_fingerprint: AccountFingerprint::from([7u8; 32]),
-        });
+        auth.resolver()
+            .set_last_stamp_for_test(SentCredentialStamp {
+                key: CredentialKey {
+                    provider: provider.clone(),
+                    credential_id: cred,
+                },
+                generation: 7,
+                account_fingerprint: AccountFingerprint::from([7u8; 32]),
+            });
         assert!(!auth.try_recover_unauthorized_for_attempt(None));
         assert_eq!(
-            auth.resolver().take_stamp_for_recovery().unwrap().generation,
+            auth.resolver()
+                .take_stamp_for_recovery()
+                .unwrap()
+                .generation,
             7,
             "FIFO stamp must remain after fail-closed missing attempt_id"
         );
@@ -760,17 +756,21 @@ mod tests {
             uuid::Uuid::parse_str("dddddddd-dddd-dddd-dddd-dddddddddddd").unwrap(),
         );
         let auth = MultiProviderSessionAuth::new(provider.clone(), cred, "gpt-test");
-        auth.resolver().set_last_stamp_for_test(SentCredentialStamp {
-            key: CredentialKey {
-                provider: provider.clone(),
-                credential_id: cred,
-            },
-            generation: 11,
-            account_fingerprint: AccountFingerprint::from([11u8; 32]),
-        });
+        auth.resolver()
+            .set_last_stamp_for_test(SentCredentialStamp {
+                key: CredentialKey {
+                    provider: provider.clone(),
+                    credential_id: cred,
+                },
+                generation: 11,
+                account_fingerprint: AccountFingerprint::from([11u8; 32]),
+            });
         assert!(!auth.try_recover_unauthorized_for_attempt(Some(9_999_999)));
         assert_eq!(
-            auth.resolver().take_stamp_for_recovery().unwrap().generation,
+            auth.resolver()
+                .take_stamp_for_recovery()
+                .unwrap()
+                .generation,
             11,
             "queued stamp must remain after unknown attempt_id fail-closed"
         );

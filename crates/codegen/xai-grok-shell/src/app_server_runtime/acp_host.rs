@@ -5,12 +5,14 @@
 //! messages and an event sink, so Tower/App Server never receives or moves the
 //! `!Send` ACP connection across its boundary.
 
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::thread;
 
 use agent_client_protocol as acp;
 use agent_client_protocol::Agent as _;
 use indexmap::IndexMap;
+use serde_json::Value;
 use tokio::io::duplex;
 use tokio::sync::{broadcast, mpsc, oneshot};
 use tokio_util::compat::{TokioAsyncReadCompatExt as _, TokioAsyncWriteCompatExt as _};
@@ -39,19 +41,43 @@ impl std::error::Error for AcpHostError {}
 pub struct AcpNotificationSink {
     updates: Arc<Mutex<Vec<acp::SessionNotification>>>,
     live: broadcast::Sender<acp::SessionNotification>,
+    permission_requests: broadcast::Sender<AcpPermissionRequest>,
+}
+
+/// A lossless observation of an ACP permission reverse request. The raw ACP
+/// payload is retained until the App Server contract can map every permission
+/// option without dropping provider-specific fields.
+#[derive(Clone, Debug, PartialEq)]
+pub struct AcpPermissionRequest {
+    pub session_id: String,
+    pub turn_id: Option<String>,
+    pub item_id: Option<String>,
+    pub tool_call_id: Option<String>,
+    pub payload: Value,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum AcpPermissionDecision {
+    Selected(String),
+    Cancelled,
 }
 
 impl AcpNotificationSink {
     pub fn new() -> Self {
         let (live, _) = broadcast::channel(256);
+        let (permission_requests, _) = broadcast::channel(256);
         Self {
             updates: Arc::new(Mutex::new(Vec::new())),
             live,
+            permission_requests,
         }
     }
 
     pub fn snapshot(&self) -> Vec<acp::SessionNotification> {
-        self.updates.lock().map(|updates| updates.clone()).unwrap_or_default()
+        self.updates
+            .lock()
+            .map(|updates| updates.clone())
+            .unwrap_or_default()
     }
 
     /// Subscribe before starting a prompt to receive every subsequent ACP
@@ -61,11 +87,19 @@ impl AcpNotificationSink {
         self.live.subscribe()
     }
 
+    pub fn subscribe_permission_requests(&self) -> broadcast::Receiver<AcpPermissionRequest> {
+        self.permission_requests.subscribe()
+    }
+
     fn push(&self, notification: acp::SessionNotification) {
         if let Ok(mut updates) = self.updates.lock() {
             updates.push(notification.clone());
         }
         let _ = self.live.send(notification);
+    }
+
+    fn push_permission_request(&self, request: AcpPermissionRequest) {
+        let _ = self.permission_requests.send(request);
     }
 }
 
@@ -95,19 +129,87 @@ pub async fn persist_notifications(
 
 struct HostClient {
     sink: AcpNotificationSink,
+    prompt_context: Arc<Mutex<Option<PromptContext>>>,
+    decisions: Arc<Mutex<HashMap<String, oneshot::Sender<AcpPermissionDecision>>>>,
+    permission_timeout: std::time::Duration,
+}
+
+#[derive(Clone, Debug)]
+struct PromptContext {
+    session_id: String,
+    turn_id: Option<String>,
 }
 
 #[async_trait::async_trait(?Send)]
 impl acp::Client for HostClient {
     async fn request_permission(
         &self,
-        _args: acp::RequestPermissionRequest,
+        args: acp::RequestPermissionRequest,
     ) -> acp::Result<acp::RequestPermissionResponse> {
-        // A product caller must explicitly provide a permission policy. The
-        // bootstrap host is fail-closed until that policy is wired.
-        Ok(acp::RequestPermissionResponse::new(
-            acp::RequestPermissionOutcome::Cancelled,
-        ))
+        let payload = serde_json::to_value(&args).unwrap_or(Value::Null);
+        let tool_call_id = payload
+            .pointer("/toolCall/toolCallId")
+            .and_then(Value::as_str)
+            .map(str::to_owned);
+        let context = self
+            .prompt_context
+            .lock()
+            .ok()
+            .and_then(|value| value.clone());
+        let session_id = context
+            .as_ref()
+            .map(|value| value.session_id.clone())
+            .or_else(|| {
+                payload
+                    .get("sessionId")
+                    .and_then(Value::as_str)
+                    .map(str::to_owned)
+            })
+            .unwrap_or_default();
+        let item_id = tool_call_id.as_ref().map(|id| format!("tc_{id}"));
+        self.sink.push_permission_request(AcpPermissionRequest {
+            session_id,
+            turn_id: context.as_ref().and_then(|value| value.turn_id.clone()),
+            item_id,
+            tool_call_id: tool_call_id.clone(),
+            payload,
+        });
+        let Some(tool_call_id) = tool_call_id else {
+            return Ok(acp::RequestPermissionResponse::new(
+                acp::RequestPermissionOutcome::Cancelled,
+            ));
+        };
+        let (sender, receiver) = oneshot::channel();
+        if let Ok(mut decisions) = self.decisions.lock() {
+            if decisions.contains_key(&tool_call_id) {
+                return Ok(acp::RequestPermissionResponse::new(
+                    acp::RequestPermissionOutcome::Cancelled,
+                ));
+            }
+            decisions.insert(tool_call_id.clone(), sender);
+        } else {
+            return Ok(acp::RequestPermissionResponse::new(
+                acp::RequestPermissionOutcome::Cancelled,
+            ));
+        }
+        // Publishing first makes the request observable before the ACP
+        // reverse call parks. A missing/late decision remains fail-closed.
+        let decision = match tokio::time::timeout(self.permission_timeout, receiver).await {
+            Ok(Ok(decision)) => decision,
+            Ok(Err(_)) | Err(_) => {
+                if let Ok(mut decisions) = self.decisions.lock() {
+                    decisions.remove(&tool_call_id);
+                }
+                AcpPermissionDecision::Cancelled
+            }
+        };
+        let outcome = match decision {
+            AcpPermissionDecision::Selected(option_id) => acp::RequestPermissionOutcome::Selected(
+                acp::SelectedPermissionOutcome::new(option_id),
+            ),
+            AcpPermissionDecision::Cancelled => acp::RequestPermissionOutcome::Cancelled,
+        };
+        Ok(acp::RequestPermissionResponse::new(outcome))
     }
 
     async fn session_notification(&self, args: acp::SessionNotification) -> acp::Result<()> {
@@ -131,14 +233,20 @@ enum Command {
     },
     Prompt {
         request: acp::PromptRequest,
+        context: PromptContext,
         response: oneshot::Sender<Result<acp::PromptResponse, AcpHostError>>,
     },
     Cancel {
         request: acp::CancelNotification,
         response: oneshot::Sender<Result<(), AcpHostError>>,
     },
+    RespondPermission {
+        tool_call_id: String,
+        decision: AcpPermissionDecision,
+        response: oneshot::Sender<Result<(), AcpHostError>>,
+    },
     Shutdown {
-        response: oneshot::Sender<()> ,
+        response: oneshot::Sender<()>,
     },
 }
 
@@ -164,8 +272,38 @@ impl AcpCommandHandle {
         request: acp::PromptRequest,
     ) -> Result<acp::PromptResponse, AcpHostError> {
         let (response, receive) = oneshot::channel();
+        let context = PromptContext {
+            session_id: request.session_id.to_string(),
+            turn_id: None,
+        };
         self.commands
-            .send(Command::Prompt { request, response })
+            .send(Command::Prompt {
+                request,
+                context,
+                response,
+            })
+            .map_err(|_| AcpHostError("ACP host is stopped".into()))?;
+        receive
+            .await
+            .map_err(|_| AcpHostError("ACP host stopped before prompt completed".into()))?
+    }
+
+    pub async fn prompt_with_context(
+        &self,
+        request: acp::PromptRequest,
+        turn_id: String,
+    ) -> Result<acp::PromptResponse, AcpHostError> {
+        let (response, receive) = oneshot::channel();
+        let context = PromptContext {
+            session_id: request.session_id.to_string(),
+            turn_id: Some(turn_id),
+        };
+        self.commands
+            .send(Command::Prompt {
+                request,
+                context,
+                response,
+            })
             .map_err(|_| AcpHostError("ACP host is stopped".into()))?;
         receive
             .await
@@ -180,6 +318,24 @@ impl AcpCommandHandle {
         receive
             .await
             .map_err(|_| AcpHostError("ACP host stopped before cancel completed".into()))?
+    }
+
+    pub async fn respond_permission(
+        &self,
+        tool_call_id: String,
+        decision: AcpPermissionDecision,
+    ) -> Result<(), AcpHostError> {
+        let (response, receive) = oneshot::channel();
+        self.commands
+            .send(Command::RespondPermission {
+                tool_call_id,
+                decision,
+                response,
+            })
+            .map_err(|_| AcpHostError("ACP host is stopped".into()))?;
+        receive
+            .await
+            .map_err(|_| AcpHostError("ACP host stopped before permission response".into()))?
     }
 }
 
@@ -202,6 +358,16 @@ impl AcpHostHandle {
     }
     pub fn notifications(&self) -> AcpNotificationSink {
         self.notifications.clone()
+    }
+
+    pub async fn respond_permission(
+        &self,
+        tool_call_id: String,
+        decision: AcpPermissionDecision,
+    ) -> Result<(), AcpHostError> {
+        self.command_handle()
+            .respond_permission(tool_call_id, decision)
+            .await
     }
 
     /// Attach the canonical JSONL persistence consumer to this host. Ownership
@@ -250,8 +416,16 @@ impl AcpHostHandle {
         &self,
         request: acp::PromptRequest,
     ) -> Result<acp::PromptResponse, AcpHostError> {
-        self.call(|response| Command::Prompt { request, response })
-            .await
+        let context = PromptContext {
+            session_id: request.session_id.to_string(),
+            turn_id: None,
+        };
+        self.call(|response| Command::Prompt {
+            request,
+            context,
+            response,
+        })
+        .await
     }
 
     pub async fn cancel(&self, request: acp::CancelNotification) -> Result<(), AcpHostError> {
@@ -322,67 +496,111 @@ pub fn spawn_acp_host(
                 }
             };
             let local = tokio::task::LocalSet::new();
-            let result = local.block_on(&runtime, async move {
-                let (client_to_agent, agent_input) = duplex(8 * 1024 * 1024);
-                let (agent_to_client, client_input) = duplex(8 * 1024 * 1024);
-                let (commands, mut command_rx) = mpsc::unbounded_channel();
-                let sink = AcpNotificationSink::new();
-                let client = HostClient { sink: sink.clone() };
-                let (connection, client_io) = acp::ClientSideConnection::new(
-                    client,
-                    client_to_agent.compat_write(),
-                    client_input.compat(),
-                    |future| {
-                        tokio::task::spawn_local(future);
-                    },
-                );
-                let agent_io = spawn_agent_local(
-                    agent_config,
-                    auth_manager,
-                    prefetched_models,
-                    memory_config,
-                    agent_to_client.compat_write(),
-                    agent_input.compat(),
-                );
-                tokio::task::spawn_local(client_io);
-                tokio::task::spawn_local(agent_io);
-                let _ = ready_tx.send(Ok((commands, sink)));
+            let result =
+                local.block_on(&runtime, async move {
+                    let (client_to_agent, agent_input) = duplex(8 * 1024 * 1024);
+                    let (agent_to_client, client_input) = duplex(8 * 1024 * 1024);
+                    let (commands, mut command_rx) = mpsc::unbounded_channel();
+                    let sink = AcpNotificationSink::new();
+                    let prompt_context = Arc::new(Mutex::new(None));
+                    let decisions = Arc::new(Mutex::new(HashMap::new()));
+                    let client = HostClient {
+                        sink: sink.clone(),
+                        prompt_context: prompt_context.clone(),
+                        decisions: decisions.clone(),
+                        permission_timeout: std::time::Duration::from_secs(300),
+                    };
+                    let (connection, client_io) = acp::ClientSideConnection::new(
+                        client,
+                        client_to_agent.compat_write(),
+                        client_input.compat(),
+                        |future| {
+                            tokio::task::spawn_local(future);
+                        },
+                    );
+                    let agent_io = spawn_agent_local(
+                        agent_config,
+                        auth_manager,
+                        prefetched_models,
+                        memory_config,
+                        agent_to_client.compat_write(),
+                        agent_input.compat(),
+                    );
+                    tokio::task::spawn_local(client_io);
+                    tokio::task::spawn_local(agent_io);
+                    let _ = ready_tx.send(Ok((commands, sink)));
 
-                while let Some(command) = command_rx.recv().await {
-                    match command {
-                        Command::Initialize { request, response } => {
-                            let _ = response.send(connection.initialize(request).await.map_err(|e| {
-                                AcpHostError(format!("ACP initialize failed: {e}"))
-                            }));
-                        }
-                        Command::Authenticate { request, response } => {
-                            let _ = response.send(connection.authenticate(request).await.map_err(|e| {
-                                AcpHostError(format!("ACP authenticate failed: {e}"))
-                            }));
-                        }
-                        Command::NewSession { request, response } => {
-                            let _ = response.send(connection.new_session(request).await.map_err(|e| {
-                                AcpHostError(format!("ACP new session failed: {e}"))
-                            }));
-                        }
-                        Command::Prompt { request, response } => {
-                            let _ = response.send(connection.prompt(request).await.map_err(|e| {
-                                AcpHostError(format!("ACP prompt failed: {e}"))
-                            }));
-                        }
-                        Command::Cancel { request, response } => {
-                            let _ = response.send(connection.cancel(request).await.map_err(|e| {
-                                AcpHostError(format!("ACP cancel failed: {e}"))
-                            }));
-                        }
-                        Command::Shutdown { response } => {
-                            let _ = response.send(());
-                            break;
+                    while let Some(command) = command_rx.recv().await {
+                        match command {
+                            Command::Initialize { request, response } => {
+                                let _ =
+                                    response.send(connection.initialize(request).await.map_err(
+                                        |e| AcpHostError(format!("ACP initialize failed: {e}")),
+                                    ));
+                            }
+                            Command::Authenticate { request, response } => {
+                                let _ =
+                                    response.send(connection.authenticate(request).await.map_err(
+                                        |e| AcpHostError(format!("ACP authenticate failed: {e}")),
+                                    ));
+                            }
+                            Command::NewSession { request, response } => {
+                                let _ =
+                                    response.send(connection.new_session(request).await.map_err(
+                                        |e| AcpHostError(format!("ACP new session failed: {e}")),
+                                    ));
+                            }
+                            Command::Prompt {
+                                request,
+                                context,
+                                response,
+                            } => {
+                                if let Ok(mut current) = prompt_context.lock() {
+                                    *current = Some(context);
+                                }
+                                let _ =
+                                    response.send(connection.prompt(request).await.map_err(|e| {
+                                        AcpHostError(format!("ACP prompt failed: {e}"))
+                                    }));
+                                if let Ok(mut current) = prompt_context.lock() {
+                                    *current = None;
+                                }
+                            }
+                            Command::Cancel { request, response } => {
+                                let _ =
+                                    response.send(connection.cancel(request).await.map_err(|e| {
+                                        AcpHostError(format!("ACP cancel failed: {e}"))
+                                    }));
+                            }
+                            Command::RespondPermission {
+                                tool_call_id,
+                                decision,
+                                response,
+                            } => {
+                                let result = decisions
+                                    .lock()
+                                    .ok()
+                                    .and_then(|mut pending| pending.remove(&tool_call_id))
+                                    .map(|sender| {
+                                        sender.send(decision).map_err(|_| {
+                                            AcpHostError(
+                                                "permission request is no longer waiting".into(),
+                                            )
+                                        })
+                                    })
+                                    .unwrap_or_else(|| {
+                                        Err(AcpHostError("permission request not found".into()))
+                                    });
+                                let _ = response.send(result);
+                            }
+                            Command::Shutdown { response } => {
+                                let _ = response.send(());
+                                break;
+                            }
                         }
                     }
-                }
-                Ok::<(), AcpHostError>(())
-            });
+                    Ok::<(), AcpHostError>(())
+                });
             if let Err(error) = result {
                 tracing::error!(%error, "ACP host stopped");
             }
@@ -402,24 +620,150 @@ pub fn spawn_acp_host(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use agent_client_protocol::Client as _;
+
+    #[test]
+    fn permission_request_sink_preserves_identity_and_payload() {
+        let sink = AcpNotificationSink::new();
+        let mut receiver = sink.subscribe_permission_requests();
+        let request = AcpPermissionRequest {
+            session_id: "session-1".into(),
+            turn_id: Some("turn-1".into()),
+            item_id: Some("tc-call-1".into()),
+            tool_call_id: Some("call-1".into()),
+            payload: serde_json::json!({"toolCall":{"toolCallId":"call-1"}}),
+        };
+        sink.push_permission_request(request.clone());
+        assert_eq!(receiver.try_recv().expect("permission request"), request);
+    }
 
     #[test]
     fn notification_sink_is_thread_safe_and_preserves_order() {
         let sink = AcpNotificationSink::new();
         let first = acp::SessionNotification::new(
             acp::SessionId::new("s1"),
-            acp::SessionUpdate::AgentMessageChunk(acp::ContentChunk::new(
-                acp::ContentBlock::Text(acp::TextContent::new("one")),
-            )),
+            acp::SessionUpdate::AgentMessageChunk(acp::ContentChunk::new(acp::ContentBlock::Text(
+                acp::TextContent::new("one"),
+            ))),
         );
         let second = acp::SessionNotification::new(
             acp::SessionId::new("s1"),
-            acp::SessionUpdate::AgentMessageChunk(acp::ContentChunk::new(
-                acp::ContentBlock::Text(acp::TextContent::new("two")),
-            )),
+            acp::SessionUpdate::AgentMessageChunk(acp::ContentChunk::new(acp::ContentBlock::Text(
+                acp::TextContent::new("two"),
+            ))),
         );
         sink.push(first.clone());
         sink.push(second.clone());
         assert_eq!(sink.snapshot(), vec![first, second]);
+    }
+
+    #[tokio::test]
+    async fn permission_reverse_request_waits_for_selected_decision() {
+        let sink = AcpNotificationSink::new();
+        let mut requests = sink.subscribe_permission_requests();
+        let decisions = Arc::new(Mutex::new(HashMap::new()));
+        let client = HostClient {
+            sink,
+            prompt_context: Arc::new(Mutex::new(Some(PromptContext {
+                session_id: "session-1".into(),
+                turn_id: Some("turn-1".into()),
+            }))),
+            decisions: decisions.clone(),
+            permission_timeout: std::time::Duration::from_secs(1),
+        };
+        let request = acp::RequestPermissionRequest::new(
+            acp::SessionId::new("session-1"),
+            acp::ToolCallUpdate::new(
+                acp::ToolCallId::new("call-1"),
+                acp::ToolCallUpdateFields::new()
+                    .kind(Some(acp::ToolKind::Other))
+                    .title(Some("test tool".into())),
+            ),
+            vec![acp::PermissionOption::new(
+                "allow-once",
+                "Allow once",
+                acp::PermissionOptionKind::AllowOnce,
+            )],
+        );
+
+        let response = tokio::task::LocalSet::new()
+            .run_until(async move {
+                let task =
+                    tokio::task::spawn_local(
+                        async move { client.request_permission(request).await },
+                    );
+                let observed =
+                    tokio::time::timeout(std::time::Duration::from_secs(1), requests.recv())
+                        .await
+                        .expect("permission request timeout")
+                        .expect("permission request broadcast");
+                assert_eq!(observed.session_id, "session-1");
+                assert_eq!(observed.turn_id.as_deref(), Some("turn-1"));
+                assert_eq!(observed.item_id.as_deref(), Some("tc_call-1"));
+                assert_eq!(observed.tool_call_id.as_deref(), Some("call-1"));
+
+                let sender = decisions
+                    .lock()
+                    .expect("decision mutex")
+                    .remove("call-1")
+                    .expect("permission waiter");
+                sender
+                    .send(AcpPermissionDecision::Selected("allow-once".into()))
+                    .expect("decision delivery");
+                task.await
+                    .expect("permission task")
+                    .expect("permission response")
+            })
+            .await;
+        assert!(matches!(
+            response.outcome,
+            acp::RequestPermissionOutcome::Selected(selected)
+                if selected.option_id.0.as_ref() == "allow-once"
+        ));
+    }
+
+    #[tokio::test]
+    async fn permission_reverse_request_expires_and_removes_waiter() {
+        let sink = AcpNotificationSink::new();
+        let mut requests = sink.subscribe_permission_requests();
+        let decisions = Arc::new(Mutex::new(HashMap::new()));
+        let client = HostClient {
+            sink,
+            prompt_context: Arc::new(Mutex::new(Some(PromptContext {
+                session_id: "session-timeout".into(),
+                turn_id: Some("turn-timeout".into()),
+            }))),
+            decisions: decisions.clone(),
+            permission_timeout: std::time::Duration::from_millis(20),
+        };
+        let request = acp::RequestPermissionRequest::new(
+            acp::SessionId::new("session-timeout"),
+            acp::ToolCallUpdate::new(
+                acp::ToolCallId::new("call-timeout"),
+                acp::ToolCallUpdateFields::new().kind(Some(acp::ToolKind::Other)),
+            ),
+            vec![],
+        );
+        let response_task = tokio::task::LocalSet::new()
+            .run_until(async move {
+                let task =
+                    tokio::task::spawn_local(
+                        async move { client.request_permission(request).await },
+                    );
+                let observed = requests.recv().await.expect("permission request");
+                assert_eq!(observed.tool_call_id.as_deref(), Some("call-timeout"));
+                task.await
+                    .expect("permission task")
+                    .expect("permission response")
+            })
+            .await;
+        assert!(matches!(
+            response_task.outcome,
+            acp::RequestPermissionOutcome::Cancelled
+        ));
+        assert!(
+            decisions.lock().expect("decision mutex").is_empty(),
+            "expiry must remove the waiter so a late response cannot authorize"
+        );
     }
 }

@@ -691,7 +691,9 @@ fn journal_conversion_respects_deadline_under_contention() {
 
 #[test]
 fn resolve_grok_home_product_segment_when_no_env() {
-    let lock = super::GROK_HOME_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let lock = super::GROK_HOME_ENV_LOCK
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
     let prev_oss = std::env::var_os("GROK_OSS_HOME");
     let prev_legacy = std::env::var_os("GROK_HOME");
     // SAFETY: serialized under GROK_HOME_ENV_LOCK

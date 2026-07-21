@@ -8,8 +8,8 @@
 pub(crate) use xai_grok_telemetry::unified_log;
 pub use xai_tracing_macros::{teprintln, timed, tprintln};
 pub mod active_sessions;
-pub mod app_server_runtime;
 pub mod agent;
+pub mod app_server_runtime;
 pub mod auth;
 pub mod builtin;
 pub mod bundle;

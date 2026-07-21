@@ -813,17 +813,17 @@ mod tests {
         let channels: Vec<(SamplingChannel, String)> = events
             .iter()
             .filter_map(|e| match e {
-                SamplingEvent::ChannelToken {
-                    channel, text, ..
-                } => Some((channel.clone(), text.clone())),
+                SamplingEvent::ChannelToken { channel, text, .. } => {
+                    Some((channel.clone(), text.clone()))
+                }
                 _ => None,
             })
             .collect();
 
         assert!(
-            channels.iter().any(|(c, t)| {
-                *c == SamplingChannel::Reasoning && t.contains("thinking aloud")
-            }),
+            channels
+                .iter()
+                .any(|(c, t)| { *c == SamplingChannel::Reasoning && t.contains("thinking aloud") }),
             "commentary must emit Reasoning channel tokens; got {channels:?}"
         );
         assert!(
@@ -855,7 +855,8 @@ mod tests {
             rid(),
             Duration::from_secs(60),
             None,
-            empty_phase_map()))
+            empty_phase_map(),
+        ))
         .await;
 
         match events.last().unwrap() {
@@ -876,7 +877,8 @@ mod tests {
             rid(),
             Duration::from_secs(60),
             None,
-            empty_phase_map()))
+            empty_phase_map(),
+        ))
         .await;
 
         let text_tokens: Vec<&str> = events
@@ -913,7 +915,8 @@ mod tests {
             rid(),
             Duration::from_secs(60),
             None,
-            empty_phase_map()))
+            empty_phase_map(),
+        ))
         .await;
 
         match events.last().unwrap() {
@@ -939,7 +942,8 @@ mod tests {
             rid(),
             Duration::from_secs(60),
             None,
-            empty_phase_map()))
+            empty_phase_map(),
+        ))
         .await;
 
         assert!(
@@ -965,7 +969,8 @@ mod tests {
             rid(),
             Duration::from_millis(100),
             None,
-            empty_phase_map()))
+            empty_phase_map(),
+        ))
         .await;
 
         match events.last().unwrap() {
@@ -989,7 +994,8 @@ mod tests {
             rid(),
             Duration::from_secs(60),
             None,
-            empty_phase_map()))
+            empty_phase_map(),
+        ))
         .await;
 
         assert!(matches!(events[0], SamplingEvent::StreamStarted { .. }));
@@ -1075,7 +1081,8 @@ mod tests {
             rid(),
             Duration::from_secs(60),
             None,
-            empty_phase_map()))
+            empty_phase_map(),
+        ))
         .await;
         let deltas = tool_call_deltas(&evs);
 
@@ -1106,7 +1113,8 @@ mod tests {
             rid(),
             Duration::from_secs(60),
             None,
-            empty_phase_map()))
+            empty_phase_map(),
+        ))
         .await;
         assert_eq!(tool_call_deltas(&evs).len(), 0);
     }
@@ -1127,7 +1135,8 @@ mod tests {
             rid(),
             Duration::from_secs(60),
             None,
-            empty_phase_map()))
+            empty_phase_map(),
+        ))
         .await;
         let deltas = tool_call_deltas(&evs);
 
@@ -1156,7 +1165,8 @@ mod tests {
             rid(),
             Duration::from_secs(60),
             Some(collector),
-            empty_phase_map()))
+            empty_phase_map(),
+        ))
         .await;
 
         match events.last().unwrap() {
@@ -1187,7 +1197,8 @@ mod tests {
             rid(),
             Duration::from_secs(60),
             Some(collector),
-            empty_phase_map()))
+            empty_phase_map(),
+        ))
         .await;
         match events.last().unwrap() {
             SamplingEvent::Failed { error, .. } => {
@@ -1219,7 +1230,8 @@ mod tests {
             rid(),
             Duration::from_secs(60),
             Some(collector),
-            empty_phase_map()))
+            empty_phase_map(),
+        ))
         .await;
         match events.last().unwrap() {
             SamplingEvent::Completed { response, .. } => {
@@ -1238,7 +1250,8 @@ mod tests {
             rid(),
             Duration::from_secs(60),
             None,
-            empty_phase_map()))
+            empty_phase_map(),
+        ))
         .await;
         match events.last().unwrap() {
             SamplingEvent::Completed { response, .. } => {
@@ -1255,7 +1268,8 @@ mod tests {
             rid(),
             Duration::from_secs(60),
             Some(crate::doom_loop::DoomLoopSignalCollector::default()),
-            empty_phase_map()))
+            empty_phase_map(),
+        ))
         .await;
         match events.last().unwrap() {
             SamplingEvent::Completed { response, .. } => {

@@ -11,15 +11,15 @@
 //! conformance only. Do **not** mix real JSONL list/read with FakeRuntime
 //! mutations (split authority).
 
-pub mod shell_session_actor_runtime;
 pub mod acp_host;
+pub mod shell_session_actor_runtime;
 pub use acp_host::{
-    persist_notifications, spawn_acp_host, AcpCommandHandle, AcpHostError, AcpHostHandle,
-    AcpNotificationSink,
+    AcpCommandHandle, AcpHostError, AcpHostHandle, AcpNotificationSink, persist_notifications,
+    spawn_acp_host,
 };
 pub use shell_session_actor_runtime::{
-    experimental_acp_resident_spawn, experimental_local_turn_spawn, RealSpawnFn, ResidentHandle, SessionSpawner,
-    ShellSessionActorRuntime,
+    RealSpawnFn, ResidentHandle, SessionSpawner, ShellSessionActorRuntime,
+    experimental_acp_resident_spawn, experimental_local_turn_spawn,
 };
 
 use std::sync::Arc;
@@ -27,10 +27,12 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use xai_grok_app_server_protocol::{
     InteractionResponseParams, Item, Session, SessionArchiveParams, SessionForkParams,
-    SessionReadParams, SessionReadResult, SessionResumeParams, SessionStartParams,
-    SubscribeParams, Turn, TurnInterruptParams, TurnStartParams, TurnSteerParams,
+    SessionReadParams, SessionReadResult, SessionResumeParams, SessionStartParams, SubscribeParams,
+    Turn, TurnInterruptParams, TurnStartParams, TurnSteerParams,
 };
-use xai_grok_tower::{GrokRuntimeFacade, ReplayPage, RuntimeCapabilities, RuntimeError, SessionRegistry};
+use xai_grok_tower::{
+    GrokRuntimeFacade, ReplayPage, RuntimeCapabilities, RuntimeError, SessionRegistry,
+};
 
 /// Marker documenting ownership for characterization tests.
 pub struct ShellRuntimeAdapterMarker;
@@ -201,9 +203,7 @@ mod app_server_runtime_tests {
         let _ = adapter
             .start_turn(TurnStartParams {
                 session_id: s.session_id.clone(),
-                input: vec![InputBlock::Text {
-                    text: "hi".into(),
-                }],
+                input: vec![InputBlock::Text { text: "hi".into() }],
                 idempotency_key: "t1".into(),
             })
             .await

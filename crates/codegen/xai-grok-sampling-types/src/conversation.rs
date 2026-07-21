@@ -393,7 +393,10 @@ impl BackendToolCallItem {
                 format!("[backend code_interpreter] {code_preview}")
             }
             BackendToolKind::Mcp(m) => {
-                format!("[backend mcp] {}/{}({})", m.server_label, m.name, m.arguments)
+                format!(
+                    "[backend mcp] {}/{}({})",
+                    m.server_label, m.name, m.arguments
+                )
             }
         }
     }
@@ -1135,7 +1138,7 @@ impl ConversationItem {
 
             phase: None,
             message_id: None,
-})
+        })
     }
 
     /// Create an assistant message with a model ID.
@@ -1153,7 +1156,7 @@ impl ConversationItem {
 
             phase: None,
             message_id: None,
-})
+        })
     }
 
     /// Create an assistant message that makes tool calls
@@ -1167,7 +1170,7 @@ impl ConversationItem {
 
             phase: None,
             message_id: None,
-})
+        })
     }
 
     /// Create a tool result message
@@ -1408,7 +1411,7 @@ pub fn inject_streaming_text_fallback(items: &mut Vec<ConversationItem>, text: S
 
         phase: None,
         message_id: None,
-}));
+    }));
 }
 
 pub fn inject_streaming_reasoning_fallback(items: &mut Vec<ConversationItem>, text: String) {
@@ -1715,7 +1718,7 @@ impl From<ChatRequestMessage> for ConversationItem {
 
                     phase: None,
                     message_id: None,
-})
+                })
             }
             Role::Tool => {
                 let content = msg.text_content();
@@ -2047,7 +2050,7 @@ impl From<ChatResponseMessage> for ConversationItem {
 
             phase: None,
             message_id: None,
-})
+        })
     }
 }
 
@@ -2193,9 +2196,9 @@ pub fn response_to_conversation_items_with_phases(
                 // Opaque preserve for unknown variants (AUD-003: no silent drop).
                 backend_tool_count += 1;
                 let type_name = output_item_type_name(&other);
-                let payload = serde_json::to_value(&other).unwrap_or_else(|_| {
-                    serde_json::json!({ "type": type_name, "unserializable": true })
-                });
+                let payload = serde_json::to_value(&other).unwrap_or_else(
+                    |_| serde_json::json!({ "type": type_name, "unserializable": true }),
+                );
                 tracing::warn!(
                     type_name = %type_name,
                     "preserving unknown Responses output item as OpaqueWire"
@@ -2347,7 +2350,10 @@ pub fn derive_prompt_cache_key_with_binding(
     let session = session_id.map(str::trim).filter(|s| !s.is_empty());
     let conv = conversation_id.map(str::trim).filter(|c| !c.is_empty());
     let seed = fallback_seed.map(str::trim).filter(|f| !f.is_empty());
-    let provider = provider_id.map(str::trim).filter(|p| !p.is_empty()).unwrap_or("");
+    let provider = provider_id
+        .map(str::trim)
+        .filter(|p| !p.is_empty())
+        .unwrap_or("");
     let credential = credential_id
         .map(str::trim)
         .filter(|c| !c.is_empty())
@@ -2662,14 +2668,12 @@ fn create_response_from_parts(
         .json_schema
         .as_ref()
         .map(|schema| rs::ResponseTextParam {
-            format: rs::TextResponseFormatConfiguration::JsonSchema(
-                rs::ResponseFormatJsonSchema {
-                    description: None,
-                    name: STRUCTURED_OUTPUT_SCHEMA_NAME.to_string(),
-                    schema: Some(schema.clone()),
-                    strict: Some(true),
-                },
-            ),
+            format: rs::TextResponseFormatConfiguration::JsonSchema(rs::ResponseFormatJsonSchema {
+                description: None,
+                name: STRUCTURED_OUTPUT_SCHEMA_NAME.to_string(),
+                schema: Some(schema.clone()),
+                strict: Some(true),
+            }),
             verbosity: None,
         });
 
@@ -2719,9 +2723,7 @@ fn create_response_from_parts(
 fn build_responses_input(req: &ConversationRequest) -> rs::InputParam {
     match try_build_responses_input(req) {
         Ok(param) => param,
-        Err(e) => panic!(
-            "responses input convert failed (AUD-003 fail-loud, no silent drop): {e}"
-        ),
+        Err(e) => panic!("responses input convert failed (AUD-003 fail-loud, no silent drop): {e}"),
     }
 }
 
@@ -2831,8 +2833,7 @@ pub fn prompt_cache_key_for_compaction(
 /// Only textual system/developer content is moved into `instructions`.
 /// Non-text parts (images, files, …) are **dropped** (lossy) so Codex does
 /// not receive forbidden system roles; callers observe the drop count.
-pub const SYSTEM_HOIST_NON_TEXT_POLICY: &str =
-    "lossy_drop: only InputText/system text is hoisted to instructions; non-text system/developer parts are dropped";
+pub const SYSTEM_HOIST_NON_TEXT_POLICY: &str = "lossy_drop: only InputText/system text is hoisted to instructions; non-text system/developer parts are dropped";
 
 /// Outcome of [`hoist_system_messages_to_instructions`].
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -3161,8 +3162,7 @@ pub fn conversation_items_to_responses_input(
                     if fc_sibling_ids.contains(tc.id.as_ref()) {
                         continue;
                     }
-                    let arguments =
-                        sanitize_tool_arguments(&tc.id, &tc.name, tc.arguments.clone());
+                    let arguments = sanitize_tool_arguments(&tc.id, &tc.name, tc.arguments.clone());
                     out.push(rs::InputItem::Item(rs::Item::FunctionCall(
                         rs::FunctionToolCall {
                             call_id: tc.id.as_ref().to_owned(),
@@ -4228,7 +4228,7 @@ impl From<crate::messages::MessagesResponse> for ConversationItem {
 
             phase: None,
             message_id: None,
-})
+        })
     }
 }
 
@@ -4492,7 +4492,7 @@ mod tests {
 
             phase: None,
             message_id: None,
-})];
+        })];
         inject_streaming_text_fallback(&mut items, "pong".into());
         match &items[0] {
             ConversationItem::Assistant(a) => {
@@ -4556,11 +4556,13 @@ mod tests {
             id: id.into(),
             role: rs::AssistantRole::Assistant,
             status: rs::OutputStatus::Completed,
-            content: vec![rs::OutputMessageContent::OutputText(rs::OutputTextContent {
-                text: text.into(),
-                annotations: vec![],
-                logprobs: None,
-            })],
+            content: vec![rs::OutputMessageContent::OutputText(
+                rs::OutputTextContent {
+                    text: text.into(),
+                    annotations: vec![],
+                    logprobs: None,
+                },
+            )],
         })
     }
 
@@ -4615,7 +4617,11 @@ mod tests {
                 _ => None,
             })
             .collect();
-        assert_eq!(assistants.len(), 2, "must not collapse multi-message output");
+        assert_eq!(
+            assistants.len(),
+            2,
+            "must not collapse multi-message output"
+        );
         assert_eq!(assistants[0].content.as_ref(), "thinking aloud");
         assert_eq!(assistants[0].phase, Some(AssistantPhase::Commentary));
         assert_eq!(assistants[0].message_id.as_deref(), Some("msg_c"));
@@ -4721,7 +4727,10 @@ mod tests {
         assert_eq!(k1, k2);
         assert_ne!(k1, k3);
         assert!(k1.starts_with("gpc_"), "opaque prefix: {k1}");
-        assert!(!k1.contains("sess-abc"), "must not embed raw session id: {k1}");
+        assert!(
+            !k1.contains("sess-abc"),
+            "must not embed raw session id: {k1}"
+        );
         assert!(derive_prompt_cache_key(None, None, None).is_none());
         assert!(!prompt_cache_key_log_label(&k1).contains(&k1[8..]));
 
@@ -4745,7 +4754,8 @@ mod tests {
         assert_eq!(req.prompt_cache_key, req2.prompt_cache_key);
 
         // No identity → leave unset (no anonymous global).
-        let mut req3 = ConversationRequest::from_items(vec![ConversationItem::user("x")]).with_model("m");
+        let mut req3 =
+            ConversationRequest::from_items(vec![ConversationItem::user("x")]).with_model("m");
         ensure_prompt_cache_key(&mut req3);
         assert!(req3.prompt_cache_key.is_none());
     }
@@ -5002,7 +5012,10 @@ mod tests {
         let req = ConversationRequest::from_items(items).with_model("m");
         let err = try_create_response_from_conversation(&req).expect_err("must fail");
         assert!(
-            err.contains("OpaqueWire") || err.contains("unmapped") || err.contains("AUD-003") || !err.is_empty(),
+            err.contains("OpaqueWire")
+                || err.contains("unmapped")
+                || err.contains("AUD-003")
+                || !err.is_empty(),
             "unexpected err: {err}"
         );
     }
@@ -5095,7 +5108,10 @@ mod tests {
             .iter()
             .filter(|v| v.get("type").and_then(|t| t.as_str()) == Some("function_call"))
             .count();
-        assert_eq!(fc_count, 1, "CreateResponse body must have exactly one function_call");
+        assert_eq!(
+            fc_count, 1,
+            "CreateResponse body must have exactly one function_call"
+        );
     }
 
     /// try_build_responses_input returns Err (not Ok with filtered items) on opaque.
@@ -5350,14 +5366,8 @@ mod tests {
 
     #[test]
     fn title_inference_blocks_xai_when_codex_pinned() {
-        assert!(title_inference_route_is_safe(
-            false,
-            "https://api.x.ai/v1"
-        ));
-        assert!(!title_inference_route_is_safe(
-            true,
-            "https://api.x.ai/v1"
-        ));
+        assert!(title_inference_route_is_safe(false, "https://api.x.ai/v1"));
+        assert!(!title_inference_route_is_safe(true, "https://api.x.ai/v1"));
         assert!(title_inference_route_is_safe(
             true,
             "https://chatgpt.com/backend-api/codex"
@@ -5366,21 +5376,13 @@ mod tests {
 
     #[test]
     fn compaction_prompt_cache_key_policy_codex_only_opaque() {
-        let k = prompt_cache_key_for_compaction(
-            true,
-            Some("sess-1"),
-            Some("agent-1"),
-            None,
-            None,
-        )
-        .expect("codex with identity");
+        let k = prompt_cache_key_for_compaction(true, Some("sess-1"), Some("agent-1"), None, None)
+            .expect("codex with identity");
         assert!(k.starts_with("gpc_"));
         assert!(!k.contains("sess-1"));
         assert!(!k.contains("anonymous"));
         assert!(prompt_cache_key_for_compaction(true, None, None, None, None).is_none());
-        assert!(
-            prompt_cache_key_for_compaction(false, Some("sess-1"), None, None, None).is_none()
-        );
+        assert!(prompt_cache_key_for_compaction(false, Some("sess-1"), None, None, None).is_none());
     }
 
     #[test]
@@ -5839,9 +5841,9 @@ mod tests {
         let items = response_to_conversation_items(response_with_fc);
         // AUD-003: FC is a wire sibling; UI projection still lives on assistant.
         assert!(
-            items
-                .iter()
-                .any(|i| matches!(i, ConversationItem::FunctionCall(tc) if tc.id.as_ref() == "call_789")),
+            items.iter().any(
+                |i| matches!(i, ConversationItem::FunctionCall(tc) if tc.id.as_ref() == "call_789")
+            ),
             "expected FunctionCall sibling"
         );
         let a = items
@@ -6010,7 +6012,7 @@ mod tests {
 
             phase: None,
             message_id: None,
-};
+        };
 
         let item = ConversationItem::Assistant(assistant.clone());
         let chat_msg = conversation_item_to_chat_message(item);
@@ -6468,7 +6470,7 @@ mod tests {
 
             phase: None,
             message_id: None,
-});
+        });
 
         for item in [reasoning_item, assistant_item] {
             let json = serde_json::to_string(&item).expect("Should serialize");
@@ -6503,7 +6505,7 @@ mod tests {
 
                 phase: None,
                 message_id: None,
-}),
+            }),
             // New user message
             ConversationItem::user("Now what is 3+3?"),
         ]);
@@ -6566,7 +6568,7 @@ mod tests {
 
                 phase: None,
                 message_id: None,
-}),
+            }),
         ]);
 
         let responses_req: rs::CreateResponse = (&req).into();
@@ -7207,7 +7209,7 @@ mod tests {
 
             phase: None,
             message_id: None,
-});
+        });
 
         // Reasoning now lives as a sibling `ConversationItem::Reasoning`,
         // so "stripping reasoning" means filtering those siblings out — see
@@ -7406,7 +7408,7 @@ mod tests {
 
                 phase: None,
                 message_id: None,
-}),
+            }),
             // Completed tool pair
             ConversationItem::Assistant(AssistantItem {
                 content: String::new().into(),
@@ -7421,7 +7423,7 @@ mod tests {
 
                 phase: None,
                 message_id: None,
-}),
+            }),
             ConversationItem::tool_result("call_1", "fn main() {}"),
             ConversationItem::Assistant(AssistantItem {
                 content: "I see the issue.".into(),
@@ -7432,7 +7434,7 @@ mod tests {
 
                 phase: None,
                 message_id: None,
-}),
+            }),
             // Mid-turn: orphaned tool_use (no result yet)
             ConversationItem::Assistant(AssistantItem {
                 content: String::new().into(),
@@ -7447,7 +7449,7 @@ mod tests {
 
                 phase: None,
                 message_id: None,
-}),
+            }),
         ]
     }
 
@@ -8254,7 +8256,7 @@ mod tests {
 
                 phase: None,
                 message_id: None,
-}),
+            }),
         ];
 
         transform_conversation_cwd(&mut items, worktree, root);
@@ -8368,7 +8370,7 @@ mod tests {
 
                 phase: None,
                 message_id: None,
-}),
+            }),
         ];
 
         transform_conversation_cwd(&mut items, root, worktree);
@@ -8479,7 +8481,7 @@ mod tests {
 
             phase: None,
             message_id: None,
-})];
+        })];
 
         transform_conversation_cwd(&mut items, "/old/path", "/new/path");
 
@@ -8597,7 +8599,7 @@ mod tests {
 
                 phase: None,
                 message_id: None,
-})],
+            })],
             stop_reason: Some(StopReason::Stop),
             usage: None,
             cost_usd_ticks: None,
@@ -8621,7 +8623,7 @@ mod tests {
 
                 phase: None,
                 message_id: None,
-})],
+            })],
             stop_reason: Some(StopReason::Stop),
             usage: None,
             cost_usd_ticks: None,
@@ -8649,7 +8651,7 @@ mod tests {
 
                 phase: None,
                 message_id: None,
-})],
+            })],
             stop_reason: Some(StopReason::ToolCalls),
             usage: None,
             cost_usd_ticks: None,
@@ -8849,7 +8851,7 @@ mod tests {
 
             phase: None,
             message_id: None,
-}
+        }
         .with_model_id("grok-3");
 
         assert_eq!(item.model_id, Some("grok-3".to_string()));
@@ -8941,7 +8943,7 @@ mod tests {
 
             phase: None,
             message_id: None,
-})
+        })
     }
 
     #[test]
@@ -9646,7 +9648,7 @@ mod tests {
 
                 phase: None,
                 message_id: None,
-}),
+            }),
             ConversationItem::tool_result_with_images(
                 "call_1",
                 "Read image file: photo.png",
@@ -10159,7 +10161,7 @@ mod tests {
 
                     phase: None,
                     message_id: None,
-}),
+                }),
             ],
             stop_reason: Some(StopReason::Stop),
             usage: None,
@@ -11395,7 +11397,7 @@ mod tests {
 
                 phase: None,
                 message_id: None,
-}),
+            }),
             ConversationItem::tool_result("call_1", "file contents"),
         ]);
 

@@ -97,7 +97,9 @@ pub(super) async fn make_replay_send_update_fixture() -> ReplaySendUpdateFixture
         pending_interactions: std::sync::Arc::new(std::sync::Mutex::new(
             std::collections::HashMap::new(),
         )),
-        interaction_delivery_hub: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+        interaction_delivery_hub: std::sync::Arc::new(std::sync::Mutex::new(
+            std::collections::HashMap::new(),
+        )),
 
         telemetry_enabled: false,
         supports_backend_search: std::cell::Cell::new(false),
@@ -795,7 +797,7 @@ async fn failed_event_preserves_streaming_capture_for_takeout() {
                         doom_loop_triggers: None,
                         doom_loop_aborted_at_chunk: None,
                         auth_attempt_id: None,
-},
+                    },
                 })
                 .await;
             let cap = actor.streaming_turn_capture.lock().clone();
@@ -1211,7 +1213,7 @@ async fn reasoning_only_doomloop_turn_captures_every_generation_as_segments() {
                 doom_loop_triggers: None,
                 doom_loop_aborted_at_chunk: None,
                 auth_attempt_id: None,
-};
+            };
             actor
                 .handle_sampling_event(SamplingEvent::Failed {
                     request_id: req,

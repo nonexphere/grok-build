@@ -18,10 +18,7 @@ async fn live_list_codex_models_from_home() {
         "expected at least one Codex credential under {home:?}"
     );
     let total: usize = report.accounts.iter().map(|a| a.models.len()).sum();
-    assert!(
-        total > 0,
-        "expected models from Codex API; report={text}"
-    );
+    assert!(total > 0, "expected models from Codex API; report={text}");
     assert!(
         report.accounts.iter().all(|a| a.error.is_none()),
         "errors in report: {text}"

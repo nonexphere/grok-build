@@ -54,7 +54,11 @@ async fn browser_complete_login_persists_credential() {
 
     let provider_id = ProviderId::new_unchecked("codex");
     let (flow_id, events) = coordinator
-        .start_login(&provider_id, LoginTransport::BrowserPkce, Some("e2e".into()))
+        .start_login(
+            &provider_id,
+            LoginTransport::BrowserPkce,
+            Some("e2e".into()),
+        )
         .await
         .unwrap();
 
@@ -120,9 +124,7 @@ async fn device_multi_poll_pending_then_complete_persists() {
         .mock("POST", "/api/accounts/deviceauth/usercode")
         .with_status(200)
         .with_header("content-type", "application/json")
-        .with_body(
-            r#"{"device_auth_id":"dev-auth-1","user_code":"ABCD-EFGH","interval":"1"}"#,
-        )
+        .with_body(r#"{"device_auth_id":"dev-auth-1","user_code":"ABCD-EFGH","interval":"1"}"#)
         .create_async()
         .await;
 
@@ -164,9 +166,7 @@ async fn device_multi_poll_pending_then_complete_persists() {
     let provider = Arc::new(CodexAuthProvider::with_config(config));
     let mut registry = ProviderRegistry::new();
     registry.register(provider.clone()).unwrap();
-    registry
-        .register(Arc::new(XaiAuthProvider::new()))
-        .ok(); // optional
+    registry.register(Arc::new(XaiAuthProvider::new())).ok(); // optional
 
     let store = Arc::new(EphemeralCredentialStore::new());
     let coordinator = LoginCoordinator::new(store.clone(), Arc::new(registry));
@@ -243,12 +243,7 @@ async fn loopback_callback_driver_accepts_get() {
     assert_eq!(bound, port);
 
     let server = tokio::spawn(async move {
-        await_callback(
-            listener,
-            "/auth/callback",
-            Duration::from_secs(5),
-        )
-        .await
+        await_callback(listener, "/auth/callback", Duration::from_secs(5)).await
     });
 
     let mut client = tokio::net::TcpStream::connect(("127.0.0.1", port))
@@ -313,18 +308,12 @@ async fn auth_provider_device_pending_keeps_flow() {
         .complete_login(flow_id, LoginInput::Poll)
         .await
         .unwrap();
-    assert!(matches!(
-        c1,
-        xai_grok_auth::LoginCompletion::Pending { .. }
-    ));
+    assert!(matches!(c1, xai_grok_auth::LoginCompletion::Pending { .. }));
 
     // Second pending poll must still work (flow not dropped).
     let c2 = provider
         .complete_login(flow_id, LoginInput::Poll)
         .await
         .unwrap();
-    assert!(matches!(
-        c2,
-        xai_grok_auth::LoginCompletion::Pending { .. }
-    ));
+    assert!(matches!(c2, xai_grok_auth::LoginCompletion::Pending { .. }));
 }

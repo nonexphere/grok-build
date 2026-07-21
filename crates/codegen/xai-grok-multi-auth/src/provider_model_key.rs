@@ -97,19 +97,14 @@ where
 }
 
 /// Human-readable error when a short slug is multi-provider-ambiguous.
-pub fn ambiguous_multi_provider_slug_message<K, V>(
-    entries: &[(K, V)],
-    slug: &str,
-) -> Option<String>
+pub fn ambiguous_multi_provider_slug_message<K, V>(entries: &[(K, V)], slug: &str) -> Option<String>
 where
     K: AsRef<str>,
     V: AsRef<str>,
 {
     let mp_hits: Vec<String> = entries
         .iter()
-        .filter(|(k, w)| {
-            w.as_ref() == slug && parse_provider_model_key(k.as_ref()).is_some()
-        })
+        .filter(|(k, w)| w.as_ref() == slug && parse_provider_model_key(k.as_ref()).is_some())
         .map(|(k, _)| k.as_ref().to_string())
         .collect();
     if mp_hits.len() > 1 {
@@ -158,10 +153,7 @@ mod tests {
             Uuid::parse_str("01234567-89ab-cdef-0123-456789abcdef").unwrap(),
         );
         let key = format_provider_model_key(&provider, a, "gpt-5.6-luna");
-        let entries = vec![
-            (key.as_str(), "gpt-5.6-luna"),
-            ("grok-4.5", "grok-4.5"),
-        ];
+        let entries = vec![(key.as_str(), "gpt-5.6-luna"), ("grok-4.5", "grok-4.5")];
         assert_eq!(
             resolve_wire_slug_to_catalog_key(&entries, "gpt-5.6-luna").as_deref(),
             Some(key.as_str())

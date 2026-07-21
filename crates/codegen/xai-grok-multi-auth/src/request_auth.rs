@@ -7,8 +7,8 @@ use http::HeaderMap;
 use thiserror::Error;
 
 use xai_grok_auth::{
-    CredentialBinding, CredentialKey, CredentialStore, ModelBinding,
-    ProviderRegistry, SentCredentialStamp,
+    CredentialBinding, CredentialKey, CredentialStore, ModelBinding, ProviderRegistry,
+    SentCredentialStamp,
 };
 
 use crate::fingerprint;
@@ -51,7 +51,8 @@ pub struct RequestAuthResolver {
 
 impl std::fmt::Debug for RequestAuthResolver {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("RequestAuthResolver").finish_non_exhaustive()
+        f.debug_struct("RequestAuthResolver")
+            .finish_non_exhaustive()
     }
 }
 
@@ -116,19 +117,20 @@ impl RequestAuthResolver {
             .map_err(|e| RequestAuthError::ProviderNotRegistered(e.to_string()))?;
 
         // Reload the credential (it may have been refreshed).
-        let credential = self.store.load(&key).await?.ok_or(RequestAuthError::NotFound)?;
+        let credential = self
+            .store
+            .load(&key)
+            .await?
+            .ok_or(RequestAuthError::NotFound)?;
 
-        let endpoint = url::Url::parse("https://chatgpt.com/backend-api/codex/responses")
-            .unwrap();
+        let endpoint = url::Url::parse("https://chatgpt.com/backend-api/codex/responses").unwrap();
         let method = http::Method::POST;
-        let request_auth = provider.build_request_auth(
-            xai_grok_auth::RequestAuthContext {
-                endpoint: &endpoint,
-                method: &method,
-                credential: Some(&credential),
-                request_kind: xai_grok_auth::RequestKind::Inference,
-            },
-        )?;
+        let request_auth = provider.build_request_auth(xai_grok_auth::RequestAuthContext {
+            endpoint: &endpoint,
+            method: &method,
+            credential: Some(&credential),
+            request_kind: xai_grok_auth::RequestKind::Inference,
+        })?;
 
         Ok(ResolvedRequestAuth {
             headers: request_auth.headers,
@@ -150,8 +152,8 @@ mod tests {
     use chrono::Utc;
     use std::collections::BTreeMap;
     use xai_grok_auth::{
-        CredentialSecret, NewCredentialRecord, ProviderAccountInfo,
-        ProviderId, SecretBackendKind, SecretString,
+        CredentialSecret, NewCredentialRecord, ProviderAccountInfo, ProviderId, SecretBackendKind,
+        SecretString,
     };
 
     /// Test 15: request auth headers Authorization + ChatGPT-Account-ID.

@@ -2,11 +2,11 @@
 
 use std::sync::Arc;
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use xai_grok_app_server_protocol::PROTOCOL_VERSION;
 
-use crate::processor::FacadeProcessor;
 use crate::ProcessorError;
+use crate::processor::FacadeProcessor;
 
 pub struct InProcessClient {
     processor: Arc<FacadeProcessor>,
@@ -108,11 +108,6 @@ mod in_process_tests {
             )
             .await
             .unwrap();
-        assert!(
-            !replay["replay"]["events"]
-                .as_array()
-                .unwrap()
-                .is_empty()
-        );
+        assert!(!replay["replay"]["events"].as_array().unwrap().is_empty());
     }
 }

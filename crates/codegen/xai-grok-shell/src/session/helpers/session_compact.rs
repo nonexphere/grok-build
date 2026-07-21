@@ -484,7 +484,8 @@ pub(crate) async fn generate_session_compact(
                     provider_id,
                     multi_provider_codex_pin: xai_grok_sampling_types::is_codex_responses_backend(
                         &sampling_config.base_url,
-                    ) || provider_id.is_some_and(|p| p.eq_ignore_ascii_case("codex")),
+                    ) || provider_id
+                        .is_some_and(|p| p.eq_ignore_ascii_case("codex")),
                     capability_codex: false,
                 },
             );
@@ -1011,7 +1012,7 @@ mod compacted_history_shape_tests {
 
                 phase: None,
                 message_id: None,
-}),
+            }),
             ConversationItem::tool_result("tc1", "fn login() { /* buggy code */ }"),
             ConversationItem::Assistant(AssistantItem {
                 content: "Found the bug, applying fix.".into(),
@@ -1025,7 +1026,7 @@ mod compacted_history_shape_tests {
 
                 phase: None,
                 message_id: None,
-}),
+            }),
             ConversationItem::tool_result("tc2", "Successfully replaced text."),
         ];
         let mut edited_paths = BTreeSet::new();
@@ -1193,7 +1194,7 @@ mod compacted_history_shape_tests {
 
                 phase: None,
                 message_id: None,
-}),
+            }),
             ConversationItem::tool_result("tc1", "fn login() { /* ... */ }"),
         ];
         let full = CompactionStateContext::build(&conversation, CompactionInputs::default()).await;

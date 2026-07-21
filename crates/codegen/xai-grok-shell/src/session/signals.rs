@@ -2029,10 +2029,7 @@ mod tests {
         handle.set_primary_model("gpt-5.6-luna");
 
         let snapshot = handle.snapshot().await.unwrap();
-        assert_eq!(
-            snapshot.primary_model_id,
-            Some("gpt-5.6-luna".to_string())
-        );
+        assert_eq!(snapshot.primary_model_id, Some("gpt-5.6-luna".to_string()));
         assert!(snapshot.models_used.contains(&"grok-4.5".to_string()));
         assert!(snapshot.models_used.contains(&"gpt-5.6-luna".to_string()));
 

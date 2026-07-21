@@ -3,8 +3,8 @@
 use std::io::{BufRead, Write};
 use std::sync::Arc;
 
-use crate::processor::FacadeProcessor;
 use crate::ProcessorError;
+use crate::processor::FacadeProcessor;
 
 /// Run a single-threaded NDJSON request/response loop until stdin EOF.
 pub async fn run_stdio_loop<R, W, E>(
@@ -82,7 +82,7 @@ pub async fn process_ndjson_batch(
 #[cfg(test)]
 mod stdio_tests {
     use super::*;
-    use serde_json::{json, Value};
+    use serde_json::{Value, json};
     use xai_grok_app_server_protocol::PROTOCOL_VERSION;
     use xai_grok_tower::FakeRuntime;
 
@@ -100,7 +100,11 @@ mod stdio_tests {
             .unwrap();
         assert_eq!(outputs.len(), 3);
         for line in &outputs {
-            assert_eq!(line.lines().count(), 1, "stdout must be one object per line");
+            assert_eq!(
+                line.lines().count(),
+                1,
+                "stdout must be one object per line"
+            );
             let v: Value = serde_json::from_str(line).unwrap();
             assert_eq!(v["jsonrpc"], "2.0");
             assert!(v.get("result").is_some());

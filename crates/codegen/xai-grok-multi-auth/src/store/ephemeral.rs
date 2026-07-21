@@ -88,7 +88,10 @@ impl CredentialStore for EphemeralCredentialStore {
         }))
     }
 
-    async fn default_account(&self, provider: &ProviderId) -> Result<Option<CredentialKey>, StoreError> {
+    async fn default_account(
+        &self,
+        provider: &ProviderId,
+    ) -> Result<Option<CredentialKey>, StoreError> {
         let state = self.state.lock().await;
         Ok(state.get(provider.as_str()).and_then(|p| {
             p.default.map(|id| CredentialKey {
@@ -110,7 +113,10 @@ impl CredentialStore for EphemeralCredentialStore {
         Ok(())
     }
 
-    async fn load_metadata(&self, key: &CredentialKey) -> Result<Option<CredentialMetadata>, StoreError> {
+    async fn load_metadata(
+        &self,
+        key: &CredentialKey,
+    ) -> Result<Option<CredentialMetadata>, StoreError> {
         let state = self.state.lock().await;
         Ok(state
             .get(key.provider.as_str())
@@ -118,7 +124,10 @@ impl CredentialStore for EphemeralCredentialStore {
             .map(|(m, _)| m.clone()))
     }
 
-    async fn load_secret(&self, key: &CredentialKey) -> Result<Option<CredentialSecret>, StoreError> {
+    async fn load_secret(
+        &self,
+        key: &CredentialKey,
+    ) -> Result<Option<CredentialSecret>, StoreError> {
         let state = self.state.lock().await;
         Ok(state
             .get(key.provider.as_str())

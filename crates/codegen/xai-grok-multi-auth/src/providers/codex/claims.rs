@@ -145,12 +145,13 @@ pub fn claims_to_account_info(claims: &CodexClaims) -> ProviderAccountInfo {
         display_name: claims.name.clone(),
         workspace_id: None,
         workspace_name: None,
-        plan: claims.chatgpt_plan_type.as_ref().map(|p| {
-            xai_grok_auth::AccountPlan::Known {
+        plan: claims
+            .chatgpt_plan_type
+            .as_ref()
+            .map(|p| xai_grok_auth::AccountPlan::Known {
                 raw: p.clone(),
                 display_name: p.clone(),
-            }
-        }),
+            }),
         account_kind: AccountKind::Personal,
         fedramp: claims.chatgpt_account_is_fedramp.unwrap_or(false),
         metadata,
