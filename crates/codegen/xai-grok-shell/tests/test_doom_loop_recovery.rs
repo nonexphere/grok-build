@@ -52,7 +52,8 @@ fn spawn_actor(base_url: &str, doom_loop_enabled: bool) -> SamplerHandle {
 }
 
 fn user_request(text: &str) -> ConversationRequest {
-    ConversationRequest::from_items(vec![ConversationItem::user(text)])
+    ConversationRequest::from_items(vec![ConversationItem::user(text)]),
+            prompt_cache_key: None,
 }
 
 fn responses_request_count(server: &MockInferenceServer) -> usize {

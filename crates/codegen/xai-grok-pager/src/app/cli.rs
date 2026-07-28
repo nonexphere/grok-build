@@ -19,8 +19,16 @@ pub enum Command {
     Leader(LeaderMgmtArgs),
     /// Sign out and clear cached credentials
     Logout,
+    /// Show authentication status (providers, accounts, credentials)
+    Auth {
+        #[command(subcommand)]
+        command: AuthCommand,
+    },
     /// Sign in to Grok
     Login {
+        /// Provider to log in with (e.g. "xai", "codex"). Omit for interactive selection.
+        #[arg(long = "provider")]
+        provider: Option<String>,
         /// Ignored (kept for backwards compatibility). OAuth2 is now the only auth method.
         #[arg(long, hide = true)]
         legacy: bool,
@@ -139,6 +147,17 @@ See ~/.grok/README.md for more information.
     /// var is set.
     Dashboard,
 }
+/// Subcommands for the `Auth` command.
+#[derive(Debug, Clone, Subcommand)]
+pub enum AuthCommand {
+    /// Show authentication status (providers, accounts, credentials — no secrets)
+    Status {
+        /// Emit machine-readable JSON output.
+        #[arg(long)]
+        json: bool,
+    },
+}
+
 /// Arguments for the `wrap` subcommand: the command to run, then its args.
 #[derive(Debug, clap::Args, Clone)]
 pub struct WrapArgs {
@@ -772,14 +791,15 @@ pub enum ResumeTarget {
 impl PagerArgs {
     /// Parse CLI arguments and apply `--cwd` if provided.
     pub fn parse_and_apply_cwd() -> anyhow::Result<Self> {
+        // Accept Grok OSS `grok-oss`, legacy `goblin`, and upstream `grok`/`agent`.
         let bin_name = std::env::args()
             .next()
             .as_deref()
             .map(std::path::Path::new)
             .and_then(|p| p.file_name())
             .and_then(|n| n.to_str())
-            .filter(|n| *n == "grok" || *n == "agent")
-            .unwrap_or("grok")
+            .filter(|n| matches!(*n, "grok" | "agent" | "goblin" | "grok-oss"))
+            .unwrap_or("grok-oss")
             .to_owned();
         let mut args = Self::parse_from(std::iter::once(bin_name).chain(std::env::args().skip(1)));
         if let Some(socket) = args.leader_socket.take() {

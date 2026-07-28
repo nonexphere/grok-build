@@ -197,11 +197,9 @@ pub enum SessionCommand {
     /// Override the model name and optionally inject extra HTTP headers
     /// into the session's sampling config.
     ///
-    /// Unlike `SetSessionModel` (which requires a fully resolved `ModelEntry`
-    /// and does NOT update `primaryModelId` in signals — the resolved model
-    /// is already tracked via inference responses), this command also calls
-    /// `set_primary_model()` so that signals report the override model
-    /// rather than the agent-level default (e.g. `grok-4.5`).
+    /// Like `SetSessionModel`, this updates `primaryModelId` via
+    /// `set_primary_model()` so signals track the override (not a stale
+    /// agent-level default such as `grok-4.5`).
     ///
     /// Keeps the existing base_url, api_key, and other config — only changes
     /// the `model` field sent in the `x-grok-model-override` header and merges

@@ -200,6 +200,7 @@ pub(crate) async fn create_test_actor_ex(
         model_auth_facts: std::cell::RefCell::new(None),
         attribution_callback: None,
         auth_manager: None,
+        multi_provider_auth: parking_lot::Mutex::new(None),
         state,
         notifications: NotificationSender {
             gateway: GatewaySender::new(gateway_tx),

@@ -1,0 +1,27 @@
+#!/usr/bin/env node
+// Thin npm bin shim: exec the product binary under ~/.grok-oss/bin (or GROK_OSS_HOME).
+const { spawn } = require('child_process');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+
+const home =
+    process.env.GROK_OSS_HOME ||
+    process.env.GROK_HOME ||
+    path.join(os.homedir(), '.grok-oss');
+const binName = process.platform === 'win32' ? 'grok-oss.exe' : 'grok-oss';
+const target = path.join(home, 'bin', binName);
+
+if (!fs.existsSync(target)) {
+    console.error(
+        `@brasalabs/grok-oss: binary not found at ${target}.\n` +
+            'Run npm install again, or install from GitHub Releases / scripts/install-grok-oss.sh'
+    );
+    process.exit(1);
+}
+
+const child = spawn(target, process.argv.slice(2), { stdio: 'inherit' });
+child.on('exit', (code, signal) => {
+    if (signal) process.kill(process.pid, signal);
+    process.exit(code ?? 1);
+});

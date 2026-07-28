@@ -1,0 +1,19 @@
+{
+    "name": "@brasalabs/grok-oss-darwin-x64",
+    "version": "0.2.102",
+    "description": "darwin-x64 binary for @brasalabs/grok-oss. Do not install directly; install @brasalabs/grok-oss instead.",
+    "license": "Apache-2.0",
+    "files": [
+        "bin/",
+        "THIRD_PARTY_NOTICES.md"
+    ],
+    "os": [
+        "darwin"
+    ],
+    "cpu": [
+        "x64"
+    ],
+    "publishConfig": {
+        "access": "public"
+    }
+}

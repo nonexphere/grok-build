@@ -530,7 +530,7 @@ impl SessionActor {
                 xai_grok_sampler::collect_response(events).await
             }
             crate::sampling::ApiBackend::Responses => {
-                let (raw, meta, doom_loop) = sampling_client
+                let (raw, meta, doom_loop, phase_map) = sampling_client
                     .conversation_stream_responses(request)
                     .await
                     .ok()?;
@@ -540,6 +540,7 @@ impl SessionActor {
                     request_id,
                     idle_timeout,
                     doom_loop,
+                    phase_map,
                 );
                 xai_grok_sampler::collect_response(events).await
             }

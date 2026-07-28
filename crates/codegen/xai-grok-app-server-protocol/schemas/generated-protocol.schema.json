@@ -1,0 +1,1925 @@
+{
+  "$defs": {
+    "ClientCapabilities": {
+      "properties": {
+        "experimental": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "interactions": {
+          "default": false,
+          "type": "boolean"
+        },
+        "reconnect": {
+          "default": false,
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "ClientInfo": {
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "version"
+      ],
+      "type": "object"
+    },
+    "EventDocument": {
+      "oneOf": [
+        {
+          "properties": {
+            "event": {
+              "const": "session/updated",
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/$defs/SessionEvent"
+            }
+          },
+          "required": [
+            "event",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "event": {
+              "const": "turn/updated",
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/$defs/TurnEvent"
+            }
+          },
+          "required": [
+            "event",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "event": {
+              "const": "item/started",
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/$defs/ItemEvent"
+            }
+          },
+          "required": [
+            "event",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "event": {
+              "const": "item/delta",
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/$defs/ItemDeltaEvent"
+            }
+          },
+          "required": [
+            "event",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "event": {
+              "const": "item/completed",
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/$defs/ItemEvent"
+            }
+          },
+          "required": [
+            "event",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "event": {
+              "const": "interaction/request",
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/$defs/InteractionRequest"
+            }
+          },
+          "required": [
+            "event",
+            "value"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "InitializeParams": {
+      "properties": {
+        "capabilities": {
+          "$ref": "#/$defs/ClientCapabilities",
+          "default": {
+            "experimental": [],
+            "interactions": false,
+            "reconnect": false
+          }
+        },
+        "clientInfo": {
+          "$ref": "#/$defs/ClientInfo"
+        },
+        "protocolVersion": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "protocolVersion",
+        "clientInfo"
+      ],
+      "type": "object"
+    },
+    "InitializeResult": {
+      "properties": {
+        "capabilities": {
+          "$ref": "#/$defs/ServerCapabilities"
+        },
+        "limits": {
+          "$ref": "#/$defs/ProtocolLimits"
+        },
+        "protocolVersion": {
+          "type": "string"
+        },
+        "serverInfo": {
+          "$ref": "#/$defs/ClientInfo"
+        },
+        "serverInstanceId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "protocolVersion",
+        "serverInfo",
+        "serverInstanceId",
+        "capabilities",
+        "limits"
+      ],
+      "type": "object"
+    },
+    "InputBlock": {
+      "oneOf": [
+        {
+          "properties": {
+            "text": {
+              "type": "string"
+            },
+            "type": {
+              "const": "text",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "text"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "path": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "type": {
+              "const": "mention",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "name"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "path": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "type": {
+              "const": "skill",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "name"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "InteractionCapabilities": {
+      "properties": {
+        "approvals": {
+          "type": "boolean"
+        },
+        "mcpElicitation": {
+          "type": "boolean"
+        },
+        "questions": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "approvals",
+        "questions",
+        "mcpElicitation"
+      ],
+      "type": "object"
+    },
+    "InteractionKind": {
+      "enum": [
+        "approval",
+        "question",
+        "mcp_elicitation"
+      ],
+      "type": "string"
+    },
+    "InteractionRequest": {
+      "properties": {
+        "choices": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "expiresAtMs": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "interactionId": {
+          "type": "string"
+        },
+        "itemId": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/InteractionKind"
+        },
+        "prompt": {
+          "type": "string"
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "turnId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "interactionId",
+        "sessionId",
+        "turnId",
+        "itemId",
+        "kind",
+        "prompt",
+        "choices"
+      ],
+      "type": "object"
+    },
+    "InteractionResponseParams": {
+      "properties": {
+        "decision": {
+          "type": "string"
+        },
+        "idempotencyKey": {
+          "type": "string"
+        },
+        "interactionId": {
+          "type": "string"
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "turnId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionId",
+        "turnId",
+        "interactionId",
+        "decision",
+        "idempotencyKey"
+      ],
+      "type": "object"
+    },
+    "Item": {
+      "oneOf": [
+        {
+          "properties": {
+            "content": {
+              "items": {
+                "$ref": "#/$defs/InputBlock"
+              },
+              "type": "array"
+            },
+            "type": {
+              "const": "user_message",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "content"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "text": {
+              "type": "string"
+            },
+            "type": {
+              "const": "agent_message",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "text"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "arguments": true,
+            "tool_name": {
+              "type": "string"
+            },
+            "type": {
+              "const": "tool_call",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "tool_name",
+            "arguments"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "is_error": {
+              "type": "boolean"
+            },
+            "output": true,
+            "tool_name": {
+              "type": "string"
+            },
+            "type": {
+              "const": "tool_result",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "tool_name",
+            "output",
+            "is_error"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "argv": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "command": {
+              "type": "string"
+            },
+            "cwd": {
+              "type": "string"
+            },
+            "exit_code": {
+              "format": "int32",
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "output": {
+              "type": "string"
+            },
+            "type": {
+              "const": "command_execution",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "command",
+            "argv",
+            "cwd",
+            "output"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "changes": {
+              "items": true,
+              "type": "array"
+            },
+            "summary": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "type": {
+              "const": "file_change",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "changes"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "content": {
+              "type": "string"
+            },
+            "steps": {
+              "items": true,
+              "type": "array"
+            },
+            "type": {
+              "const": "plan",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "content",
+            "steps"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "agent_type": {
+              "type": "string"
+            },
+            "description": {
+              "type": "string"
+            },
+            "result": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "subagent_id": {
+              "type": "string"
+            },
+            "type": {
+              "const": "subagent",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "subagent_id",
+            "agent_type",
+            "description"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "arguments": true,
+            "server": {
+              "type": "string"
+            },
+            "tool_name": {
+              "type": "string"
+            },
+            "type": {
+              "const": "mcp_tool_call",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "server",
+            "tool_name",
+            "arguments"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "summary": {
+              "type": "string"
+            },
+            "type": {
+              "const": "reasoning_summary",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "summary"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "hook_name": {
+              "type": "string"
+            },
+            "phase": {
+              "type": "string"
+            },
+            "safe_summary": {
+              "type": "string"
+            },
+            "type": {
+              "const": "hook",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "hook_name",
+            "phase",
+            "safe_summary"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "safe_summary": {
+              "type": "string"
+            },
+            "task_id": {
+              "type": "string"
+            },
+            "type": {
+              "const": "background_task",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "task_id",
+            "safe_summary"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "safe_summary": {
+              "type": "string"
+            },
+            "type": {
+              "const": "compaction",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "safe_summary"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "code": {
+              "type": "string"
+            },
+            "provider_id": {
+              "type": "string"
+            },
+            "safe_message": {
+              "type": "string"
+            },
+            "type": {
+              "const": "provider_error",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "provider_id",
+            "code",
+            "safe_message"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "choices": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "interaction_id": {
+              "type": "string"
+            },
+            "prompt": {
+              "type": "string"
+            },
+            "type": {
+              "const": "interaction_request",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "interaction_id",
+            "prompt",
+            "choices"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "code": {
+              "type": "string"
+            },
+            "message": {
+              "type": "string"
+            },
+            "type": {
+              "const": "error",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "code",
+            "message"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "extension_type": {
+              "type": "string"
+            },
+            "payload": true,
+            "type": {
+              "const": "extension",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "extension_type",
+            "payload"
+          ],
+          "type": "object"
+        }
+      ],
+      "properties": {
+        "createdAtMs": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "eventSeq": {
+          "$ref": "#/$defs/WireCounter"
+        },
+        "itemId": {
+          "type": "string"
+        },
+        "revision": {
+          "$ref": "#/$defs/WireCounter"
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/ItemStatus"
+        },
+        "turnId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "itemId",
+        "sessionId",
+        "turnId",
+        "eventSeq",
+        "revision",
+        "status",
+        "createdAtMs"
+      ],
+      "type": "object"
+    },
+    "ItemCapabilities": {
+      "properties": {
+        "deltas": {
+          "type": "boolean"
+        },
+        "lifecycle": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "lifecycle",
+        "deltas"
+      ],
+      "type": "object"
+    },
+    "ItemDeltaEvent": {
+      "properties": {
+        "delta": {
+          "type": "string"
+        },
+        "eventSeq": {
+          "$ref": "#/$defs/WireCounter"
+        },
+        "historyEpoch": {
+          "type": "string"
+        },
+        "itemId": {
+          "type": "string"
+        },
+        "revision": {
+          "$ref": "#/$defs/WireCounter"
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "stream": {
+          "type": "string"
+        },
+        "subscriptionId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "timestampMs": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "turnId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionId",
+        "historyEpoch",
+        "eventSeq",
+        "timestampMs",
+        "turnId",
+        "itemId",
+        "revision",
+        "delta",
+        "stream"
+      ],
+      "type": "object"
+    },
+    "ItemEvent": {
+      "properties": {
+        "eventSeq": {
+          "$ref": "#/$defs/WireCounter"
+        },
+        "historyEpoch": {
+          "type": "string"
+        },
+        "item": {
+          "$ref": "#/$defs/Item"
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "subscriptionId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "timestampMs": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "sessionId",
+        "historyEpoch",
+        "eventSeq",
+        "timestampMs",
+        "item"
+      ],
+      "type": "object"
+    },
+    "ItemStatus": {
+      "enum": [
+        "pending",
+        "in_progress",
+        "waiting_for_approval",
+        "waiting_for_input",
+        "completed",
+        "failed",
+        "declined",
+        "cancelled",
+        "backgrounded"
+      ],
+      "type": "string"
+    },
+    "MethodDocument": {
+      "oneOf": [
+        {
+          "properties": {
+            "method": {
+              "const": "session/listParams",
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/$defs/SessionListParams"
+            }
+          },
+          "required": [
+            "method",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "const": "session/listResult",
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/$defs/SessionListResult"
+            }
+          },
+          "required": [
+            "method",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "const": "session/readParams",
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/$defs/SessionReadParams"
+            }
+          },
+          "required": [
+            "method",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "const": "session/readResult",
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/$defs/SessionReadResult"
+            }
+          },
+          "required": [
+            "method",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "const": "session/resumeParams",
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/$defs/SessionResumeParams"
+            }
+          },
+          "required": [
+            "method",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "const": "session/forkParams",
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/$defs/SessionForkParams"
+            }
+          },
+          "required": [
+            "method",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "const": "session/archiveParams",
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/$defs/SessionArchiveParams"
+            }
+          },
+          "required": [
+            "method",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "const": "turn/steerParams",
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/$defs/TurnSteerParams"
+            }
+          },
+          "required": [
+            "method",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "const": "turn/interruptParams",
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/$defs/TurnInterruptParams"
+            }
+          },
+          "required": [
+            "method",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "const": "interaction/respondParams",
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/$defs/InteractionResponseParams"
+            }
+          },
+          "required": [
+            "method",
+            "value"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "const": "operationResult",
+              "type": "string"
+            },
+            "value": {
+              "$ref": "#/$defs/OperationResult"
+            }
+          },
+          "required": [
+            "method",
+            "value"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "OperationResult": {
+      "properties": {
+        "accepted": {
+          "type": "boolean"
+        },
+        "operationId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "operationId",
+        "accepted"
+      ],
+      "type": "object"
+    },
+    "ProtocolLimits": {
+      "properties": {
+        "initializeTimeoutMs": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "maxMessageBytes": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "maxPageSize": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "outboundQueueEvents": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "replayWindowEvents": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "maxMessageBytes",
+        "maxPageSize",
+        "replayWindowEvents",
+        "outboundQueueEvents",
+        "initializeTimeoutMs"
+      ],
+      "type": "object"
+    },
+    "ProviderBinding": {
+      "additionalProperties": false,
+      "description": "Public, immutable inference selection. It contains identifiers only—never\ntokens, cookies, authorization headers, or other credential material.",
+      "properties": {
+        "backend": {
+          "type": "string"
+        },
+        "bindingRevision": {
+          "$ref": "#/$defs/WireCounter"
+        },
+        "credentialId": {
+          "type": "string"
+        },
+        "modelId": {
+          "type": "string"
+        },
+        "providerId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "providerId",
+        "credentialId",
+        "modelId",
+        "backend",
+        "bindingRevision"
+      ],
+      "type": "object"
+    },
+    "RpcError": {
+      "properties": {
+        "code": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "data": true,
+        "message": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ],
+      "type": "object"
+    },
+    "ServerCapabilities": {
+      "properties": {
+        "experimental": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "interactions": {
+          "$ref": "#/$defs/InteractionCapabilities"
+        },
+        "items": {
+          "$ref": "#/$defs/ItemCapabilities"
+        },
+        "sessions": {
+          "$ref": "#/$defs/SessionCapabilities"
+        },
+        "turns": {
+          "$ref": "#/$defs/TurnCapabilities"
+        }
+      },
+      "required": [
+        "sessions",
+        "turns",
+        "items",
+        "interactions"
+      ],
+      "type": "object"
+    },
+    "Session": {
+      "properties": {
+        "activeTurnId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "createdAtMs": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "historyEpoch": {
+          "type": "string"
+        },
+        "latestTurnId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "providerBinding": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProviderBinding"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "revision": {
+          "$ref": "#/$defs/WireCounter"
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/SessionStatus"
+        },
+        "title": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "updatedAtMs": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "workspaceRoot": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionId",
+        "historyEpoch",
+        "revision",
+        "status",
+        "workspaceRoot",
+        "createdAtMs",
+        "updatedAtMs"
+      ],
+      "type": "object"
+    },
+    "SessionArchiveParams": {
+      "properties": {
+        "idempotencyKey": {
+          "type": "string"
+        },
+        "sessionId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionId",
+        "idempotencyKey"
+      ],
+      "type": "object"
+    },
+    "SessionCapabilities": {
+      "properties": {
+        "archive": {
+          "type": "boolean"
+        },
+        "fork": {
+          "type": "boolean"
+        },
+        "list": {
+          "type": "boolean"
+        },
+        "read": {
+          "type": "boolean"
+        },
+        "resume": {
+          "type": "boolean"
+        },
+        "start": {
+          "type": "boolean"
+        },
+        "subscribe": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "list",
+        "read",
+        "start",
+        "resume",
+        "fork",
+        "archive",
+        "subscribe"
+      ],
+      "type": "object"
+    },
+    "SessionEvent": {
+      "properties": {
+        "eventSeq": {
+          "$ref": "#/$defs/WireCounter"
+        },
+        "historyEpoch": {
+          "type": "string"
+        },
+        "session": {
+          "$ref": "#/$defs/Session"
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "subscriptionId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "timestampMs": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "sessionId",
+        "historyEpoch",
+        "eventSeq",
+        "timestampMs",
+        "session"
+      ],
+      "type": "object"
+    },
+    "SessionForkParams": {
+      "properties": {
+        "idempotencyKey": {
+          "type": "string"
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "workspaceRoot": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "sessionId",
+        "idempotencyKey"
+      ],
+      "type": "object"
+    },
+    "SessionListParams": {
+      "properties": {
+        "cursor": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "includeArchived": {
+          "default": false,
+          "type": "boolean"
+        },
+        "pageSize": {
+          "default": null,
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "workspaceRoot": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "SessionListResult": {
+      "properties": {
+        "nextCursor": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "sessions": {
+          "items": {
+            "$ref": "#/$defs/Session"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "sessions"
+      ],
+      "type": "object"
+    },
+    "SessionReadParams": {
+      "properties": {
+        "includeItems": {
+          "default": false,
+          "type": "boolean"
+        },
+        "includeTurns": {
+          "default": false,
+          "type": "boolean"
+        },
+        "sessionId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionId"
+      ],
+      "type": "object"
+    },
+    "SessionReadResult": {
+      "properties": {
+        "items": {
+          "items": {
+            "$ref": "#/$defs/Item"
+          },
+          "type": "array"
+        },
+        "session": {
+          "$ref": "#/$defs/Session"
+        },
+        "turns": {
+          "items": {
+            "$ref": "#/$defs/Turn"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "session",
+        "turns",
+        "items"
+      ],
+      "type": "object"
+    },
+    "SessionResumeParams": {
+      "properties": {
+        "idempotencyKey": {
+          "type": "string"
+        },
+        "sessionId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionId",
+        "idempotencyKey"
+      ],
+      "type": "object"
+    },
+    "SessionStartParams": {
+      "properties": {
+        "agentType": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "idempotencyKey": {
+          "type": "string"
+        },
+        "providerBinding": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProviderBinding"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "workspaceRoot": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "workspaceRoot",
+        "idempotencyKey"
+      ],
+      "type": "object"
+    },
+    "SessionStatus": {
+      "enum": [
+        "starting",
+        "ready",
+        "running",
+        "waiting_for_input",
+        "dormant",
+        "completed",
+        "archived",
+        "failed"
+      ],
+      "type": "string"
+    },
+    "SubscribeParams": {
+      "properties": {
+        "afterEventSeq": {
+          "$ref": "#/$defs/WireCounter",
+          "default": "0"
+        },
+        "historyEpoch": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "sessionId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionId"
+      ],
+      "type": "object"
+    },
+    "Turn": {
+      "properties": {
+        "completedAtMs": {
+          "default": null,
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "createdAtMs": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "kind": {
+          "$ref": "#/$defs/TurnKind"
+        },
+        "ordinal": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "providerBinding": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProviderBinding"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "revision": {
+          "$ref": "#/$defs/WireCounter"
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/TurnStatus"
+        },
+        "turnId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "turnId",
+        "sessionId",
+        "revision",
+        "status",
+        "kind",
+        "ordinal",
+        "createdAtMs"
+      ],
+      "type": "object"
+    },
+    "TurnCapabilities": {
+      "properties": {
+        "interrupt": {
+          "type": "boolean"
+        },
+        "start": {
+          "type": "boolean"
+        },
+        "steer": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "start",
+        "steer",
+        "interrupt"
+      ],
+      "type": "object"
+    },
+    "TurnEvent": {
+      "properties": {
+        "eventSeq": {
+          "$ref": "#/$defs/WireCounter"
+        },
+        "historyEpoch": {
+          "type": "string"
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "subscriptionId": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "timestampMs": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "turn": {
+          "$ref": "#/$defs/Turn"
+        }
+      },
+      "required": [
+        "sessionId",
+        "historyEpoch",
+        "eventSeq",
+        "timestampMs",
+        "turn"
+      ],
+      "type": "object"
+    },
+    "TurnInterruptParams": {
+      "properties": {
+        "idempotencyKey": {
+          "type": "string"
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "turnId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionId",
+        "turnId",
+        "idempotencyKey"
+      ],
+      "type": "object"
+    },
+    "TurnKind": {
+      "enum": [
+        "user",
+        "steer",
+        "resume",
+        "synthetic"
+      ],
+      "type": "string"
+    },
+    "TurnStartParams": {
+      "properties": {
+        "idempotencyKey": {
+          "type": "string"
+        },
+        "input": {
+          "items": {
+            "$ref": "#/$defs/InputBlock"
+          },
+          "type": "array"
+        },
+        "sessionId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionId",
+        "input",
+        "idempotencyKey"
+      ],
+      "type": "object"
+    },
+    "TurnStatus": {
+      "enum": [
+        "queued",
+        "in_progress",
+        "waiting_for_approval",
+        "waiting_for_input",
+        "completed",
+        "interrupted",
+        "declined",
+        "failed"
+      ],
+      "type": "string"
+    },
+    "TurnSteerParams": {
+      "properties": {
+        "idempotencyKey": {
+          "type": "string"
+        },
+        "input": {
+          "items": {
+            "$ref": "#/$defs/InputBlock"
+          },
+          "type": "array"
+        },
+        "sessionId": {
+          "type": "string"
+        },
+        "turnId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "sessionId",
+        "turnId",
+        "input",
+        "idempotencyKey"
+      ],
+      "type": "object"
+    },
+    "WireCounter": {
+      "description": "Lossless JSON representation for monotonic counters shared with JavaScript.\nThe wire form is a canonical unsigned decimal string, never a JSON number.",
+      "type": "string"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "oneOf": [
+    {
+      "properties": {
+        "kind": {
+          "const": "initialize_params",
+          "type": "string"
+        },
+        "value": {
+          "$ref": "#/$defs/InitializeParams"
+        }
+      },
+      "required": [
+        "kind",
+        "value"
+      ],
+      "type": "object"
+    },
+    {
+      "properties": {
+        "kind": {
+          "const": "initialize_result",
+          "type": "string"
+        },
+        "value": {
+          "$ref": "#/$defs/InitializeResult"
+        }
+      },
+      "required": [
+        "kind",
+        "value"
+      ],
+      "type": "object"
+    },
+    {
+      "properties": {
+        "kind": {
+          "const": "session",
+          "type": "string"
+        },
+        "value": {
+          "$ref": "#/$defs/Session"
+        }
+      },
+      "required": [
+        "kind",
+        "value"
+      ],
+      "type": "object"
+    },
+    {
+      "properties": {
+        "kind": {
+          "const": "turn",
+          "type": "string"
+        },
+        "value": {
+          "$ref": "#/$defs/Turn"
+        }
+      },
+      "required": [
+        "kind",
+        "value"
+      ],
+      "type": "object"
+    },
+    {
+      "properties": {
+        "kind": {
+          "const": "item",
+          "type": "string"
+        },
+        "value": {
+          "$ref": "#/$defs/Item"
+        }
+      },
+      "required": [
+        "kind",
+        "value"
+      ],
+      "type": "object"
+    },
+    {
+      "properties": {
+        "kind": {
+          "const": "session_start_params",
+          "type": "string"
+        },
+        "value": {
+          "$ref": "#/$defs/SessionStartParams"
+        }
+      },
+      "required": [
+        "kind",
+        "value"
+      ],
+      "type": "object"
+    },
+    {
+      "properties": {
+        "kind": {
+          "const": "turn_start_params",
+          "type": "string"
+        },
+        "value": {
+          "$ref": "#/$defs/TurnStartParams"
+        }
+      },
+      "required": [
+        "kind",
+        "value"
+      ],
+      "type": "object"
+    },
+    {
+      "properties": {
+        "kind": {
+          "const": "subscribe_params",
+          "type": "string"
+        },
+        "value": {
+          "$ref": "#/$defs/SubscribeParams"
+        }
+      },
+      "required": [
+        "kind",
+        "value"
+      ],
+      "type": "object"
+    },
+    {
+      "properties": {
+        "kind": {
+          "const": "rpc_error",
+          "type": "string"
+        },
+        "value": {
+          "$ref": "#/$defs/RpcError"
+        }
+      },
+      "required": [
+        "kind",
+        "value"
+      ],
+      "type": "object"
+    },
+    {
+      "properties": {
+        "kind": {
+          "const": "method",
+          "type": "string"
+        },
+        "value": {
+          "$ref": "#/$defs/MethodDocument"
+        }
+      },
+      "required": [
+        "kind",
+        "value"
+      ],
+      "type": "object"
+    },
+    {
+      "properties": {
+        "kind": {
+          "const": "event",
+          "type": "string"
+        },
+        "value": {
+          "$ref": "#/$defs/EventDocument"
+        }
+      },
+      "required": [
+        "kind",
+        "value"
+      ],
+      "type": "object"
+    }
+  ],
+  "title": "ProtocolDocument"
+}

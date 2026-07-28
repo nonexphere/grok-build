@@ -11,15 +11,26 @@ const CLAUDE_MANAGED_SETTINGS_PATH: &str =
 #[cfg(target_os = "linux")]
 const CLAUDE_MANAGED_SETTINGS_PATH: &str = "/etc/claude-code/managed-settings.json";
 
-/// The default user grok directory (`~/.grok`, canonicalized) used when
-/// `GROK_HOME` is unset. Exposed so callers (e.g. display helpers) can detect
-/// whether [`grok_home()`] is the default without duplicating the computation.
+/// Product CLI binary name on PATH and under `$HOME/bin/` (Grok OSS cutover).
+pub const PRODUCT_BIN_NAME: &str = "grok-oss";
+
+/// Default user data directory segment under the system home (`~/.grok-oss`).
+pub const PRODUCT_HOME_DIR_NAME: &str = ".grok-oss";
+
+/// Preferred env override for product home (falls back to `GROK_HOME`).
+pub const PRODUCT_HOME_ENV: &str = "GROK_OSS_HOME";
+
+/// Legacy env override accepted during transition (same as upstream).
+pub const LEGACY_HOME_ENV: &str = "GROK_HOME";
+
+/// The default user grok directory (`~/.grok-oss`, canonicalized) used when
+/// neither [`PRODUCT_HOME_ENV`] nor [`LEGACY_HOME_ENV`] is set.
 ///
 /// Uses [`dunce::canonicalize`] instead of [`std::fs::canonicalize`]: on
 /// Windows, std returns a verbatim path (`\\?\C:\Users\...`) which external
 /// tools choke on — e.g. `git clone` rejects `\\?\` destinations with
 /// "Invalid argument", breaking marketplace cache clones under
-/// `~/.grok/marketplace-cache`. `dunce` strips the prefix whenever the path
+/// `~/.grok-oss/marketplace-cache`. `dunce` strips the prefix whenever the path
 /// is safely representable in legacy form; on non-Windows it is identical to
 /// `std::fs::canonicalize`.
 ///
@@ -28,14 +39,19 @@ const CLAUDE_MANAGED_SETTINGS_PATH: &str = "/etc/claude-code/managed-settings.js
 pub fn default_grok_home() -> PathBuf {
     #[allow(deprecated)]
     let home = std::env::home_dir().unwrap_or_else(|| PathBuf::from("."));
-    dunce::canonicalize(&home).unwrap_or(home).join(".grok")
+    dunce::canonicalize(&home)
+        .unwrap_or(home)
+        .join(PRODUCT_HOME_DIR_NAME)
 }
 
-/// Per-user config directory: `$GROK_HOME` or `~/.grok`. Created if needed.
+/// Per-user config directory: `$GROK_OSS_HOME` or `$GROK_HOME` or `~/.grok-oss`.
+/// Created if needed.
 pub fn grok_home() -> PathBuf {
     GROK_HOME
         .get_or_init(|| {
-            let grok_home = if let Ok(v) = std::env::var("GROK_HOME") {
+            let grok_home = if let Ok(v) = std::env::var(PRODUCT_HOME_ENV) {
+                PathBuf::from(v)
+            } else if let Ok(v) = std::env::var(LEGACY_HOME_ENV) {
                 PathBuf::from(v)
             } else {
                 default_grok_home()
@@ -47,24 +63,31 @@ pub fn grok_home() -> PathBuf {
 }
 
 /// The user-global grok home, but only when one genuinely resolves: `Some` when
-/// `$GROK_HOME` is set or a home directory is found, `None` otherwise. Unlike
-/// [`grok_home()`], this never falls back to a cwd-relative `.grok`, so callers
+/// a home env is set or a system home directory is found, `None` otherwise. Unlike
+/// [`grok_home()`], this never falls back to a cwd-relative product dir, so callers
 /// that *scan* user-global grok resources (hooks, marketplace sources, ...) don't
-/// mistake a project's `.grok` tree for the user-global one when no home resolves.
+/// mistake a project's tree for the user-global one when no home resolves.
 pub fn user_grok_home() -> Option<PathBuf> {
     #[allow(deprecated)]
-    let resolvable = std::env::var_os("GROK_HOME").is_some() || std::env::home_dir().is_some();
+    let resolvable = std::env::var_os(PRODUCT_HOME_ENV).is_some()
+        || std::env::var_os(LEGACY_HOME_ENV).is_some()
+        || std::env::home_dir().is_some();
     resolvable.then(grok_home)
 }
 
-/// Canonical grok application path: `$GROK_HOME/bin/grok` (Unix) or `grok.exe` (Windows).
+/// Canonical application path: `$GROK_HOME/bin/grok-oss` (Unix) or
+/// `grok-oss.exe` (Windows).
 pub fn grok_application() -> PathBuf {
     grok_application_in(&grok_home())
 }
 
-/// [`grok_application`] under an explicit home instead of `$GROK_HOME`.
+/// [`grok_application`] under an explicit home instead of the process home.
 pub fn grok_application_in(home: &std::path::Path) -> PathBuf {
-    let name = if cfg!(windows) { "grok.exe" } else { "grok" };
+    let name = if cfg!(windows) {
+        format!("{PRODUCT_BIN_NAME}.exe")
+    } else {
+        PRODUCT_BIN_NAME.to_string()
+    };
     home.join("bin").join(name)
 }
 
@@ -312,7 +335,29 @@ mod tests {
         // canonicalization must yield a plain path. No-op assertion on Unix.
         let home = default_grok_home();
         assert!(!home.to_string_lossy().starts_with(r"\\?\"));
-        assert!(home.ends_with(".grok"));
+        assert!(
+            home.ends_with(PRODUCT_HOME_DIR_NAME),
+            "default home must be ~/.grok-oss (product identity I2), got {}",
+            home.display()
+        );
+    }
+
+    #[test]
+    fn product_application_name_is_grok_oss() {
+        let app = grok_application_in(std::path::Path::new("/tmp/fake-home"));
+        let name = app.file_name().and_then(|n| n.to_str()).unwrap_or("");
+        assert!(
+            name == PRODUCT_BIN_NAME || name == format!("{PRODUCT_BIN_NAME}.exe"),
+            "application basename must be {PRODUCT_BIN_NAME}, got {name}"
+        );
+        assert!(app.ends_with(format!("bin/{name}")));
+    }
+
+    #[test]
+    fn product_identity_constants_locked() {
+        assert_eq!(PRODUCT_BIN_NAME, "grok-oss");
+        assert_eq!(PRODUCT_HOME_DIR_NAME, ".grok-oss");
+        assert_eq!(PRODUCT_HOME_ENV, "GROK_OSS_HOME");
     }
 
     #[test]

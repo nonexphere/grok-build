@@ -58,7 +58,7 @@ pub(crate) use xai_grok_sampling_types::is_context_length_error;
 fn classify_sampling_error(err: SamplingError) -> CompactFailure {
     let acp_err = acp::Error::internal_error().data(format!("compact failed: {err}"));
     let deterministic = match &err {
-        SamplingError::Auth(_)
+        SamplingError::Auth { .. }
         | SamplingError::InvalidConfiguration(_)
         | SamplingError::Serialization(_)
         | SamplingError::IdleTimeout { .. } => true,
@@ -465,6 +465,29 @@ pub(crate) async fn generate_session_compact(
             }
         }
         ApiBackend::Responses => {
+            // PC10 / data-002: account-scoped prompt_cache_key for Codex
+            // compaction (same binding-aware derivation as normal turns).
+            let agent = xai_grok_telemetry::id::agent_id();
+            let provider_id = sampling_config
+                .extra_headers
+                .iter()
+                .find(|(k, _)| k.eq_ignore_ascii_case("x-goblin-provider-id"))
+                .map(|(_, v)| v.as_str());
+            let credential_id = sampling_config
+                .extra_headers
+                .iter()
+                .find(|(k, _)| k.eq_ignore_ascii_case("x-goblin-credential-id"))
+                .map(|(_, v)| v.as_str());
+            let is_codex = xai_grok_sampling_types::classify_codex_responses_backend(
+                &xai_grok_sampling_types::CodexBackendHints {
+                    base_url: &sampling_config.base_url,
+                    provider_id,
+                    multi_provider_codex_pin: xai_grok_sampling_types::is_codex_responses_backend(
+                        &sampling_config.base_url,
+                    ) || provider_id.is_some_and(|p| p.eq_ignore_ascii_case("codex")),
+                    capability_codex: false,
+                },
+            );
             let request = ConversationRequest {
                 items: chat_history,
                 tool_choice: (!tools.is_empty()).then_some(ConversationToolChoice::None),
@@ -475,12 +498,19 @@ pub(crate) async fn generate_session_compact(
                 x_grok_conv_id: Some(session_id.to_string()),
                 x_grok_req_id: Some(format!("xai-compact-{}", uuid::Uuid::new_v4())),
                 x_grok_session_id: Some(session_id.to_string()),
-                x_grok_agent_id: Some(xai_grok_telemetry::id::agent_id()),
+                x_grok_agent_id: Some(agent.clone()),
+                prompt_cache_key: xai_grok_sampling_types::prompt_cache_key_for_compaction(
+                    is_codex,
+                    Some(session_id.0.as_ref()),
+                    Some(agent.as_str()),
+                    provider_id,
+                    credential_id,
+                ),
                 ..Default::default()
             };
             let stream_result = client.conversation_stream_responses(request).await;
             let mut stream = match stream_result {
-                Ok((s, _metadata, _doom_loop)) => s,
+                Ok((s, _metadata, _doom_loop, _phase_map)) => s,
                 Err(e) => return Err(classify_sampling_error(e)),
             };
             let mut timing = StreamTiming::new();
@@ -760,8 +790,8 @@ mod classify_tests {
     }
     #[test]
     fn sampling_non_api_variants_classify_correctly() {
-        assert!(is_det(&classify_sampling_error(SamplingError::Auth(
-            "expired".into()
+        assert!(is_det(&classify_sampling_error(SamplingError::auth(
+            "expired"
         ))));
         assert!(is_det(&classify_sampling_error(
             SamplingError::InvalidConfiguration("missing key")
@@ -978,7 +1008,10 @@ mod compacted_history_shape_tests {
                 model_id: None,
                 model_fingerprint: None,
                 reasoning_effort: None,
-            }),
+
+                phase: None,
+                message_id: None,
+}),
             ConversationItem::tool_result("tc1", "fn login() { /* buggy code */ }"),
             ConversationItem::Assistant(AssistantItem {
                 content: "Found the bug, applying fix.".into(),
@@ -989,7 +1022,10 @@ mod compacted_history_shape_tests {
                 model_id: None,
                 model_fingerprint: None,
                 reasoning_effort: None,
-            }),
+
+                phase: None,
+                message_id: None,
+}),
             ConversationItem::tool_result("tc2", "Successfully replaced text."),
         ];
         let mut edited_paths = BTreeSet::new();
@@ -1154,7 +1190,10 @@ mod compacted_history_shape_tests {
                 model_id: None,
                 model_fingerprint: None,
                 reasoning_effort: None,
-            }),
+
+                phase: None,
+                message_id: None,
+}),
             ConversationItem::tool_result("tc1", "fn login() { /* ... */ }"),
         ];
         let full = CompactionStateContext::build(&conversation, CompactionInputs::default()).await;

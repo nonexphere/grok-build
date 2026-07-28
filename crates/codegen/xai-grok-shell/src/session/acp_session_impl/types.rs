@@ -20,8 +20,11 @@ pub(crate) enum SamplerFailureRecovery {
     /// the compacted conversation and resubmit.
     CompactAndResubmit,
     /// Auth 401 recovery succeeded (devbox re-mint or OIDC refresh).
-    /// The turn loop should resubmit once with the fresh token.
+    /// The turn loop may resubmit under the xAI multi-rotation schedule.
     RefreshAuthAndResubmit,
+    /// Multi-provider (Codex) TokenManager recovery: **at most one** resubmit
+    /// for this turn (GATE1 / ACTION-003). Must not share the 3-step xAI schedule.
+    RefreshMultiProviderAuthOnce,
 }
 
 /// Outcome of a single turn attempt via the sampler-based path.
@@ -35,8 +38,10 @@ pub(crate) enum SamplerTurnOutcome {
         Box<xai_grok_sampler::InferenceLatencyStats>,
     ),
     CompactAndResubmit,
-    /// Auth recovery succeeded; the outer loop should retry once.
+    /// Auth recovery succeeded; the outer loop should retry (xAI schedule).
     RefreshAuthAndResubmit,
+    /// Multi-provider recovery; outer loop allows **one** resubmit only.
+    RefreshMultiProviderAuthOnce,
 }
 
 /// Outcome of `process_conversation_turn`, distinguishing normal completion from cancellation.

@@ -15,6 +15,16 @@ default-run = "xai-grok-pager"
 name = "xai-grok-pager"
 path = "src/main.rs"
 
+# Grok OSS public CLI entry (same main as xai-grok-pager).
+[[bin]]
+name = "grok-oss"
+path = "src/main.rs"
+
+# Legacy Goblin alias (same main); prefer `grok-oss` for new installs.
+[[bin]]
+name = "goblin"
+path = "src/main.rs"
+
 [dependencies]
 # The pager library (all application logic + the public API main.rs drives).
 xai-grok-pager = { path = "../xai-grok-pager" }
@@ -23,10 +33,14 @@ xai-grok-pager-minimal = { path = "../xai-grok-pager-minimal" }
 
 # Agent runtime + leader/stdio/headless entry points.
 xai-grok-shell = { workspace = true }
+xai-grok-auth = { workspace = true }
+xai-grok-multi-auth = { workspace = true }
 xai-grok-update = { path = "../xai-grok-update" }
 xai-grok-version = { workspace = true }
 xai-grok-telemetry = { workspace = true }
 xai-grok-workspace = { workspace = true }
+dirs = { workspace = true }
+webbrowser = { workspace = true }
 xai-crash-handler = { path = "../xai-crash-handler" }
 xai-acp-lib = { workspace = true }
 

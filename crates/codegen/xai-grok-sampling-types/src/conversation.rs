@@ -34,6 +34,13 @@ pub enum ConversationItem {
     Assistant(AssistantItem),
     /// Tool/function result
     ToolResult(ToolResultItem),
+    /// Client-executable function call as a **wire sibling** (AUD-003).
+    ///
+    /// Stored in emission order between assistant messages (e.g.
+    /// commentary → FC → final_answer) so resend preserves prefix order for
+    /// prompt cache. UI consumers may still see a projected copy on the
+    /// preceding [`AssistantItem::tool_calls`].
+    FunctionCall(ToolCall),
     /// A tool call executed server-side by the backend agentic sampler
     /// (e.g. web search, X search, code interpreter). These are NOT
     /// executed by the client — the server already ran them and fed
@@ -55,6 +62,19 @@ pub enum ConversationItem {
     /// wrapping `rs::WebSearchToolCall` etc.) so no field is dropped on the
     /// way through.
     Reasoning(rs::ReasoningItem),
+    /// Wire item we cannot map to a typed sibling but must not drop silently
+    /// (AUD-003): either round-trip via typed Input when known, or fail
+    /// explicit on resend. Payload is the serialized Responses output item.
+    OpaqueWire(OpaqueWireItem),
+}
+
+/// Opaque Responses output item preserved for resend fidelity (AUD-003).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OpaqueWireItem {
+    /// Discriminator from the wire (`type` field), e.g. `"mcp_call"`.
+    pub type_name: String,
+    /// Full serialized output item JSON (for diagnostics / future typed map).
+    pub payload: serde_json::Value,
 }
 
 /// System message content
@@ -220,6 +240,40 @@ pub struct UserItem {
     pub prompt_index: Option<usize>,
 }
 
+/// OpenResponses / Codex assistant message phase.
+///
+/// Wire field `phase` on assistant messages (`commentary` = intermediate
+/// narrative during agentic work; `final_answer` = user-visible conclusion).
+/// Must be preserved and resent on follow-up turns for gpt-5.3-codex+.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AssistantPhase {
+    Commentary,
+    FinalAnswer,
+}
+
+impl AssistantPhase {
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "commentary" => Some(Self::Commentary),
+            "final_answer" => Some(Self::FinalAnswer),
+            _ => None,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Commentary => "commentary",
+            Self::FinalAnswer => "final_answer",
+        }
+    }
+
+    /// Commentary is intermediate narration — route like reasoning thoughts in the UI.
+    pub fn is_commentary(self) -> bool {
+        matches!(self, Self::Commentary)
+    }
+}
+
 /// Assistant response with tool calls.
 ///
 /// Reasoning items, when present, sit beside this item as
@@ -229,6 +283,10 @@ pub struct UserItem {
 /// interleaved order the model emits. Old sessions on disk may still carry
 /// a `reasoning` field; serde silently ignores it on read (no
 /// `deny_unknown_fields`).
+///
+/// Codex may emit **multiple** assistant messages in one response (e.g.
+/// `phase=commentary` then `phase=final_answer`). Prefer one
+/// [`ConversationItem::Assistant`] per wire message — do not collapse them.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AssistantItem {
     /// Text content of the response
@@ -253,6 +311,12 @@ pub struct AssistantItem {
     /// backends that don't echo it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reasoning_effort: Option<crate::ReasoningEffort>,
+    /// OpenResponses/Codex `phase` when known (`commentary` | `final_answer`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub phase: Option<AssistantPhase>,
+    /// Wire message id (`msg_…`) when known — used to attach `phase` from SSE.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub message_id: Option<String>,
 }
 
 /// Tool result message
@@ -291,6 +355,7 @@ impl BackendToolCallItem {
             BackendToolKind::WebSearch(ws) => ws.id.as_str(),
             BackendToolKind::XSearch(ct) => ct.id.as_str(),
             BackendToolKind::CodeInterpreter(ci) => ci.id.as_str(),
+            BackendToolKind::Mcp(m) => m.id.as_str(),
         }
     }
 
@@ -327,6 +392,9 @@ impl BackendToolCallItem {
                     .unwrap_or_default();
                 format!("[backend code_interpreter] {code_preview}")
             }
+            BackendToolKind::Mcp(m) => {
+                format!("[backend mcp] {}/{}({})", m.server_label, m.name, m.arguments)
+            }
         }
     }
 }
@@ -344,6 +412,8 @@ pub enum BackendToolKind {
     XSearch(rs::CustomToolCall),
     /// Server-side code interpreter execution.
     CodeInterpreter(rs::CodeInterpreterToolCall),
+    /// Server-side MCP tool invocation (round-trip via `Item::McpCall`).
+    Mcp(rs::MCPToolCall),
 }
 
 // ============================================================================
@@ -546,6 +616,9 @@ pub struct ConversationRequest {
     pub reasoning_effort: Option<crate::ReasoningEffort>,
     /// JSON Schema for structured output (strict mode).
     pub json_schema: Option<serde_json::Value>,
+    /// Stable OpenResponses / Codex `prompt_cache_key` for provider-managed
+    /// prefix cache. Same session → same key across turns (never per-turn random).
+    pub prompt_cache_key: Option<String>,
 }
 
 impl ConversationRequest {
@@ -1059,7 +1132,10 @@ impl ConversationItem {
             model_id: None,
             model_fingerprint: None,
             reasoning_effort: None,
-        })
+
+            phase: None,
+            message_id: None,
+})
     }
 
     /// Create an assistant message with a model ID.
@@ -1074,7 +1150,10 @@ impl ConversationItem {
             model_id: Some(model_id.into()),
             model_fingerprint: None,
             reasoning_effort: None,
-        })
+
+            phase: None,
+            message_id: None,
+})
     }
 
     /// Create an assistant message that makes tool calls
@@ -1085,7 +1164,10 @@ impl ConversationItem {
             model_id: None,
             model_fingerprint: None,
             reasoning_effort: None,
-        })
+
+            phase: None,
+            message_id: None,
+})
     }
 
     /// Create a tool result message
@@ -1120,9 +1202,11 @@ impl ConversationItem {
             Self::User(_) => Role::User,
             Self::Assistant(_) => Role::Assistant,
             Self::ToolResult(_) => Role::Tool,
+            Self::FunctionCall(_) => Role::Assistant,
             Self::BackendToolCall(_) => Role::Assistant,
             // Reasoning is semantically part of the assistant's turn.
             Self::Reasoning(_) => Role::Assistant,
+            Self::OpaqueWire(_) => Role::Assistant,
         }
     }
 
@@ -1150,8 +1234,10 @@ impl ConversationItem {
                 .join("\n"),
             Self::Assistant(a) => a.content.as_ref().to_owned(),
             Self::ToolResult(t) => t.content.as_ref().to_owned(),
+            Self::FunctionCall(tc) => format!("{}({})", tc.name, tc.arguments),
             Self::BackendToolCall(b) => b.text_summary(),
             Self::Reasoning(r) => reasoning_item_text(r),
+            Self::OpaqueWire(o) => format!("[opaque wire {}]", o.type_name),
         }
     }
 }
@@ -1295,6 +1381,36 @@ pub fn synthesized_reasoning_item(text: impl Into<String>) -> rs::ReasoningItem 
 ///   a `SummaryText` part to it (avoids introducing a phantom sibling).
 /// - Otherwise, insert a new `Reasoning(synthesized_reasoning_item(text))`
 ///   immediately before the trailing `Assistant`.
+/// When the final Responses `output` array is empty (ChatGPT Codex quirk) but
+/// stream deltas delivered assistant text, fill the trailing Assistant item
+/// so empty-response retry does not fire.
+pub fn inject_streaming_text_fallback(items: &mut Vec<ConversationItem>, text: String) {
+    let text = text.trim();
+    if text.is_empty() {
+        return;
+    }
+    if let Some(ConversationItem::Assistant(a)) = items
+        .iter_mut()
+        .rev()
+        .find(|i| matches!(i, ConversationItem::Assistant(_)))
+    {
+        if a.content.is_empty() {
+            a.content = Arc::<str>::from(text);
+        }
+        return;
+    }
+    items.push(ConversationItem::Assistant(AssistantItem {
+        content: Arc::<str>::from(text),
+        tool_calls: Vec::new(),
+        model_id: None,
+        model_fingerprint: None,
+        reasoning_effort: None,
+
+        phase: None,
+        message_id: None,
+}));
+}
+
 pub fn inject_streaming_reasoning_fallback(items: &mut Vec<ConversationItem>, text: String) {
     if text.is_empty() {
         return;
@@ -1596,7 +1712,10 @@ impl From<ChatRequestMessage> for ConversationItem {
                     model_id,
                     model_fingerprint: None,
                     reasoning_effort: None,
-                })
+
+                    phase: None,
+                    message_id: None,
+})
             }
             Role::Tool => {
                 let content = msg.text_content();
@@ -1801,6 +1920,27 @@ pub fn conversation_item_to_chat_message(item: ConversationItem) -> ChatRequestM
             model_id: None,
             reasoning_content: None,
         },
+        ConversationItem::FunctionCall(tc) => ChatRequestMessage {
+            role: Role::Assistant,
+            content: MessageContent::Text(String::new()),
+            name: None,
+            tool_calls: vec![
+                ToolCallRequest::function(tc.name.clone(), tc.arguments.as_ref())
+                    .with_id(tc.id.as_ref()),
+            ],
+            tool_call_id: None,
+            model_id: None,
+            reasoning_content: None,
+        },
+        ConversationItem::OpaqueWire(o) => ChatRequestMessage {
+            role: Role::Assistant,
+            content: MessageContent::Text(format!("[opaque wire {}]", o.type_name)),
+            name: None,
+            tool_calls: Vec::new(),
+            tool_call_id: None,
+            model_id: None,
+            reasoning_content: None,
+        },
         // Unreachable: `conversation_to_chat_messages` (the only caller)
         // folds `Reasoning` siblings into the following assistant and
         // never passes one to this function.
@@ -1904,7 +2044,10 @@ impl From<ChatResponseMessage> for ConversationItem {
             model_id: None,
             model_fingerprint: None,
             reasoning_effort: None,
-        })
+
+            phase: None,
+            message_id: None,
+})
     }
 }
 
@@ -1916,15 +2059,29 @@ impl From<ChatResponseMessage> for ConversationItem {
 /// `ConversationItem`s, mirroring the shape of `response.output`.
 ///
 /// Returns the items in the **exact order they were emitted** by the model:
-/// interleaved `Reasoning`, `BackendToolCall`, and finally a single
-/// `Assistant` item carrying accumulated text + client-executable
-/// `FunctionCall`s. Byte-stable replay of this ordering on the next turn
-/// is what keeps the server-side prefix KV-cache hot.
+/// interleaved `Reasoning`, `BackendToolCall`, **one `Assistant` per wire
+/// message**, and client-executable [`ConversationItem::FunctionCall`]
+/// siblings (Codex may emit commentary → FC → final_answer). FC is also
+/// projected onto the preceding assistant's `tool_calls` for UI / tool
+/// execution; resend prefers sibling order when FunctionCall items exist.
 ///
 /// All N parallel `tco_*` reasoning items from a single response round-trip
 /// losslessly as N sibling `Reasoning` items — there is no longer a
 /// last-write-wins `Option<ReasoningContent>` collapse on the assistant.
+///
+/// Note: `async-openai` drops wire `phase`; call
+/// [`apply_assistant_phases`] with a side-channel map from SSE JSON.
 pub fn response_to_conversation_items(response: rs::Response) -> Vec<ConversationItem> {
+    response_to_conversation_items_with_phases(response, &std::collections::HashMap::new())
+}
+
+/// Like [`response_to_conversation_items`], but attaches `phase` from a
+/// `message_id → phase` map captured from raw SSE (typed OutputMessage
+/// cannot carry `phase`).
+pub fn response_to_conversation_items_with_phases(
+    response: rs::Response,
+    phases_by_message_id: &std::collections::HashMap<String, AssistantPhase>,
+) -> Vec<ConversationItem> {
     let model_id = response.model.clone();
     let model_fingerprint = response
         .metadata
@@ -1932,8 +2089,6 @@ pub fn response_to_conversation_items(response: rs::Response) -> Vec<Conversatio
         .and_then(|m| m.get("system_fingerprint"))
         .cloned()
         .filter(|s| !s.is_empty());
-    // The server echoes the applied reasoning config; record the effort with
-    // the same per-response provenance as `model`/`system_fingerprint`.
     let reasoning_effort = response
         .reasoning
         .as_ref()
@@ -1941,15 +2096,13 @@ pub fn response_to_conversation_items(response: rs::Response) -> Vec<Conversatio
         .map(crate::ReasoningEffort::from_responses_api);
 
     let mut items: Vec<ConversationItem> = Vec::with_capacity(response.output.len() + 1);
-    let mut content = String::new();
-    let mut tool_calls: Vec<ToolCall> = Vec::new();
     let mut backend_tool_count: usize = 0;
+    let mut saw_assistant = false;
 
     for item in response.output {
         match item {
             rs::OutputItem::Message(msg) => {
-                // Accumulate output text into the trailing Assistant item;
-                // there is at most one Message per response in practice.
+                let mut content = String::new();
                 for content_part in msg.content {
                     if let rs::OutputMessageContent::OutputText(text_content) = content_part {
                         if !content.is_empty() {
@@ -1958,28 +2111,60 @@ pub fn response_to_conversation_items(response: rs::Response) -> Vec<Conversatio
                         content.push_str(&text_content.text);
                     }
                 }
+                let message_id = if msg.id.is_empty() {
+                    None
+                } else {
+                    Some(msg.id.clone())
+                };
+                let phase = message_id
+                    .as_ref()
+                    .and_then(|id| phases_by_message_id.get(id).copied());
+                items.push(ConversationItem::Assistant(AssistantItem {
+                    content: Arc::<str>::from(content),
+                    tool_calls: Vec::new(),
+                    model_id: Some(model_id.clone()),
+                    model_fingerprint: model_fingerprint.clone(),
+                    reasoning_effort,
+                    phase,
+                    message_id,
+                }));
+                saw_assistant = true;
             }
             rs::OutputItem::FunctionCall(fc) => {
-                // Client-side tool calls aggregate into the trailing
-                // Assistant item — they are NOT separate siblings because
-                // their lifecycle is tied to the assistant turn (a
-                // ToolResult must follow each one in conversation order).
-                tool_calls.push(ToolCall {
+                let tc = ToolCall {
                     id: Arc::<str>::from(fc.call_id),
                     name: fc.name,
                     arguments: Arc::<str>::from(fc.arguments),
-                });
+                };
+                // Ensure an assistant exists so UI can project tool_calls.
+                if !items
+                    .iter()
+                    .any(|i| matches!(i, ConversationItem::Assistant(_)))
+                {
+                    items.push(ConversationItem::Assistant(AssistantItem {
+                        content: Arc::<str>::from(""),
+                        tool_calls: Vec::new(),
+                        model_id: Some(model_id.clone()),
+                        model_fingerprint: model_fingerprint.clone(),
+                        reasoning_effort,
+                        phase: None,
+                        message_id: None,
+                    }));
+                    saw_assistant = true;
+                }
+                if let Some(ConversationItem::Assistant(a)) = items
+                    .iter_mut()
+                    .rev()
+                    .find(|i| matches!(i, ConversationItem::Assistant(_)))
+                {
+                    a.tool_calls.push(tc.clone());
+                }
+                // Wire sibling preserves commentary → FC → final order (AUD-003).
+                items.push(ConversationItem::FunctionCall(tc));
             }
             rs::OutputItem::Reasoning(r) => {
-                // Each reasoning item — real `rs_*` from the model and
-                // `tco_*` encrypted blobs from parallel backend tool
-                // calls — is emitted as its own sibling, preserving order.
                 items.push(ConversationItem::Reasoning(r));
             }
-            // Backend-executed tools: the server already ran these and
-            // fed results into the model's context. We capture them as
-            // BackendToolCall siblings so they're persisted and sent back
-            // on subsequent turns for context continuity.
             rs::OutputItem::WebSearchCall(ws) => {
                 backend_tool_count += 1;
                 items.push(ConversationItem::BackendToolCall(BackendToolCallItem {
@@ -1998,10 +2183,28 @@ pub fn response_to_conversation_items(response: rs::Response) -> Vec<Conversatio
                     kind: BackendToolKind::CodeInterpreter(ci),
                 }));
             }
-            rs::OutputItem::McpCall(_) => {
+            rs::OutputItem::McpCall(mcp) => {
                 backend_tool_count += 1;
+                items.push(ConversationItem::BackendToolCall(BackendToolCallItem {
+                    kind: BackendToolKind::Mcp(mcp),
+                }));
             }
-            _ => {}
+            other => {
+                // Opaque preserve for unknown variants (AUD-003: no silent drop).
+                backend_tool_count += 1;
+                let type_name = output_item_type_name(&other);
+                let payload = serde_json::to_value(&other).unwrap_or_else(|_| {
+                    serde_json::json!({ "type": type_name, "unserializable": true })
+                });
+                tracing::warn!(
+                    type_name = %type_name,
+                    "preserving unknown Responses output item as OpaqueWire"
+                );
+                items.push(ConversationItem::OpaqueWire(OpaqueWireItem {
+                    type_name,
+                    payload,
+                }));
+            }
         }
     }
 
@@ -2012,16 +2215,331 @@ pub fn response_to_conversation_items(response: rs::Response) -> Vec<Conversatio
         );
     }
 
-    tracing::info!(model_id = %model_id, ?model_fingerprint, ?reasoning_effort, "response_to_conversation_items setting model metadata on AssistantItem");
-    items.push(ConversationItem::Assistant(AssistantItem {
-        content: Arc::<str>::from(content),
-        tool_calls,
-        model_id: Some(model_id),
-        model_fingerprint,
-        reasoning_effort,
-    }));
+    // Preserve prior behavior for empty output: still emit a trailing empty
+    // assistant so text/reasoning fallbacks have an anchor.
+    if !saw_assistant {
+        items.push(ConversationItem::Assistant(AssistantItem {
+            content: Arc::<str>::from(""),
+            tool_calls: Vec::new(),
+            model_id: Some(model_id),
+            model_fingerprint,
+            reasoning_effort,
+            phase: None,
+            message_id: None,
+        }));
+    }
 
     items
+}
+
+/// Best-effort `type` label for an OutputItem (for OpaqueWire).
+fn output_item_type_name(item: &rs::OutputItem) -> String {
+    match item {
+        rs::OutputItem::Message(_) => "message".into(),
+        rs::OutputItem::FunctionCall(_) => "function_call".into(),
+        rs::OutputItem::Reasoning(_) => "reasoning".into(),
+        rs::OutputItem::WebSearchCall(_) => "web_search_call".into(),
+        rs::OutputItem::CustomToolCall(_) => "custom_tool_call".into(),
+        rs::OutputItem::CodeInterpreterCall(_) => "code_interpreter_call".into(),
+        rs::OutputItem::McpCall(_) => "mcp_call".into(),
+        rs::OutputItem::FileSearchCall(_) => "file_search_call".into(),
+        rs::OutputItem::ImageGenerationCall(_) => "image_generation_call".into(),
+        rs::OutputItem::Compaction(_) => "compaction".into(),
+        _ => "unknown".into(),
+    }
+}
+
+/// Apply phases captured from raw SSE onto assistant items that still lack
+/// `phase` (matched by `message_id`).
+pub fn apply_assistant_phases(
+    items: &mut [ConversationItem],
+    phases_by_message_id: &std::collections::HashMap<String, AssistantPhase>,
+) {
+    if phases_by_message_id.is_empty() {
+        return;
+    }
+    for item in items.iter_mut() {
+        if let ConversationItem::Assistant(a) = item {
+            if a.phase.is_none()
+                && let Some(id) = a.message_id.as_ref()
+                && let Some(phase) = phases_by_message_id.get(id)
+            {
+                a.phase = Some(*phase);
+            }
+        }
+    }
+}
+
+/// Extract `(message_id, phase)` from a raw output-item JSON object
+/// (e.g. the `item` field of `response.output_item.done`).
+///
+/// Used because `async-openai::OutputMessage` has no `phase` field.
+pub fn extract_phase_from_output_item_json(
+    item: &serde_json::Value,
+) -> Option<(String, AssistantPhase)> {
+    let ty = item.get("type").and_then(|v| v.as_str())?;
+    if ty != "message" {
+        return None;
+    }
+    let id = item.get("id").and_then(|v| v.as_str())?.to_string();
+    if id.is_empty() {
+        return None;
+    }
+    let phase_str = item.get("phase").and_then(|v| v.as_str())?;
+    let phase = AssistantPhase::parse(phase_str)?;
+    Some((id, phase))
+}
+
+/// Opaque, stable per-session `prompt_cache_key` for **Codex** affinity
+/// (provider-managed cache; key is a routing hint only).
+///
+/// - Never embeds raw session/credential ids (AUD-004).
+/// - Returns `None` when identity is missing — **no** global `anonymous` key.
+/// - Same inputs always yield the same key (stable across turns).
+///
+/// Prefer [`derive_prompt_cache_key_with_binding`] when provider + credential
+/// are known so affinity is account-scoped (PC6 / remediation 1.5).
+pub fn derive_prompt_cache_key(
+    session_id: Option<&str>,
+    conversation_id: Option<&str>,
+    fallback_seed: Option<&str>,
+) -> Option<String> {
+    derive_prompt_cache_key_with_binding(
+        "goblin",
+        None,
+        None,
+        session_id,
+        conversation_id,
+        fallback_seed,
+    )
+}
+
+/// Like [`derive_prompt_cache_key`] with an explicit namespace (e.g. product id).
+pub fn derive_prompt_cache_key_with_namespace(
+    namespace: &str,
+    session_id: Option<&str>,
+    conversation_id: Option<&str>,
+    fallback_seed: Option<&str>,
+) -> Option<String> {
+    derive_prompt_cache_key_with_binding(
+        namespace,
+        None,
+        None,
+        session_id,
+        conversation_id,
+        fallback_seed,
+    )
+}
+
+/// Account-scoped opaque key: hashes
+/// `(namespace, provider_id, credential_id, session, conv, seed)`.
+///
+/// Provider/credential are included in the **hash material only** — never
+/// written in cleartext on the wire. Missing provider/credential still
+/// produces a key when session/conv/seed is present (backward compatible).
+pub fn derive_prompt_cache_key_with_binding(
+    namespace: &str,
+    provider_id: Option<&str>,
+    credential_id: Option<&str>,
+    session_id: Option<&str>,
+    conversation_id: Option<&str>,
+    fallback_seed: Option<&str>,
+) -> Option<String> {
+    let session = session_id.map(str::trim).filter(|s| !s.is_empty());
+    let conv = conversation_id.map(str::trim).filter(|c| !c.is_empty());
+    let seed = fallback_seed.map(str::trim).filter(|f| !f.is_empty());
+    let provider = provider_id.map(str::trim).filter(|p| !p.is_empty()).unwrap_or("");
+    let credential = credential_id
+        .map(str::trim)
+        .filter(|c| !c.is_empty())
+        .unwrap_or("");
+    // Prefer session, then conv, then seed. Require at least one identity axis.
+    let material = match (session, conv, seed) {
+        (Some(s), c, f) => format!(
+            "{namespace}|prov={provider}|cred={credential}|sess|{s}|conv={}|seed={}",
+            c.unwrap_or(""),
+            f.unwrap_or("")
+        ),
+        (None, Some(c), f) => format!(
+            "{namespace}|prov={provider}|cred={credential}|conv|{c}|seed={}",
+            f.unwrap_or("")
+        ),
+        (None, None, Some(f)) => {
+            format!("{namespace}|prov={provider}|cred={credential}|seed|{f}")
+        }
+        (None, None, None) => return None,
+    };
+    use sha2::{Digest, Sha256};
+    let digest = Sha256::digest(material.as_bytes());
+    // Fixed prefix + hex digest (opaque; not reversible to raw ids).
+    Some(format!("gpc_{}", hex::encode(digest)))
+}
+
+/// Redacted form for logs (first 8 hex chars of the opaque key after `gpc_`).
+pub fn prompt_cache_key_log_label(key: &str) -> String {
+    let body = key.strip_prefix("gpc_").unwrap_or(key);
+    let short: String = body.chars().take(8).collect();
+    format!("gpc_{short}…")
+}
+
+/// Ensure `prompt_cache_key` when missing. **Does not invent a global key.**
+///
+/// Prefer [`ensure_prompt_cache_key_for_codex`] so non-Codex backends are not
+/// forced to receive the field (AUD-005).
+pub fn ensure_prompt_cache_key(req: &mut ConversationRequest) {
+    if req
+        .prompt_cache_key
+        .as_ref()
+        .map(|s| !s.is_empty())
+        .unwrap_or(false)
+    {
+        return;
+    }
+    req.prompt_cache_key = derive_prompt_cache_key(
+        req.x_grok_session_id.as_deref(),
+        req.x_grok_conv_id.as_deref(),
+        req.x_grok_agent_id.as_deref(),
+    );
+}
+
+/// Codex-only: set opaque key when identity is present; leave unset otherwise.
+pub fn ensure_prompt_cache_key_for_codex(req: &mut ConversationRequest) {
+    ensure_prompt_cache_key(req);
+}
+
+/// Codex-only with account binding (provider + opaque credential id).
+///
+/// Use at the shell/sampler boundary that owns [`ModelBinding`] so affinity
+/// differs across credentials even for the same session id.
+pub fn ensure_prompt_cache_key_for_codex_with_binding(
+    req: &mut ConversationRequest,
+    provider_id: Option<&str>,
+    credential_id: Option<&str>,
+) {
+    if req
+        .prompt_cache_key
+        .as_ref()
+        .map(|s| !s.is_empty())
+        .unwrap_or(false)
+    {
+        return;
+    }
+    req.prompt_cache_key = derive_prompt_cache_key_with_binding(
+        "goblin",
+        provider_id,
+        credential_id,
+        req.x_grok_session_id.as_deref(),
+        req.x_grok_conv_id.as_deref(),
+        req.x_grok_agent_id.as_deref(),
+    );
+}
+
+/// Patch serialized CreateResponse JSON: inject assistant `phase` fields
+/// that typed EasyInputMessage cannot carry.
+///
+/// **1:1 correlation (AUD-001):** each source `Assistant` maps to the next
+/// serialized assistant wire item in order. `phase=None` slots are preserved
+/// (no field written) so a later `commentary` is not slid onto an earlier
+/// unphased message.
+pub fn patch_assistant_phases_on_request_body(
+    body: &mut serde_json::Value,
+    items: &[ConversationItem],
+) {
+    // Keep Option slots — do not filter_map away None (that caused mis-correlation).
+    let phases: Vec<Option<AssistantPhase>> = items
+        .iter()
+        .filter_map(|i| match i {
+            ConversationItem::Assistant(a) => Some(a.phase),
+            _ => None,
+        })
+        .collect();
+    if phases.is_empty() {
+        return;
+    }
+    let Some(input) = body.get_mut("input").and_then(|v| v.as_array_mut()) else {
+        return;
+    };
+    let mut phase_idx = 0usize;
+    for entry in input.iter_mut() {
+        if phase_idx >= phases.len() {
+            break;
+        }
+        let role = entry.get("role").and_then(|v| v.as_str());
+        let is_assistant = role == Some("assistant")
+            || (entry.get("type").and_then(|v| v.as_str()) == Some("message")
+                && role == Some("assistant"));
+        if is_assistant {
+            if let Some(phase) = phases[phase_idx] {
+                if let Some(obj) = entry.as_object_mut() {
+                    obj.insert("phase".into(), serde_json::json!(phase.as_str()));
+                }
+            }
+            // phase=None: leave wire entry without phase field
+            phase_idx += 1;
+        }
+    }
+}
+
+/// Materialize `output[]` by merging completed snapshot with stream items
+/// keyed by `output_index` (AUD-002).
+///
+/// - Prefer non-empty stream map entries when present for an index.
+/// - Prefer completed items when stream has no entry for that index.
+/// - Length-only selection is insufficient when completed is a partial snapshot.
+pub fn materialize_response_output(
+    completed_output: Vec<rs::OutputItem>,
+    streamed_by_index: &std::collections::BTreeMap<u32, rs::OutputItem>,
+) -> Vec<rs::OutputItem> {
+    if streamed_by_index.is_empty() {
+        return completed_output;
+    }
+    if completed_output.is_empty() {
+        return streamed_by_index.values().cloned().collect();
+    }
+
+    let max_stream = *streamed_by_index.keys().max().unwrap_or(&0);
+    let max_idx = max_stream.max((completed_output.len().saturating_sub(1)) as u32);
+    let mut out = Vec::with_capacity((max_idx as usize) + 1);
+    for i in 0..=max_idx {
+        if let Some(streamed) = streamed_by_index.get(&i) {
+            out.push(streamed.clone());
+        } else if let Some(completed) = completed_output.get(i as usize) {
+            out.push(completed.clone());
+        }
+    }
+    if out.is_empty() {
+        return completed_output;
+    }
+    out
+}
+
+/// Merge a function-call arguments delta into a streamed FunctionCall item
+/// at `output_index` (AUD-002). No-op if the index is not a FunctionCall.
+pub fn append_function_call_arguments_delta(
+    streamed_by_index: &mut std::collections::BTreeMap<u32, rs::OutputItem>,
+    output_index: u32,
+    delta: &str,
+) {
+    if delta.is_empty() {
+        return;
+    }
+    if let Some(rs::OutputItem::FunctionCall(fc)) = streamed_by_index.get_mut(&output_index) {
+        fc.arguments.push_str(delta);
+    }
+}
+
+/// Apply final arguments from `function_call_arguments.done` when present.
+pub fn set_function_call_arguments_done(
+    streamed_by_index: &mut std::collections::BTreeMap<u32, rs::OutputItem>,
+    output_index: u32,
+    arguments: String,
+) {
+    if let Some(rs::OutputItem::FunctionCall(fc)) = streamed_by_index.get_mut(&output_index) {
+        // Prefer the complete done payload when non-empty.
+        if !arguments.is_empty() {
+            fc.arguments = arguments;
+        }
+    }
 }
 
 // ============================================================================
@@ -2101,86 +2619,341 @@ impl From<ConversationRequest> for ChatCompletionRequest {
 // Conversion: ConversationRequest -> CreateResponse (Responses API)
 // ============================================================================
 
+/// Production-safe conversion: fallible (no panic on unmapped OpaqueWire).
+///
+/// Sampler production paths must call this instead of `From` / `into()`.
+pub fn try_create_response_from_conversation(
+    req: &ConversationRequest,
+) -> Result<rs::CreateResponse, String> {
+    let input = try_build_responses_input(req)?;
+    Ok(create_response_from_parts(req, input))
+}
+
 impl From<&ConversationRequest> for rs::CreateResponse {
     fn from(req: &ConversationRequest) -> Self {
-        let input = build_responses_input(req);
-        let tools = build_responses_tools(req);
+        // Prefer try_create_response_from_conversation in production paths.
+        // From remains for tests/legacy; panics only if callers ignore the fallible API.
+        match try_create_response_from_conversation(req) {
+            Ok(r) => r,
+            Err(e) => panic!(
+                "responses CreateResponse convert failed (use try_create_response_from_conversation): {e}"
+            ),
+        }
+    }
+}
 
-        let tool_choice = req.tool_choice.as_ref().map(|tc| match tc {
-            ConversationToolChoice::Auto => rs::ToolChoiceParam::Mode(rs::ToolChoiceOptions::Auto),
-            ConversationToolChoice::None => rs::ToolChoiceParam::Mode(rs::ToolChoiceOptions::None),
-            ConversationToolChoice::Required => {
-                rs::ToolChoiceParam::Mode(rs::ToolChoiceOptions::Required)
-            }
-            ConversationToolChoice::Function(name) => {
-                rs::ToolChoiceParam::Function(rs::ToolChoiceFunction { name: name.clone() })
-            }
+fn create_response_from_parts(
+    req: &ConversationRequest,
+    input: rs::InputParam,
+) -> rs::CreateResponse {
+    let tools = build_responses_tools(req);
+
+    let tool_choice = req.tool_choice.as_ref().map(|tc| match tc {
+        ConversationToolChoice::Auto => rs::ToolChoiceParam::Mode(rs::ToolChoiceOptions::Auto),
+        ConversationToolChoice::None => rs::ToolChoiceParam::Mode(rs::ToolChoiceOptions::None),
+        ConversationToolChoice::Required => {
+            rs::ToolChoiceParam::Mode(rs::ToolChoiceOptions::Required)
+        }
+        ConversationToolChoice::Function(name) => {
+            rs::ToolChoiceParam::Function(rs::ToolChoiceFunction { name: name.clone() })
+        }
+    });
+
+    let text = req
+        .json_schema
+        .as_ref()
+        .map(|schema| rs::ResponseTextParam {
+            format: rs::TextResponseFormatConfiguration::JsonSchema(
+                rs::ResponseFormatJsonSchema {
+                    description: None,
+                    name: STRUCTURED_OUTPUT_SCHEMA_NAME.to_string(),
+                    schema: Some(schema.clone()),
+                    strict: Some(true),
+                },
+            ),
+            verbosity: None,
         });
 
-        let text = req
-            .json_schema
-            .as_ref()
-            .map(|schema| rs::ResponseTextParam {
-                format: rs::TextResponseFormatConfiguration::JsonSchema(
-                    rs::ResponseFormatJsonSchema {
-                        description: None,
-                        name: STRUCTURED_OUTPUT_SCHEMA_NAME.to_string(),
-                        schema: Some(schema.clone()),
-                        strict: Some(true),
-                    },
-                ),
-                verbosity: None,
-            });
-
-        rs::CreateResponse {
-            background: None,
-            conversation: None,
-            include: None,
-            input,
-            instructions: None,
-            max_output_tokens: req.max_output_tokens,
-            max_tool_calls: None,
-            metadata: None,
-            model: req.model.clone(),
-            parallel_tool_calls: None,
-            previous_response_id: None,
-            prompt: None,
-            prompt_cache_key: None,
-            prompt_cache_retention: None,
-            reasoning: Some(rs::Reasoning {
-                effort: req.reasoning_effort.map(|e| e.to_responses_api()),
-                summary: Some(rs::ReasoningSummary::Concise),
-            }),
-            safety_identifier: None,
-            service_tier: None,
-            store: None,
-            stream: None,
-            stream_options: None,
-            temperature: req.temperature,
-            text,
-            tool_choice,
-            tools: if tools.is_empty() { None } else { Some(tools) },
-            top_logprobs: None,
-            top_p: req.top_p,
-            truncation: None,
-        }
+    rs::CreateResponse {
+        background: None,
+        conversation: None,
+        include: None,
+        input,
+        instructions: None,
+        max_output_tokens: req.max_output_tokens,
+        max_tool_calls: None,
+        metadata: None,
+        model: req.model.clone(),
+        parallel_tool_calls: None,
+        previous_response_id: None,
+        prompt: None,
+        prompt_cache_key: req.prompt_cache_key.clone(),
+        // Codex rejects unknown retention policies; omit by default.
+        prompt_cache_retention: None,
+        reasoning: Some(rs::Reasoning {
+            effort: req.reasoning_effort.map(|e| e.to_responses_api()),
+            summary: Some(rs::ReasoningSummary::Concise),
+        }),
+        safety_identifier: None,
+        service_tier: None,
+        store: None,
+        stream: None,
+        stream_options: None,
+        temperature: req.temperature,
+        text,
+        tool_choice,
+        tools: if tools.is_empty() { None } else { Some(tools) },
+        top_logprobs: None,
+        top_p: req.top_p,
+        truncation: None,
     }
 }
 
 /// Build the [`rs::InputParam`] for a Responses API request.
 ///
-/// Conversion is a straight 1:1 map: each [`ConversationItem`] becomes its
-/// natural Responses-API input shape via [`conversation_item_to_input_items`].
-/// Reasoning items are top-level siblings (not bundled into the assistant),
-/// so they appear inline in the same order the model originally emitted —
-/// which is what lets the server-side prefix KV-cache hit on repeat turns.
+/// Uses [`conversation_items_to_responses_input`] so FunctionCall siblings keep
+/// wire order and unmapped [`ConversationItem::OpaqueWire`] is **never**
+/// silently dropped (AUD-003). Failures panic: `From<&ConversationRequest>`
+/// cannot return `Result`; callers that need soft handling use
+/// [`try_build_responses_input`].
 fn build_responses_input(req: &ConversationRequest) -> rs::InputParam {
-    let items: Vec<rs::InputItem> = req
-        .items
-        .iter()
-        .flat_map(conversation_item_to_input_items)
-        .collect();
-    rs::InputParam::Items(items)
+    match try_build_responses_input(req) {
+        Ok(param) => param,
+        Err(e) => panic!(
+            "responses input convert failed (AUD-003 fail-loud, no silent drop): {e}"
+        ),
+    }
+}
+
+/// Fallible Responses input build (AUD-003).
+///
+/// Returns `Err` when history contains unmapped opaque wire items that cannot
+/// be resent. Does **not** filter them out.
+pub fn try_build_responses_input(req: &ConversationRequest) -> Result<rs::InputParam, String> {
+    conversation_items_to_responses_input(&req.items).map(rs::InputParam::Items)
+}
+
+/// Hints for classifying a Responses backend as ChatGPT Codex (AUD-011).
+///
+/// Prefer binding/capability identity when present; URL is last-resort only.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct CodexBackendHints<'a> {
+    pub base_url: &'a str,
+    /// Multi-provider provider id (e.g. `"codex"`).
+    pub provider_id: Option<&'a str>,
+    /// True when a multi-provider session pin is for Codex.
+    pub multi_provider_codex_pin: bool,
+    /// True when the model catalog advertised a `codex` capability.
+    pub capability_codex: bool,
+}
+
+/// Whether the request targets the ChatGPT Codex Responses backend.
+///
+/// Order (AUD-011): multi-provider pin → provider_id → catalog capability →
+/// URL substring last-resort (`chatgpt.com` / `/codex`).
+pub fn classify_codex_responses_backend(hints: &CodexBackendHints<'_>) -> bool {
+    if hints.multi_provider_codex_pin {
+        return true;
+    }
+    if hints
+        .provider_id
+        .is_some_and(|p| p.eq_ignore_ascii_case("codex"))
+    {
+        return true;
+    }
+    if hints.capability_codex {
+        return true;
+    }
+    is_codex_responses_backend_url(hints.base_url)
+}
+
+/// URL-only last-resort Codex detector (legacy entry point).
+///
+/// Prefer [`classify_codex_responses_backend`] when binding/capability is known.
+pub fn is_codex_responses_backend(base_url: &str) -> bool {
+    is_codex_responses_backend_url(base_url)
+}
+
+fn is_codex_responses_backend_url(base_url: &str) -> bool {
+    let lower = base_url.to_ascii_lowercase();
+    lower.contains("chatgpt.com") || lower.contains("/codex")
+}
+
+/// True when `base_url` looks like the first-party xAI API (not Codex).
+pub fn is_xai_api_base_url(base_url: &str) -> bool {
+    let lower = base_url.to_ascii_lowercase();
+    lower.contains("api.x.ai") || lower.contains("//x.ai/")
+}
+
+/// P4: title LLM inference is safe when a Codex-pinned session is **not**
+/// pointed at the default xAI API proxy.
+pub fn title_inference_route_is_safe(
+    multi_provider_codex_pin: bool,
+    client_base_url: &str,
+) -> bool {
+    if !multi_provider_codex_pin {
+        return true;
+    }
+    !is_xai_api_base_url(client_base_url)
+}
+
+/// PC10 / data-002: `prompt_cache_key` for compaction requests.
+///
+/// Codex: opaque account-scoped key from session/agent **and** optional
+/// provider/credential identity (same derivation as normal turns via
+/// [`derive_prompt_cache_key_with_binding`]); **never** anonymous.
+/// Non-Codex: omit (caller may set independently).
+///
+/// When `provider_id`/`credential_id` are known (from sampling config binding
+/// headers), two Codex accounts sharing a session id get distinct keys.
+pub fn prompt_cache_key_for_compaction(
+    backend_is_codex: bool,
+    session_id: Option<&str>,
+    agent_id: Option<&str>,
+    provider_id: Option<&str>,
+    credential_id: Option<&str>,
+) -> Option<String> {
+    if !backend_is_codex {
+        return None;
+    }
+    derive_prompt_cache_key_with_binding(
+        "goblin",
+        provider_id,
+        credential_id,
+        session_id,
+        session_id,
+        agent_id,
+    )
+}
+
+/// Explicit AUD-011 policy for non-text system/developer content on hoist.
+///
+/// Only textual system/developer content is moved into `instructions`.
+/// Non-text parts (images, files, …) are **dropped** (lossy) so Codex does
+/// not receive forbidden system roles; callers observe the drop count.
+pub const SYSTEM_HOIST_NON_TEXT_POLICY: &str =
+    "lossy_drop: only InputText/system text is hoisted to instructions; non-text system/developer parts are dropped";
+
+/// Outcome of [`hoist_system_messages_to_instructions`].
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct SystemHoistOutcome {
+    pub text_parts_hoisted: usize,
+    pub non_text_parts_dropped: usize,
+}
+
+/// Move `role: system` (and `developer`) EasyMessages out of `input` into
+/// `instructions` for backends that forbid system roles in the input array.
+///
+/// Preserves existing `instructions` by prepending them before hoisted text.
+/// No-op when there are no system/developer input messages.
+///
+/// Non-text policy: see [`SYSTEM_HOIST_NON_TEXT_POLICY`] / returned outcome.
+pub fn hoist_system_messages_to_instructions(req: &mut rs::CreateResponse) -> SystemHoistOutcome {
+    let rs::InputParam::Items(items) = &mut req.input else {
+        return SystemHoistOutcome::default();
+    };
+
+    let mut system_parts: Vec<String> = Vec::new();
+    let mut outcome = SystemHoistOutcome::default();
+    items.retain(|item| match item {
+        rs::InputItem::EasyMessage(m)
+            if matches!(m.role, rs::Role::System | rs::Role::Developer) =>
+        {
+            match easy_input_content_text_with_non_text_count(&m.content) {
+                (Some(text), dropped) => {
+                    outcome.non_text_parts_dropped += dropped;
+                    let t = text.trim();
+                    if !t.is_empty() {
+                        system_parts.push(t.to_owned());
+                        outcome.text_parts_hoisted += 1;
+                    }
+                }
+                (None, dropped) => {
+                    outcome.non_text_parts_dropped += dropped.max(1);
+                }
+            }
+            false
+        }
+        rs::InputItem::Item(rs::Item::Message(rs::MessageItem::Input(msg)))
+            if matches!(msg.role, rs::InputRole::System | rs::InputRole::Developer) =>
+        {
+            let mut text_bits = Vec::new();
+            for c in &msg.content {
+                match c {
+                    rs::InputContent::InputText(t) => text_bits.push(t.text.as_str()),
+                    _ => outcome.non_text_parts_dropped += 1,
+                }
+            }
+            let text = text_bits.join("\n");
+            let t = text.trim();
+            if !t.is_empty() {
+                system_parts.push(t.to_owned());
+                outcome.text_parts_hoisted += 1;
+            }
+            false
+        }
+        _ => true,
+    });
+
+    if system_parts.is_empty() {
+        if outcome.non_text_parts_dropped > 0 {
+            tracing::warn!(
+                dropped = outcome.non_text_parts_dropped,
+                policy = SYSTEM_HOIST_NON_TEXT_POLICY,
+                "codex hoist: dropped non-text system/developer content"
+            );
+        }
+        return outcome;
+    }
+
+    let hoisted = system_parts.join("\n\n");
+    req.instructions = Some(match req.instructions.take() {
+        Some(existing) if !existing.trim().is_empty() => {
+            format!("{}\n\n{hoisted}", existing.trim())
+        }
+        _ => hoisted,
+    });
+    if outcome.non_text_parts_dropped > 0 {
+        tracing::warn!(
+            dropped = outcome.non_text_parts_dropped,
+            hoisted = outcome.text_parts_hoisted,
+            policy = SYSTEM_HOIST_NON_TEXT_POLICY,
+            "codex hoist: dropped non-text system/developer content"
+        );
+    }
+    outcome
+}
+
+fn easy_input_content_text(content: &rs::EasyInputContent) -> Option<String> {
+    easy_input_content_text_with_non_text_count(content).0
+}
+
+/// Extract text from EasyInputContent; second value counts non-text parts dropped.
+fn easy_input_content_text_with_non_text_count(
+    content: &rs::EasyInputContent,
+) -> (Option<String>, usize) {
+    match content {
+        rs::EasyInputContent::Text(t) => (Some(t.clone()), 0),
+        rs::EasyInputContent::ContentList(parts) => {
+            let mut dropped = 0usize;
+            let text = parts
+                .iter()
+                .filter_map(|c| match c {
+                    rs::InputContent::InputText(t) => Some(t.text.as_str()),
+                    _ => {
+                        dropped += 1;
+                        None
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+            if text.is_empty() {
+                (None, dropped)
+            } else {
+                (Some(text), dropped)
+            }
+        }
+    }
 }
 
 /// Walk a serialized Responses API request body and inject the
@@ -2261,7 +3034,10 @@ fn conversation_item_to_input_items(item: &ConversationItem) -> Vec<rs::InputIte
                 }));
             }
 
-            // Add each tool call as a FunctionCall item
+            // Legacy sessions: tool_calls only on the assistant (no FunctionCall
+            // siblings). New convert path dual-writes FC siblings; callers that
+            // use `conversation_items_to_responses_input` skip assistant
+            // tool_calls when siblings exist (see that helper).
             for tc in &a.tool_calls {
                 let arguments = sanitize_tool_arguments(&tc.id, &tc.name, tc.arguments.clone());
                 items.push(rs::InputItem::Item(rs::Item::FunctionCall(
@@ -2276,6 +3052,27 @@ fn conversation_item_to_input_items(item: &ConversationItem) -> Vec<rs::InputIte
             }
 
             items
+        }
+        ConversationItem::FunctionCall(tc) => {
+            let arguments = sanitize_tool_arguments(&tc.id, &tc.name, tc.arguments.clone());
+            vec![rs::InputItem::Item(rs::Item::FunctionCall(
+                rs::FunctionToolCall {
+                    call_id: tc.id.as_ref().to_owned(),
+                    name: tc.name.clone(),
+                    arguments: arguments.as_ref().to_owned(),
+                    id: None,
+                    status: None,
+                },
+            ))]
+        }
+        ConversationItem::OpaqueWire(o) => {
+            // AUD-003: never silent-empty. Batch path handles OpaqueWire via
+            // `conversation_items_to_responses_input` (typed MCP or Err).
+            panic!(
+                "OpaqueWire cannot be emitted via conversation_item_to_input_items \
+                 (type={}); use conversation_items_to_responses_input / try_build_responses_input",
+                o.type_name
+            );
         }
         ConversationItem::ToolResult(t) => {
             // Tool results are sent as FunctionCallOutput items.
@@ -2320,9 +3117,81 @@ fn conversation_item_to_input_items(item: &ConversationItem) -> Vec<rs::InputIte
                 BackendToolKind::CodeInterpreter(ci) => {
                     rs::InputItem::Item(rs::Item::CodeInterpreterCall(ci.clone()))
                 }
+                BackendToolKind::Mcp(mcp) => rs::InputItem::Item(rs::Item::McpCall(mcp.clone())),
             }]
         }
     }
+}
+
+/// Convert ordered conversation items to Responses API input, preserving
+/// FunctionCall sibling order (AUD-003).
+///
+/// Dual-write projections: when a [`ConversationItem::FunctionCall`] sibling
+/// exists with the same `call_id`, that assistant `tool_calls` entry is
+/// **skipped** (avoids double FC). Legacy `tool_calls` whose ids have no
+/// sibling still emit — including mixed histories (old turns + new sibling
+/// format later).
+///
+/// [`ConversationItem::OpaqueWire`] that cannot map to a typed input fails
+/// with an explicit error (no silent drop).
+pub fn conversation_items_to_responses_input(
+    items: &[ConversationItem],
+) -> Result<Vec<rs::InputItem>, String> {
+    let fc_sibling_ids: std::collections::HashSet<&str> = items
+        .iter()
+        .filter_map(|i| match i {
+            ConversationItem::FunctionCall(tc) => Some(tc.id.as_ref()),
+            _ => None,
+        })
+        .collect();
+    let mut out = Vec::new();
+    for item in items {
+        match item {
+            ConversationItem::Assistant(a) => {
+                if !a.content.is_empty() {
+                    out.push(rs::InputItem::EasyMessage(rs::EasyInputMessage {
+                        r#type: rs::MessageType::Message,
+                        role: rs::Role::Assistant,
+                        content: rs::EasyInputContent::Text(a.content.as_ref().to_owned()),
+                    }));
+                }
+                for tc in &a.tool_calls {
+                    // Skip UI projections already represented as FunctionCall siblings.
+                    if fc_sibling_ids.contains(tc.id.as_ref()) {
+                        continue;
+                    }
+                    let arguments =
+                        sanitize_tool_arguments(&tc.id, &tc.name, tc.arguments.clone());
+                    out.push(rs::InputItem::Item(rs::Item::FunctionCall(
+                        rs::FunctionToolCall {
+                            call_id: tc.id.as_ref().to_owned(),
+                            name: tc.name.clone(),
+                            arguments: arguments.as_ref().to_owned(),
+                            id: None,
+                            status: None,
+                        },
+                    )));
+                }
+            }
+            ConversationItem::OpaqueWire(o) => {
+                // Try MCP payload recovery if type says so.
+                if o.type_name == "mcp_call" {
+                    if let Ok(mcp) = serde_json::from_value::<rs::MCPToolCall>(o.payload.clone()) {
+                        out.push(rs::InputItem::Item(rs::Item::McpCall(mcp)));
+                        continue;
+                    }
+                }
+                return Err(format!(
+                    "cannot resend opaque wire item type={} (not mapped to Responses input)",
+                    o.type_name
+                ));
+            }
+            other => {
+                out.extend(conversation_item_to_input_items(other));
+            }
+        }
+    }
+    Ok(out)
 }
 
 /// Convert ContentParts to Responses API EasyInputContent
@@ -2500,6 +3369,18 @@ impl ConversationRequest {
 
     pub fn with_json_schema(mut self, schema: serde_json::Value) -> Self {
         self.json_schema = Some(schema);
+        self
+    }
+
+    /// Set a stable OpenResponses `prompt_cache_key` for this session.
+    pub fn with_prompt_cache_key(mut self, key: impl Into<String>) -> Self {
+        self.prompt_cache_key = Some(key.into());
+        self
+    }
+
+    /// Set session id header (also used as default prompt-cache seed).
+    pub fn with_session_id(mut self, session_id: impl Into<String>) -> Self {
+        self.x_grok_session_id = Some(session_id.into());
         self
     }
 }
@@ -2706,6 +3587,12 @@ pub fn transform_conversation_cwd(
             }
             // Backend tool calls don't contain workspace paths — no-op.
             ConversationItem::BackendToolCall(_) => {}
+            ConversationItem::FunctionCall(tc) => {
+                if tc.arguments.contains(source_cwd) {
+                    tc.arguments = Arc::<str>::from(tc.arguments.replace(source_cwd, target_cwd));
+                }
+            }
+            ConversationItem::OpaqueWire(_) => {}
             // Reasoning items rarely reference CWD paths, but they can —
             // patch both summary parts and content blocks defensively.
             ConversationItem::Reasoning(r) => {
@@ -3163,6 +4050,23 @@ pub fn build_messages_request(req: &ConversationRequest) -> crate::messages::Mes
                     cache_control: None,
                 });
             }
+            ConversationItem::FunctionCall(tc) => {
+                flush_tool_results(&mut pending_tool_results, &mut messages);
+                let input =
+                    serde_json::from_str(tc.arguments.as_ref()).unwrap_or(serde_json::json!({}));
+                pending_assistant.push(ContentBlock::ToolUse {
+                    id: sanitize_tool_call_id(&tc.id),
+                    name: tc.name.clone(),
+                    input,
+                });
+            }
+            ConversationItem::OpaqueWire(o) => {
+                flush_tool_results(&mut pending_tool_results, &mut messages);
+                pending_assistant.push(ContentBlock::Text {
+                    text: format!("[opaque wire {}]", o.type_name),
+                    cache_control: None,
+                });
+            }
             // Reasoning sibling — emit as Anthropic `thinking` block on the
             // pending assistant turn. `tco_*` encrypted blobs only set
             // `signature`; real model reasoning sets `thinking`.
@@ -3320,7 +4224,10 @@ impl From<crate::messages::MessagesResponse> for ConversationItem {
             model_id: Some(resp.model),
             model_fingerprint: None,
             reasoning_effort: None,
-        })
+
+            phase: None,
+            message_id: None,
+})
     }
 }
 
@@ -3571,6 +4478,1024 @@ mod tests {
             panic!("Expected Items input");
         };
         assert_eq!(items.len(), 2);
+    }
+
+    #[test]
+    fn inject_streaming_text_fallback_fills_empty_assistant() {
+        let mut items = vec![ConversationItem::Assistant(AssistantItem {
+            content: Arc::<str>::from(""),
+            tool_calls: Vec::new(),
+            model_id: Some("gpt-5.6-luna".into()),
+            model_fingerprint: None,
+            reasoning_effort: None,
+
+            phase: None,
+            message_id: None,
+})];
+        inject_streaming_text_fallback(&mut items, "pong".into());
+        match &items[0] {
+            ConversationItem::Assistant(a) => {
+                assert_eq!(a.content.as_ref(), "pong");
+            }
+            other => panic!("expected Assistant, got {other:?}"),
+        }
+        // Non-empty content is not overwritten.
+        inject_streaming_text_fallback(&mut items, "nope".into());
+        match &items[0] {
+            ConversationItem::Assistant(a) => assert_eq!(a.content.as_ref(), "pong"),
+            _ => unreachable!(),
+        }
+    }
+
+    #[test]
+    fn inject_streaming_text_fallback_creates_assistant_when_missing() {
+        let mut items = Vec::new();
+        inject_streaming_text_fallback(&mut items, "hello".into());
+        assert_eq!(items.len(), 1);
+        match &items[0] {
+            ConversationItem::Assistant(a) => assert_eq!(a.content.as_ref(), "hello"),
+            other => panic!("expected Assistant, got {other:?}"),
+        }
+    }
+
+    /// Codex emits `phase: commentary|final_answer` on assistant messages.
+    /// async-openai `OutputMessage` has no `phase` field, so serde drops it.
+    /// Canary: if upstream adds `phase`, fail here and plumb into AssistantItem.
+    #[test]
+    fn output_message_json_with_phase_loses_phase_field() {
+        let raw = serde_json::json!({
+            "id": "msg_test",
+            "type": "message",
+            "status": "completed",
+            "role": "assistant",
+            "phase": "commentary",
+            "content": [{
+                "type": "output_text",
+                "text": "thinking out loud",
+                "annotations": []
+            }]
+        });
+        let item: rs::OutputItem =
+            serde_json::from_value(raw).expect("OutputItem parses with phase on wire");
+        match item {
+            rs::OutputItem::Message(m) => {
+                assert_eq!(m.content.len(), 1);
+                let again = serde_json::to_value(&m).expect("serialize");
+                assert!(
+                    again.get("phase").is_none(),
+                    "async-openai OutputMessage still has no phase; got {again}"
+                );
+            }
+            other => panic!("expected Message, got {other:?}"),
+        }
+    }
+
+    fn fixture_output_message(id: &str, text: &str) -> rs::OutputItem {
+        rs::OutputItem::Message(rs::OutputMessage {
+            id: id.into(),
+            role: rs::AssistantRole::Assistant,
+            status: rs::OutputStatus::Completed,
+            content: vec![rs::OutputMessageContent::OutputText(rs::OutputTextContent {
+                text: text.into(),
+                annotations: vec![],
+                logprobs: None,
+            })],
+        })
+    }
+
+    #[test]
+    fn response_to_conversation_items_keeps_multiple_assistants_with_phases() {
+        let mut phases = std::collections::HashMap::new();
+        phases.insert("msg_c".into(), AssistantPhase::Commentary);
+        phases.insert("msg_f".into(), AssistantPhase::FinalAnswer);
+
+        let response = rs::Response {
+            background: None,
+            billing: None,
+            conversation: None,
+            created_at: 0,
+            completed_at: None,
+            error: None,
+            id: "resp_multi".into(),
+            incomplete_details: None,
+            instructions: None,
+            max_output_tokens: None,
+            metadata: None,
+            model: "gpt-5.6-luna".into(),
+            object: "response".into(),
+            output: vec![
+                fixture_output_message("msg_c", "thinking aloud"),
+                fixture_output_message("msg_f", "final answer"),
+            ],
+            parallel_tool_calls: None,
+            previous_response_id: None,
+            prompt: None,
+            prompt_cache_key: None,
+            prompt_cache_retention: None,
+            reasoning: None,
+            safety_identifier: None,
+            service_tier: None,
+            status: rs::Status::Completed,
+            temperature: None,
+            text: None,
+            tool_choice: None,
+            tools: None,
+            top_logprobs: None,
+            top_p: None,
+            truncation: None,
+            usage: None,
+        };
+
+        let items = response_to_conversation_items_with_phases(response, &phases);
+        let assistants: Vec<_> = items
+            .iter()
+            .filter_map(|i| match i {
+                ConversationItem::Assistant(a) => Some(a),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(assistants.len(), 2, "must not collapse multi-message output");
+        assert_eq!(assistants[0].content.as_ref(), "thinking aloud");
+        assert_eq!(assistants[0].phase, Some(AssistantPhase::Commentary));
+        assert_eq!(assistants[0].message_id.as_deref(), Some("msg_c"));
+        assert_eq!(assistants[1].content.as_ref(), "final answer");
+        assert_eq!(assistants[1].phase, Some(AssistantPhase::FinalAnswer));
+    }
+
+    #[test]
+    fn extract_phase_from_output_item_json_reads_wire_field() {
+        let item = serde_json::json!({
+            "id": "msg_1",
+            "type": "message",
+            "role": "assistant",
+            "phase": "commentary",
+            "content": []
+        });
+        let (id, phase) = extract_phase_from_output_item_json(&item).expect("phase");
+        assert_eq!(id, "msg_1");
+        assert_eq!(phase, AssistantPhase::Commentary);
+    }
+
+    #[test]
+    fn materialize_response_output_prefers_stream_when_completed_empty() {
+        let mut stream = std::collections::BTreeMap::new();
+        stream.insert(0, fixture_output_message("msg_a", "from stream"));
+        let out = materialize_response_output(vec![], &stream);
+        assert_eq!(out.len(), 1);
+        match &out[0] {
+            rs::OutputItem::Message(m) => assert_eq!(m.id, "msg_a"),
+            other => panic!("expected message, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn materialize_response_output_prefers_stream_when_index_present() {
+        // AUD-002: stream map entry wins over completed for the same index
+        // (completed may be a partial/stale snapshot).
+        let mut stream = std::collections::BTreeMap::new();
+        stream.insert(0, fixture_output_message("msg_stream", "stream"));
+        let completed = vec![fixture_output_message("msg_done", "completed")];
+        let out = materialize_response_output(completed, &stream);
+        match &out[0] {
+            rs::OutputItem::Message(m) => assert_eq!(m.id, "msg_stream"),
+            other => panic!("expected stream message, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn materialize_merges_stream_and_completed_by_index() {
+        let mut stream = std::collections::BTreeMap::new();
+        stream.insert(1, fixture_output_message("msg_1", "from stream idx1"));
+        let completed = vec![
+            fixture_output_message("msg_0", "completed only"),
+            fixture_output_message("msg_old", "should lose to stream"),
+        ];
+        let out = materialize_response_output(completed, &stream);
+        assert_eq!(out.len(), 2);
+        match &out[0] {
+            rs::OutputItem::Message(m) => assert_eq!(m.id, "msg_0"),
+            other => panic!("idx0 from completed, got {other:?}"),
+        }
+        match &out[1] {
+            rs::OutputItem::Message(m) => assert_eq!(m.id, "msg_1"),
+            other => panic!("idx1 from stream, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn append_function_call_arguments_delta_builds_args() {
+        let mut stream = std::collections::BTreeMap::new();
+        stream.insert(
+            0,
+            rs::OutputItem::FunctionCall(rs::FunctionToolCall {
+                call_id: "call_1".into(),
+                name: "read_file".into(),
+                arguments: String::new(),
+                id: None,
+                status: None,
+            }),
+        );
+        append_function_call_arguments_delta(&mut stream, 0, r#"{"p"#);
+        append_function_call_arguments_delta(&mut stream, 0, r#":1}"#);
+        match stream.get(&0) {
+            Some(rs::OutputItem::FunctionCall(fc)) => {
+                assert_eq!(fc.arguments, r#"{"p:1}"#);
+            }
+            other => panic!("expected FC, got {other:?}"),
+        }
+        set_function_call_arguments_done(&mut stream, 0, r#"{"path":"/x"}"#.into());
+        match stream.get(&0) {
+            Some(rs::OutputItem::FunctionCall(fc)) => {
+                assert_eq!(fc.arguments, r#"{"path":"/x"}"#);
+            }
+            other => panic!("expected FC done, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn prompt_cache_key_opaque_stable_and_omits_without_identity() {
+        let k1 = derive_prompt_cache_key(Some("sess-abc"), None, None).expect("key");
+        let k2 = derive_prompt_cache_key(Some("sess-abc"), None, None).expect("key");
+        let k3 = derive_prompt_cache_key(Some("sess-other"), None, None).expect("key");
+        assert_eq!(k1, k2);
+        assert_ne!(k1, k3);
+        assert!(k1.starts_with("gpc_"), "opaque prefix: {k1}");
+        assert!(!k1.contains("sess-abc"), "must not embed raw session id: {k1}");
+        assert!(derive_prompt_cache_key(None, None, None).is_none());
+        assert!(!prompt_cache_key_log_label(&k1).contains(&k1[8..]));
+
+        let mut req = ConversationRequest::from_items(vec![ConversationItem::user("hi")])
+            .with_model("m")
+            .with_session_id("sess-abc");
+        ensure_prompt_cache_key(&mut req);
+        assert_eq!(req.prompt_cache_key.as_deref(), Some(k1.as_str()));
+
+        let create: rs::CreateResponse = (&req).into();
+        assert_eq!(create.prompt_cache_key.as_deref(), Some(k1.as_str()));
+
+        let mut req2 = ConversationRequest::from_items(vec![
+            ConversationItem::user("hi"),
+            ConversationItem::assistant("hello"),
+            ConversationItem::user("again"),
+        ])
+        .with_model("m")
+        .with_session_id("sess-abc");
+        ensure_prompt_cache_key(&mut req2);
+        assert_eq!(req.prompt_cache_key, req2.prompt_cache_key);
+
+        // No identity → leave unset (no anonymous global).
+        let mut req3 = ConversationRequest::from_items(vec![ConversationItem::user("x")]).with_model("m");
+        ensure_prompt_cache_key(&mut req3);
+        assert!(req3.prompt_cache_key.is_none());
+    }
+
+    #[test]
+    fn prompt_cache_key_differs_by_provider_and_credential() {
+        let base = derive_prompt_cache_key_with_binding(
+            "goblin",
+            Some("codex"),
+            Some("acct-a"),
+            Some("sess-1"),
+            None,
+            None,
+        )
+        .expect("key");
+        let same = derive_prompt_cache_key_with_binding(
+            "goblin",
+            Some("codex"),
+            Some("acct-a"),
+            Some("sess-1"),
+            None,
+            None,
+        )
+        .expect("key");
+        let other_cred = derive_prompt_cache_key_with_binding(
+            "goblin",
+            Some("codex"),
+            Some("acct-b"),
+            Some("sess-1"),
+            None,
+            None,
+        )
+        .expect("key");
+        let other_prov = derive_prompt_cache_key_with_binding(
+            "goblin",
+            Some("xai"),
+            Some("acct-a"),
+            Some("sess-1"),
+            None,
+            None,
+        )
+        .expect("key");
+        let subagent = derive_prompt_cache_key_with_binding(
+            "goblin",
+            Some("codex"),
+            Some("acct-a"),
+            Some("sess-1"),
+            None,
+            Some("agent-child"),
+        )
+        .expect("key");
+        assert_eq!(base, same);
+        assert_ne!(base, other_cred);
+        assert_ne!(base, other_prov);
+        assert_ne!(base, subagent);
+        assert!(!base.contains("acct-a"));
+        assert!(!base.contains("codex"));
+
+        let mut req = ConversationRequest::from_items(vec![ConversationItem::user("hi")])
+            .with_model("m")
+            .with_session_id("sess-1");
+        ensure_prompt_cache_key_for_codex_with_binding(&mut req, Some("codex"), Some("acct-a"));
+        assert_eq!(req.prompt_cache_key.as_deref(), Some(base.as_str()));
+    }
+
+    fn fixture_response(output: Vec<rs::OutputItem>) -> rs::Response {
+        rs::Response {
+            background: None,
+            billing: None,
+            conversation: None,
+            created_at: 0,
+            completed_at: None,
+            error: None,
+            id: "resp_test".into(),
+            incomplete_details: None,
+            instructions: None,
+            max_output_tokens: None,
+            metadata: None,
+            model: "gpt-test".into(),
+            object: "response".into(),
+            output,
+            parallel_tool_calls: None,
+            previous_response_id: None,
+            prompt: None,
+            prompt_cache_key: None,
+            prompt_cache_retention: None,
+            reasoning: None,
+            safety_identifier: None,
+            service_tier: None,
+            status: rs::Status::Completed,
+            temperature: None,
+            text: None,
+            tool_choice: None,
+            tools: None,
+            top_logprobs: None,
+            top_p: None,
+            truncation: None,
+            usage: None,
+        }
+    }
+
+    /// AUD-003: commentary → FC → final_answer convert preserves sibling order
+    /// on resend (FC not collapsed after the wrong message).
+    #[test]
+    fn convert_resend_preserves_function_call_sibling_order() {
+        let mut phases = std::collections::HashMap::new();
+        phases.insert("msg_c".into(), AssistantPhase::Commentary);
+        phases.insert("msg_f".into(), AssistantPhase::FinalAnswer);
+        let response = fixture_response(vec![
+            fixture_output_message("msg_c", "thinking aloud"),
+            rs::OutputItem::FunctionCall(rs::FunctionToolCall {
+                call_id: "call_1".into(),
+                name: "read_file".into(),
+                arguments: r#"{"path":"/a"}"#.into(),
+                id: None,
+                status: None,
+            }),
+            fixture_output_message("msg_f", "done"),
+        ]);
+        let items = response_to_conversation_items_with_phases(response, &phases);
+
+        let kinds: Vec<&str> = items
+            .iter()
+            .map(|i| match i {
+                ConversationItem::Assistant(_) => "assistant",
+                ConversationItem::FunctionCall(_) => "function_call",
+                other => panic!("unexpected {other:?}"),
+            })
+            .collect();
+        assert_eq!(
+            kinds,
+            vec!["assistant", "function_call", "assistant"],
+            "FC must be a wire sibling between commentary and final"
+        );
+        assert!(
+            matches!(&items[0], ConversationItem::Assistant(a) if a.phase == Some(AssistantPhase::Commentary)
+                && a.tool_calls.len() == 1
+                && a.tool_calls[0].name == "read_file"),
+            "UI projection of FC onto preceding assistant"
+        );
+        assert!(matches!(
+            &items[1],
+            ConversationItem::FunctionCall(tc) if tc.id.as_ref() == "call_1"
+        ));
+        assert!(matches!(
+            &items[2],
+            ConversationItem::Assistant(a) if a.phase == Some(AssistantPhase::FinalAnswer)
+                && a.content.as_ref() == "done"
+        ));
+
+        let input = conversation_items_to_responses_input(&items).expect("resend");
+        let mut saw_fc = 0usize;
+        let mut sequence = Vec::new();
+        for inp in &input {
+            match inp {
+                rs::InputItem::EasyMessage(m) if m.role == rs::Role::Assistant => {
+                    if let rs::EasyInputContent::Text(t) = &m.content {
+                        sequence.push(format!("msg:{t}"));
+                    }
+                }
+                rs::InputItem::Item(rs::Item::FunctionCall(fc)) => {
+                    saw_fc += 1;
+                    sequence.push(format!("fc:{}", fc.name));
+                }
+                other => panic!("unexpected input item {other:?}"),
+            }
+        }
+        assert_eq!(saw_fc, 1, "exactly one FC on resend (no double projection)");
+        assert_eq!(
+            sequence,
+            vec![
+                "msg:thinking aloud".to_string(),
+                "fc:read_file".to_string(),
+                "msg:done".to_string(),
+            ]
+        );
+    }
+
+    /// AUD-003: MCP is preserved as BackendToolCall; unknown OpaqueWire fails loud.
+    #[test]
+    fn convert_preserves_mcp_and_opaque_unknown() {
+        let mcp = rs::MCPToolCall {
+            arguments: "{}".into(),
+            id: "mcp_1".into(),
+            name: "list".into(),
+            server_label: "srv".into(),
+            approval_request_id: None,
+            error: None,
+            output: Some("ok".into()),
+            status: Some(rs::MCPToolCallStatus::Completed),
+        };
+        let response = fixture_response(vec![
+            rs::OutputItem::McpCall(mcp),
+            fixture_output_message("m1", "hi"),
+        ]);
+        let items = response_to_conversation_items(response);
+        assert!(
+            matches!(
+                &items[0],
+                ConversationItem::BackendToolCall(b)
+                    if matches!(&b.kind, BackendToolKind::Mcp(m) if m.id == "mcp_1")
+            ),
+            "MCP must not be dropped"
+        );
+        let input = conversation_items_to_responses_input(&items).expect("mcp resend");
+        assert!(
+            input
+                .iter()
+                .any(|i| matches!(i, rs::InputItem::Item(rs::Item::McpCall(_)))),
+            "MCP must round-trip on resend"
+        );
+
+        let opaque_items = vec![ConversationItem::OpaqueWire(OpaqueWireItem {
+            type_name: "totally_unknown".into(),
+            payload: serde_json::json!({"type": "totally_unknown"}),
+        })];
+        let err = conversation_items_to_responses_input(&opaque_items)
+            .expect_err("unknown opaque must fail loud");
+        assert!(
+            err.contains("totally_unknown"),
+            "error should name the type: {err}"
+        );
+    }
+
+    /// Production path must return Err (not panic) on unmapped OpaqueWire.
+    #[test]
+    fn try_create_response_errs_on_opaque_wire_no_panic() {
+        let items = vec![
+            ConversationItem::user("q"),
+            ConversationItem::Assistant(AssistantItem {
+                content: Arc::<str>::from("commentary"),
+                tool_calls: vec![ToolCall {
+                    id: Arc::<str>::from("call_1"),
+                    name: "read_file".into(),
+                    arguments: Arc::<str>::from("{}"),
+                }],
+                model_id: None,
+                model_fingerprint: None,
+                reasoning_effort: None,
+                phase: Some(AssistantPhase::Commentary),
+                message_id: None,
+            }),
+            ConversationItem::FunctionCall(ToolCall {
+                id: Arc::<str>::from("call_1"),
+                name: "read_file".into(),
+                arguments: Arc::<str>::from("{}"),
+            }),
+            ConversationItem::assistant("final"),
+            ConversationItem::OpaqueWire(OpaqueWireItem {
+                type_name: "totally_unknown".into(),
+                payload: serde_json::json!({"type": "totally_unknown"}),
+            }),
+        ];
+        let req = ConversationRequest::from_items(items).with_model("m");
+        let err = try_create_response_from_conversation(&req).expect_err("must fail");
+        assert!(
+            err.contains("OpaqueWire") || err.contains("unmapped") || err.contains("AUD-003") || !err.is_empty(),
+            "unexpected err: {err}"
+        );
+    }
+
+    /// Legacy From still fail-louds if a caller ignores try_create_*.
+    #[test]
+    #[should_panic(expected = "try_create_response_from_conversation")]
+    fn create_response_from_request_fails_loud_on_opaque_wire() {
+        let items = vec![
+            ConversationItem::user("q"),
+            ConversationItem::OpaqueWire(OpaqueWireItem {
+                type_name: "totally_unknown".into(),
+                payload: serde_json::json!({"type": "totally_unknown"}),
+            }),
+        ];
+        let req = ConversationRequest::from_items(items).with_model("m");
+        let _create: rs::CreateResponse = (&req).into();
+    }
+
+    /// AUD-003 hot path: CreateResponse resend keeps single FC in sibling order
+    /// (no double emit from assistant.tool_calls projection).
+    #[test]
+    fn create_response_from_request_single_fc_sibling_order() {
+        let items = vec![
+            ConversationItem::Assistant(AssistantItem {
+                content: Arc::<str>::from("thinking aloud"),
+                tool_calls: vec![ToolCall {
+                    id: Arc::<str>::from("call_1"),
+                    name: "read_file".into(),
+                    arguments: Arc::<str>::from(r#"{"path":"/a"}"#),
+                }],
+                model_id: None,
+                model_fingerprint: None,
+                reasoning_effort: None,
+                phase: Some(AssistantPhase::Commentary),
+                message_id: Some("msg_c".into()),
+            }),
+            ConversationItem::FunctionCall(ToolCall {
+                id: Arc::<str>::from("call_1"),
+                name: "read_file".into(),
+                arguments: Arc::<str>::from(r#"{"path":"/a"}"#),
+            }),
+            ConversationItem::Assistant(AssistantItem {
+                content: Arc::<str>::from("done"),
+                tool_calls: vec![],
+                model_id: None,
+                model_fingerprint: None,
+                reasoning_effort: None,
+                phase: Some(AssistantPhase::FinalAnswer),
+                message_id: Some("msg_f".into()),
+            }),
+        ];
+        let req = ConversationRequest::from_items(items).with_model("m");
+        // Soft path must succeed.
+        let param = try_build_responses_input(&req).expect("typed history");
+        let rs::InputParam::Items(input) = param else {
+            panic!("expected Items");
+        };
+        let mut saw_fc = 0usize;
+        let mut sequence = Vec::new();
+        for inp in &input {
+            match inp {
+                rs::InputItem::EasyMessage(m) if m.role == rs::Role::Assistant => {
+                    if let rs::EasyInputContent::Text(t) = &m.content {
+                        sequence.push(format!("msg:{t}"));
+                    }
+                }
+                rs::InputItem::Item(rs::Item::FunctionCall(fc)) => {
+                    saw_fc += 1;
+                    sequence.push(format!("fc:{}", fc.name));
+                }
+                other => panic!("unexpected {other:?}"),
+            }
+        }
+        assert_eq!(saw_fc, 1, "hot path must not double-emit FC");
+        assert_eq!(
+            sequence,
+            vec![
+                "msg:thinking aloud".to_string(),
+                "fc:read_file".to_string(),
+                "msg:done".to_string(),
+            ]
+        );
+
+        // Production From path must match.
+        let create: rs::CreateResponse = (&req).into();
+        let body = serde_json::to_value(&create).expect("ser");
+        let input_arr = body["input"].as_array().expect("input array");
+        let fc_count = input_arr
+            .iter()
+            .filter(|v| v.get("type").and_then(|t| t.as_str()) == Some("function_call"))
+            .count();
+        assert_eq!(fc_count, 1, "CreateResponse body must have exactly one function_call");
+    }
+
+    /// try_build_responses_input returns Err (not Ok with filtered items) on opaque.
+    #[test]
+    fn try_build_responses_input_errs_on_opaque_no_silent_filter() {
+        let items = vec![
+            ConversationItem::user("q"),
+            ConversationItem::OpaqueWire(OpaqueWireItem {
+                type_name: "mystery_item".into(),
+                payload: serde_json::json!({"type": "mystery_item"}),
+            }),
+        ];
+        let req = ConversationRequest::from_items(items).with_model("m");
+        let err = try_build_responses_input(&req).expect_err("must err");
+        assert!(
+            err.contains("mystery_item"),
+            "error must name opaque type: {err}"
+        );
+    }
+
+    /// Mixed history: legacy assistant tool_calls (no sibling) + new dual-write
+    /// sibling must not drop the legacy FC and must not double the new one.
+    #[test]
+    fn create_response_mixed_legacy_and_sibling_fc_preserves_both_once() {
+        let items = vec![
+            // Legacy turn: FC only on assistant.tool_calls
+            ConversationItem::Assistant(AssistantItem {
+                content: Arc::<str>::from("legacy"),
+                tool_calls: vec![ToolCall {
+                    id: Arc::<str>::from("call_legacy"),
+                    name: "old_tool".into(),
+                    arguments: Arc::<str>::from("{}"),
+                }],
+                model_id: None,
+                model_fingerprint: None,
+                reasoning_effort: None,
+                phase: None,
+                message_id: None,
+            }),
+            ConversationItem::user("next"),
+            // New turn: dual-write projection + sibling
+            ConversationItem::Assistant(AssistantItem {
+                content: Arc::<str>::from("new"),
+                tool_calls: vec![ToolCall {
+                    id: Arc::<str>::from("call_new"),
+                    name: "new_tool".into(),
+                    arguments: Arc::<str>::from("{}"),
+                }],
+                model_id: None,
+                model_fingerprint: None,
+                reasoning_effort: None,
+                phase: Some(AssistantPhase::Commentary),
+                message_id: None,
+            }),
+            ConversationItem::FunctionCall(ToolCall {
+                id: Arc::<str>::from("call_new"),
+                name: "new_tool".into(),
+                arguments: Arc::<str>::from("{}"),
+            }),
+        ];
+        let req = ConversationRequest::from_items(items).with_model("m");
+        let create: rs::CreateResponse = (&req).into();
+        let body = serde_json::to_value(&create).expect("ser");
+        let input = body["input"].as_array().expect("input");
+        let fc_ids: Vec<&str> = input
+            .iter()
+            .filter(|v| v.get("type").and_then(|t| t.as_str()) == Some("function_call"))
+            .filter_map(|v| v.get("call_id").and_then(|c| c.as_str()))
+            .collect();
+        assert_eq!(
+            fc_ids,
+            vec!["call_legacy", "call_new"],
+            "legacy tool_calls must survive; new dual-write must appear once"
+        );
+    }
+
+    /// AUD-001: unphased assistant before commentary must not steal phase.
+    #[test]
+    fn patch_assistant_phases_preserves_none_slots_no_sliding() {
+        let items = vec![
+            ConversationItem::Assistant(AssistantItem {
+                content: Arc::<str>::from("plain answer"),
+                tool_calls: vec![],
+                model_id: None,
+                model_fingerprint: None,
+                reasoning_effort: None,
+                phase: None,
+                message_id: Some("msg_plain".into()),
+            }),
+            ConversationItem::Assistant(AssistantItem {
+                content: Arc::<str>::from("thinking aloud"),
+                tool_calls: vec![],
+                model_id: None,
+                model_fingerprint: None,
+                reasoning_effort: None,
+                phase: Some(AssistantPhase::Commentary),
+                message_id: Some("msg_c".into()),
+            }),
+            ConversationItem::Assistant(AssistantItem {
+                content: Arc::<str>::from("final"),
+                tool_calls: vec![],
+                model_id: None,
+                model_fingerprint: None,
+                reasoning_effort: None,
+                phase: Some(AssistantPhase::FinalAnswer),
+                message_id: Some("msg_f".into()),
+            }),
+        ];
+        let req = ConversationRequest::from_items(items.clone()).with_model("m");
+        let create: rs::CreateResponse = (&req).into();
+        let mut body = serde_json::to_value(&create).expect("serialize");
+        patch_assistant_phases_on_request_body(&mut body, &items);
+        let input = body["input"].as_array().expect("input");
+        let assistant_phases: Vec<Option<&str>> = input
+            .iter()
+            .filter(|e| e.get("role").and_then(|r| r.as_str()) == Some("assistant"))
+            .map(|e| e.get("phase").and_then(|p| p.as_str()))
+            .collect();
+        assert_eq!(
+            assistant_phases,
+            vec![None, Some("commentary"), Some("final_answer")],
+            "None slot must stay empty; commentary must not slide to first assistant. got {assistant_phases:?}"
+        );
+    }
+
+    #[test]
+    fn patch_assistant_phases_on_request_body_injects_wire_phase() {
+        let items = vec![
+            ConversationItem::Assistant(AssistantItem {
+                content: Arc::<str>::from("mid thought"),
+                tool_calls: vec![],
+                model_id: None,
+                model_fingerprint: None,
+                reasoning_effort: None,
+                phase: Some(AssistantPhase::Commentary),
+                message_id: Some("msg_c".into()),
+            }),
+            ConversationItem::Assistant(AssistantItem {
+                content: Arc::<str>::from("done"),
+                tool_calls: vec![],
+                model_id: None,
+                model_fingerprint: None,
+                reasoning_effort: None,
+                phase: Some(AssistantPhase::FinalAnswer),
+                message_id: Some("msg_f".into()),
+            }),
+        ];
+        let req = ConversationRequest::from_items(items.clone()).with_model("m");
+        let create: rs::CreateResponse = (&req).into();
+        let mut body = serde_json::to_value(&create).expect("serialize");
+        patch_assistant_phases_on_request_body(&mut body, &items);
+        let input = body["input"].as_array().expect("input array");
+        let phases: Vec<_> = input
+            .iter()
+            .filter_map(|e| e.get("phase").and_then(|p| p.as_str()))
+            .collect();
+        assert_eq!(phases, vec!["commentary", "final_answer"]);
+    }
+
+    #[test]
+    fn resend_preserves_phase_via_patch_and_reasoning_order() {
+        let reasoning = rs::ReasoningItem {
+            id: "rs_1".into(),
+            summary: vec![rs::SummaryPart::SummaryText(rs::SummaryTextContent {
+                text: "why".into(),
+            })],
+            content: None,
+            encrypted_content: None,
+            status: None,
+        };
+        let items = vec![
+            ConversationItem::user("q"),
+            ConversationItem::Reasoning(reasoning),
+            ConversationItem::Assistant(AssistantItem {
+                content: Arc::<str>::from("commentary text"),
+                tool_calls: vec![],
+                model_id: None,
+                model_fingerprint: None,
+                reasoning_effort: None,
+                phase: Some(AssistantPhase::Commentary),
+                message_id: Some("msg_c".into()),
+            }),
+            ConversationItem::Assistant(AssistantItem {
+                content: Arc::<str>::from("final text"),
+                tool_calls: vec![],
+                model_id: None,
+                model_fingerprint: None,
+                reasoning_effort: None,
+                phase: Some(AssistantPhase::FinalAnswer),
+                message_id: Some("msg_f".into()),
+            }),
+        ];
+        let mut req = ConversationRequest::from_items(items.clone())
+            .with_model("m")
+            .with_session_id("s1");
+        ensure_prompt_cache_key(&mut req);
+        let create: rs::CreateResponse = (&req).into();
+        assert!(create.prompt_cache_key.is_some());
+        let mut body = serde_json::to_value(&create).expect("ser");
+        patch_assistant_phases_on_request_body(&mut body, &items);
+        // Prefix: user, reasoning, two assistants with phases — order stable.
+        let input = body["input"].as_array().expect("input");
+        assert!(input.len() >= 3);
+        let mut body2 = serde_json::to_value(&create).expect("ser2");
+        patch_assistant_phases_on_request_body(&mut body2, &items);
+        assert_eq!(
+            body["input"], body2["input"],
+            "identical resend must be byte-stable for prompt cache"
+        );
+    }
+
+    #[test]
+    fn classify_codex_backend_prefers_binding_over_url() {
+        // Binding/capability wins without URL match.
+        assert!(classify_codex_responses_backend(&CodexBackendHints {
+            base_url: "https://custom.example/v1",
+            provider_id: Some("codex"),
+            multi_provider_codex_pin: false,
+            capability_codex: false,
+        }));
+        assert!(classify_codex_responses_backend(&CodexBackendHints {
+            base_url: "https://custom.example/v1",
+            provider_id: None,
+            multi_provider_codex_pin: true,
+            capability_codex: false,
+        }));
+        assert!(classify_codex_responses_backend(&CodexBackendHints {
+            base_url: "https://custom.example/v1",
+            provider_id: None,
+            multi_provider_codex_pin: false,
+            capability_codex: true,
+        }));
+        // Non-codex provider + non-codex URL.
+        assert!(!classify_codex_responses_backend(&CodexBackendHints {
+            base_url: "https://api.x.ai/v1",
+            provider_id: Some("xai"),
+            multi_provider_codex_pin: false,
+            capability_codex: false,
+        }));
+        // URL last-resort still works.
+        assert!(classify_codex_responses_backend(&CodexBackendHints {
+            base_url: "https://chatgpt.com/backend-api/codex",
+            provider_id: None,
+            multi_provider_codex_pin: false,
+            capability_codex: false,
+        }));
+        assert!(!is_xai_api_base_url(
+            "https://chatgpt.com/backend-api/codex"
+        ));
+        assert!(is_xai_api_base_url("https://api.x.ai/v1"));
+    }
+
+    #[test]
+    fn title_inference_blocks_xai_when_codex_pinned() {
+        assert!(title_inference_route_is_safe(
+            false,
+            "https://api.x.ai/v1"
+        ));
+        assert!(!title_inference_route_is_safe(
+            true,
+            "https://api.x.ai/v1"
+        ));
+        assert!(title_inference_route_is_safe(
+            true,
+            "https://chatgpt.com/backend-api/codex"
+        ));
+    }
+
+    #[test]
+    fn compaction_prompt_cache_key_policy_codex_only_opaque() {
+        let k = prompt_cache_key_for_compaction(
+            true,
+            Some("sess-1"),
+            Some("agent-1"),
+            None,
+            None,
+        )
+        .expect("codex with identity");
+        assert!(k.starts_with("gpc_"));
+        assert!(!k.contains("sess-1"));
+        assert!(!k.contains("anonymous"));
+        assert!(prompt_cache_key_for_compaction(true, None, None, None, None).is_none());
+        assert!(
+            prompt_cache_key_for_compaction(false, Some("sess-1"), None, None, None).is_none()
+        );
+    }
+
+    #[test]
+    fn compaction_prompt_cache_key_account_scoped_by_credential() {
+        let a = prompt_cache_key_for_compaction(
+            true,
+            Some("sess-same"),
+            Some("agent-1"),
+            Some("codex"),
+            Some("cred-a"),
+        )
+        .expect("key a");
+        let b = prompt_cache_key_for_compaction(
+            true,
+            Some("sess-same"),
+            Some("agent-1"),
+            Some("codex"),
+            Some("cred-b"),
+        )
+        .expect("key b");
+        let same = prompt_cache_key_for_compaction(
+            true,
+            Some("sess-same"),
+            Some("agent-1"),
+            Some("codex"),
+            Some("cred-a"),
+        )
+        .expect("key a again");
+        assert_eq!(a, same);
+        assert_ne!(a, b);
+        assert!(!a.contains("cred-a"));
+        assert!(!a.contains("codex"));
+        // Same binding-aware hash material as normal turns (session + agent + binding).
+        let normal = derive_prompt_cache_key_with_binding(
+            "goblin",
+            Some("codex"),
+            Some("cred-a"),
+            Some("sess-same"),
+            Some("sess-same"),
+            Some("agent-1"),
+        )
+        .expect("normal-turn style key");
+        assert_eq!(a, normal);
+    }
+
+    #[test]
+    fn hoist_counts_non_text_system_parts_dropped() {
+        // System EasyMessage with content list that includes only text → hoisted.
+        let mut req = rs::CreateResponse {
+            input: rs::InputParam::Items(vec![rs::InputItem::EasyMessage(rs::EasyInputMessage {
+                r#type: rs::MessageType::Message,
+                role: rs::Role::System,
+                content: rs::EasyInputContent::Text("sys text".into()),
+            })]),
+            ..Default::default()
+        };
+        let out = hoist_system_messages_to_instructions(&mut req);
+        assert_eq!(out.text_parts_hoisted, 1);
+        assert_eq!(out.non_text_parts_dropped, 0);
+        assert_eq!(req.instructions.as_deref(), Some("sys text"));
+        assert!(SYSTEM_HOIST_NON_TEXT_POLICY.contains("lossy_drop"));
+    }
+
+    #[test]
+    fn hoist_system_messages_to_instructions_for_codex() {
+        let req = ConversationRequest::from_items(vec![
+            ConversationItem::system("You are a coding agent."),
+            ConversationItem::user("ping"),
+        ])
+        .with_model("gpt-5.6-luna");
+
+        let mut responses_req: rs::CreateResponse = (&req).into();
+        // Pre-hoist: system is in input (default Responses conversion).
+        {
+            let rs::InputParam::Items(items) = &responses_req.input else {
+                panic!("Expected Items input");
+            };
+            assert_eq!(items.len(), 2);
+            assert!(responses_req.instructions.is_none());
+        }
+
+        assert!(is_codex_responses_backend(
+            "https://chatgpt.com/backend-api/codex"
+        ));
+        assert!(!is_codex_responses_backend("https://api.x.ai/v1"));
+
+        hoist_system_messages_to_instructions(&mut responses_req);
+
+        assert_eq!(
+            responses_req.instructions.as_deref(),
+            Some("You are a coding agent.")
+        );
+        let rs::InputParam::Items(items) = &responses_req.input else {
+            panic!("Expected Items input");
+        };
+        assert_eq!(items.len(), 1, "only user message should remain in input");
+        match &items[0] {
+            rs::InputItem::EasyMessage(m) => {
+                assert_eq!(m.role, rs::Role::User);
+            }
+            other => panic!("expected user EasyMessage, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn hoist_preserves_existing_instructions_and_skips_when_no_system() {
+        let req =
+            ConversationRequest::from_items(vec![ConversationItem::user("hi")]).with_model("m");
+        let mut responses_req: rs::CreateResponse = (&req).into();
+        responses_req.instructions = Some("base instructions".into());
+        hoist_system_messages_to_instructions(&mut responses_req);
+        assert_eq!(
+            responses_req.instructions.as_deref(),
+            Some("base instructions"),
+            "no system items → instructions unchanged"
+        );
     }
 
     #[test]
@@ -3911,13 +5836,20 @@ mod tests {
         };
 
         let items = response_to_conversation_items(response_with_fc);
-        let item = items
-            .into_iter()
-            .next_back()
-            .expect("response produces at least a trailing Assistant");
-        let ConversationItem::Assistant(a) = &item else {
-            panic!("Expected Assistant item");
-        };
+        // AUD-003: FC is a wire sibling; UI projection still lives on assistant.
+        assert!(
+            items
+                .iter()
+                .any(|i| matches!(i, ConversationItem::FunctionCall(tc) if tc.id.as_ref() == "call_789")),
+            "expected FunctionCall sibling"
+        );
+        let a = items
+            .iter()
+            .find_map(|i| match i {
+                ConversationItem::Assistant(a) => Some(a),
+                _ => None,
+            })
+            .expect("Expected Assistant projection for FC");
         assert_eq!(a.tool_calls.len(), 1);
         assert_eq!(a.tool_calls[0].id.as_ref(), "call_789");
         assert_eq!(a.tool_calls[0].name, "read_file");
@@ -4074,7 +6006,10 @@ mod tests {
             model_id: Some("grok-3".to_string()),
             model_fingerprint: None,
             reasoning_effort: None,
-        };
+
+            phase: None,
+            message_id: None,
+};
 
         let item = ConversationItem::Assistant(assistant.clone());
         let chat_msg = conversation_item_to_chat_message(item);
@@ -4529,7 +6464,10 @@ mod tests {
             model_id: Some("grok-3".to_string()),
             model_fingerprint: None,
             reasoning_effort: None,
-        });
+
+            phase: None,
+            message_id: None,
+});
 
         for item in [reasoning_item, assistant_item] {
             let json = serde_json::to_string(&item).expect("Should serialize");
@@ -4561,7 +6499,10 @@ mod tests {
                 model_id: Some("grok-3".to_string()),
                 model_fingerprint: None,
                 reasoning_effort: None,
-            }),
+
+                phase: None,
+                message_id: None,
+}),
             // New user message
             ConversationItem::user("Now what is 3+3?"),
         ]);
@@ -4621,7 +6562,10 @@ mod tests {
                 model_id: None,
                 model_fingerprint: None,
                 reasoning_effort: None,
-            }),
+
+                phase: None,
+                message_id: None,
+}),
         ]);
 
         let responses_req: rs::CreateResponse = (&req).into();
@@ -5259,7 +7203,10 @@ mod tests {
             model_id: Some("messages-compatible-model".into()),
             model_fingerprint: None,
             reasoning_effort: None,
-        });
+
+            phase: None,
+            message_id: None,
+});
 
         // Reasoning now lives as a sibling `ConversationItem::Reasoning`,
         // so "stripping reasoning" means filtering those siblings out — see
@@ -5455,7 +7402,10 @@ mod tests {
                 model_id: Some("messages-compatible-model".into()),
                 model_fingerprint: None,
                 reasoning_effort: None,
-            }),
+
+                phase: None,
+                message_id: None,
+}),
             // Completed tool pair
             ConversationItem::Assistant(AssistantItem {
                 content: String::new().into(),
@@ -5467,7 +7417,10 @@ mod tests {
                 model_id: Some("messages-compatible-model".into()),
                 model_fingerprint: None,
                 reasoning_effort: None,
-            }),
+
+                phase: None,
+                message_id: None,
+}),
             ConversationItem::tool_result("call_1", "fn main() {}"),
             ConversationItem::Assistant(AssistantItem {
                 content: "I see the issue.".into(),
@@ -5475,7 +7428,10 @@ mod tests {
                 model_id: Some("messages-compatible-model".into()),
                 model_fingerprint: None,
                 reasoning_effort: None,
-            }),
+
+                phase: None,
+                message_id: None,
+}),
             // Mid-turn: orphaned tool_use (no result yet)
             ConversationItem::Assistant(AssistantItem {
                 content: String::new().into(),
@@ -5487,7 +7443,10 @@ mod tests {
                 model_id: Some("messages-compatible-model".into()),
                 model_fingerprint: None,
                 reasoning_effort: None,
-            }),
+
+                phase: None,
+                message_id: None,
+}),
         ]
     }
 
@@ -6222,7 +8181,10 @@ mod tests {
             model_id: None,
             model_fingerprint: None,
             reasoning_effort: None,
-        })];
+
+            phase: None,
+            message_id: None,
+})];
 
         transform_conversation_cwd(&mut items, worktree, root);
 
@@ -6288,7 +8250,10 @@ mod tests {
                 model_id: Some("grok-3".to_string()),
                 model_fingerprint: None,
                 reasoning_effort: None,
-            }),
+
+                phase: None,
+                message_id: None,
+}),
         ];
 
         transform_conversation_cwd(&mut items, worktree, root);
@@ -6345,7 +8310,10 @@ mod tests {
                 model_id: None,
                 model_fingerprint: None,
                 reasoning_effort: None,
-            }),
+
+                phase: None,
+                message_id: None,
+}),
         ];
 
         transform_conversation_cwd(&mut items, worktree, root);
@@ -6396,7 +8364,10 @@ mod tests {
                 model_id: None,
                 model_fingerprint: None,
                 reasoning_effort: None,
-            }),
+
+                phase: None,
+                message_id: None,
+}),
         ];
 
         transform_conversation_cwd(&mut items, root, worktree);
@@ -6504,7 +8475,10 @@ mod tests {
             model_id: None,
             model_fingerprint: None,
             reasoning_effort: None,
-        })];
+
+            phase: None,
+            message_id: None,
+})];
 
         transform_conversation_cwd(&mut items, "/old/path", "/new/path");
 
@@ -6619,7 +8593,10 @@ mod tests {
                 model_id: Some("test-model".to_string()),
                 model_fingerprint: None,
                 reasoning_effort: None,
-            })],
+
+                phase: None,
+                message_id: None,
+})],
             stop_reason: Some(StopReason::Stop),
             usage: None,
             cost_usd_ticks: None,
@@ -6640,7 +8617,10 @@ mod tests {
                 model_id: None,
                 model_fingerprint: None,
                 reasoning_effort: None,
-            })],
+
+                phase: None,
+                message_id: None,
+})],
             stop_reason: Some(StopReason::Stop),
             usage: None,
             cost_usd_ticks: None,
@@ -6665,7 +8645,10 @@ mod tests {
                 model_id: None,
                 model_fingerprint: None,
                 reasoning_effort: None,
-            })],
+
+                phase: None,
+                message_id: None,
+})],
             stop_reason: Some(StopReason::ToolCalls),
             usage: None,
             cost_usd_ticks: None,
@@ -6862,7 +8845,10 @@ mod tests {
             model_id: None,
             model_fingerprint: None,
             reasoning_effort: None,
-        }
+
+            phase: None,
+            message_id: None,
+}
         .with_model_id("grok-3");
 
         assert_eq!(item.model_id, Some("grok-3".to_string()));
@@ -6951,7 +8937,10 @@ mod tests {
             model_id: None,
             model_fingerprint: None,
             reasoning_effort: None,
-        })
+
+            phase: None,
+            message_id: None,
+})
     }
 
     #[test]
@@ -7653,7 +9642,10 @@ mod tests {
                 model_id: None,
                 model_fingerprint: None,
                 reasoning_effort: None,
-            }),
+
+                phase: None,
+                message_id: None,
+}),
             ConversationItem::tool_result_with_images(
                 "call_1",
                 "Read image file: photo.png",
@@ -8163,7 +10155,10 @@ mod tests {
                     model_id: None,
                     model_fingerprint: None,
                     reasoning_effort: None,
-                }),
+
+                    phase: None,
+                    message_id: None,
+}),
             ],
             stop_reason: Some(StopReason::Stop),
             usage: None,
@@ -9396,7 +11391,10 @@ mod tests {
                 model_id: None,
                 model_fingerprint: None,
                 reasoning_effort: None,
-            }),
+
+                phase: None,
+                message_id: None,
+}),
             ConversationItem::tool_result("call_1", "file contents"),
         ]);
 

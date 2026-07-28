@@ -387,6 +387,17 @@ pub(crate) fn flatten_transcript_for_classifier(
             ConversationItem::BackendToolCall(btc) => {
                 let _ = writeln!(out, "[backend_tool_call] {}", btc.text_summary());
             }
+            ConversationItem::FunctionCall(tc) => {
+                let _ = writeln!(
+                    out,
+                    "[function_call] {}({})",
+                    tc.name,
+                    truncate(&tc.arguments)
+                );
+            }
+            ConversationItem::OpaqueWire(o) => {
+                let _ = writeln!(out, "[opaque_wire] {}", o.type_name);
+            }
             ConversationItem::Reasoning(r) => {
                 if include_reasoning {
                     let text = xai_grok_sampling_types::reasoning_item_text(r);

@@ -9,6 +9,49 @@ use xai_grok_shell::sampling::types::{
 
 use crate::slash::commands::effort_levels::legacy_effort_options;
 
+/// Map a session model id onto a catalog key when the exact id is absent.
+///
+/// Multi-provider catalog keys are credential-scoped (`codex/{uuid}/{slug}`)
+/// while CLI/`--model` and deferred switches often use the short routing slug
+/// (`gpt-5.6-luna`). Exact miss must rematch uniquely; ambiguous multi-account
+/// same-slug must return `None` (no silent first-wins).
+fn rematch_catalog_key(
+    available: &IndexMap<acp::ModelId, acp::ModelInfo>,
+    wanted: &acp::ModelId,
+) -> Option<acp::ModelId> {
+    if available.contains_key(wanted) {
+        return Some(wanted.clone());
+    }
+    let slug = model_id_slug(wanted);
+    if slug.is_empty() {
+        return None;
+    }
+    let suffix = format!("/{slug}");
+    let mut matches: Vec<&acp::ModelId> = available
+        .keys()
+        .filter(|id| {
+            let k = id.0.as_ref();
+            k == slug || k.ends_with(&suffix) || model_id_slug(id) == slug
+        })
+        .collect();
+    if matches.is_empty() {
+        matches = available
+            .iter()
+            .filter(|(_, info)| info.name == slug || info.name.eq_ignore_ascii_case(slug))
+            .map(|(id, _)| id)
+            .collect();
+    }
+    match matches.as_slice() {
+        [only] => Some((*only).clone()),
+        _ => None,
+    }
+}
+
+/// Last path segment of a model id (`codex/{uuid}/slug` → `slug`).
+fn model_id_slug(id: &acp::ModelId) -> &str {
+    id.0.rsplit('/').next().unwrap_or(id.0.as_ref())
+}
+
 /// Why an effort token could not be applied to a model. Shared by every effort
 /// surface (`/effort`, the CLI deferred switch, and headless) so they classify
 /// the same input identically and differ only in how they surface the error.
@@ -137,6 +180,11 @@ impl ModelState {
     }
 
     /// Replace the available models, preserving current selection if still valid.
+    ///
+    /// When the session holds a short routing slug (e.g. `gpt-5.6-luna`) but the
+    /// catalog only exposes credential-scoped keys (`codex/{id}/gpt-5.6-luna`),
+    /// rematch uniquely before falling back to the shell default — otherwise a
+    /// catalog refresh clobbers the session back to e.g. `grok-4.5`.
     pub fn update_catalog(
         &mut self,
         new_available: IndexMap<acp::ModelId, acp::ModelInfo>,
@@ -146,15 +194,21 @@ impl ModelState {
         self.available = new_available;
         if let Some(ref id) = self.current {
             if !self.available.contains_key(id) {
-                self.current = fallback_current;
+                self.current = rematch_catalog_key(&self.available, id).or(fallback_current);
             }
         } else {
             self.current = fallback_current;
         }
         // The models/update broadcast carries each model's static default effort,
-        // not this session's choice; only re-derive when the model changed so a
-        // catalog refresh can't clobber a user-set effort.
-        if self.current != previous_current_model {
+        // not this session's choice; only re-derive when the *logical* model
+        // changed. Rematching `gpt-5.6-luna` → `codex/.../gpt-5.6-luna` must
+        // not clobber user effort.
+        let logical_changed = match (&previous_current_model, &self.current) {
+            (Some(prev), Some(cur)) => model_id_slug(prev) != model_id_slug(cur),
+            (None, None) => false,
+            _ => true,
+        };
+        if logical_changed {
             self.reasoning_effort = self
                 .current
                 .as_ref()
@@ -164,17 +218,26 @@ impl ModelState {
     }
 
     /// Set the current model and resolve reasoning effort from catalog meta.
+    ///
+    /// Rematches short slugs onto a unique catalog key when the exact id is
+    /// missing (multi-provider `codex/{credential}/{slug}` identity).
     pub fn set_current(
         &mut self,
         model_id: acp::ModelId,
         effort_override: Option<ReasoningEffort>,
     ) {
+        let model_id = rematch_catalog_key(&self.available, &model_id).unwrap_or(model_id);
         self.current = Some(model_id.clone());
         self.reasoning_effort = effort_override.or_else(|| {
             self.available
                 .get(&model_id)
                 .and_then(|info| parse_reasoning_effort_meta(info.meta.as_ref()))
         });
+    }
+
+    /// Resolve `wanted` to a key present in this catalog (exact or unique slug).
+    pub fn resolve_in_catalog(&self, wanted: &acp::ModelId) -> Option<acp::ModelId> {
+        rematch_catalog_key(&self.available, wanted)
     }
 
     /// The reasoning-effort menu for the current model. Gate-first: an unset or
@@ -313,9 +376,8 @@ impl From<Option<acp::SessionModelState>> for ModelState {
                 for model in state.available_models {
                     models.insert(model.model_id.clone(), model);
                 }
-                let current_model = models
-                    .contains_key(&state.current_model_id)
-                    .then_some(state.current_model_id);
+                // Exact catalog key or unique multi-provider short-slug rematch.
+                let current_model = rematch_catalog_key(&models, &state.current_model_id);
                 let reasoning_effort = current_model
                     .as_ref()
                     .and_then(|id| models.get(id))
@@ -436,6 +498,84 @@ mod tests {
 
         assert_eq!(state.current, Some(id_b));
         assert_eq!(state.reasoning_effort, Some(ReasoningEffort::Low));
+    }
+
+    #[test]
+    fn update_catalog_rematches_short_slug_to_unique_codex_key() {
+        let short = acp::ModelId::new(Arc::from("gpt-5.6-luna"));
+        let catalog_key =
+            acp::ModelId::new(Arc::from("codex/019f6a33-60f7-78c1-97e7-27fc1ccfc525/gpt-5.6-luna"));
+        let mut state = ModelState::default();
+        // Session selected short routing slug (CLI --model / deferred switch).
+        state.current = Some(short.clone());
+        state.reasoning_effort = Some(ReasoningEffort::Low);
+
+        let mut refreshed = IndexMap::new();
+        refreshed.insert(
+            catalog_key.clone(),
+            model_with_effort(
+                catalog_key.0.as_ref(),
+                "GPT-5.6-Luna",
+                "medium",
+            ),
+        );
+        // Shell global default is still grok-4.5 — must not win over unique rematch.
+        let shell_fallback = acp::ModelId::new(Arc::from("grok-4.5"));
+        refreshed.insert(
+            shell_fallback.clone(),
+            model_with_effort("grok-4.5", "Grok 4.5", "high"),
+        );
+        state.update_catalog(refreshed, Some(shell_fallback.clone()));
+
+        assert_eq!(
+            state.current,
+            Some(catalog_key),
+            "unique multi-provider rematch must beat shell fallback"
+        );
+        // Same model identity → effort must not be clobbered by catalog default.
+        assert_eq!(state.reasoning_effort, Some(ReasoningEffort::Low));
+    }
+
+    #[test]
+    fn update_catalog_ambiguous_slug_falls_back_to_shell_default() {
+        let short = acp::ModelId::new(Arc::from("gpt-5.6-luna"));
+        let mut state = ModelState::default();
+        state.current = Some(short);
+
+        let key_a =
+            acp::ModelId::new(Arc::from("codex/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/gpt-5.6-luna"));
+        let key_b =
+            acp::ModelId::new(Arc::from("codex/bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb/gpt-5.6-luna"));
+        let fallback = acp::ModelId::new(Arc::from("grok-4.5"));
+        let mut refreshed = IndexMap::new();
+        refreshed.insert(key_a, model_with_effort("k-a", "Luna A", "low"));
+        refreshed.insert(key_b, model_with_effort("k-b", "Luna B", "low"));
+        refreshed.insert(
+            fallback.clone(),
+            model_with_effort("grok-4.5", "Grok 4.5", "high"),
+        );
+        state.update_catalog(refreshed, Some(fallback.clone()));
+
+        assert_eq!(
+            state.current,
+            Some(fallback),
+            "ambiguous multi-account slug must not silent first-wins"
+        );
+    }
+
+    #[test]
+    fn set_current_rematches_short_slug_onto_catalog_key() {
+        let catalog_key =
+            acp::ModelId::new(Arc::from("codex/019f6a33-60f7-78c1-97e7-27fc1ccfc525/gpt-5.6-luna"));
+        let mut state = ModelState::default();
+        state.available.insert(
+            catalog_key.clone(),
+            model_with_effort(catalog_key.0.as_ref(), "GPT-5.6-Luna", "low"),
+        );
+        let short = acp::ModelId::new(Arc::from("gpt-5.6-luna"));
+        state.set_current(short, Some(ReasoningEffort::Medium));
+        assert_eq!(state.current, Some(catalog_key));
+        assert_eq!(state.reasoning_effort, Some(ReasoningEffort::Medium));
     }
 
     fn state_with_meta(meta: Option<serde_json::Value>) -> ModelState {

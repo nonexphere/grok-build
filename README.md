@@ -138,3 +138,50 @@ Third-party and vendored code remains under its original licenses. See:
   — crate-local notice for the codex and opencode ports (license texts +
   Apache §4(b) change notice)
 - [`third_party/NOTICE`](third_party/NOTICE) — vendored Mermaid-stack index
+
+---
+
+## Fork (Goblin)
+
+This repository is a fork of `xai-org/grok-build` that adds native
+multi-provider authentication, with Codex / ChatGPT OAuth as the first
+external provider.
+
+### Branch policy (required for agents and humans)
+
+| Branch | Role |
+|--------|------|
+| **`main`** | Always mirrors **upstream** (`xai-org/grok-build`). No feature work, no feature PRs into `main`. |
+| **`goblin`** | **Principal branch of this fork** — integration line. All product PRs target `goblin`. |
+| **`goblin-*`** | Feature branches. Open PRs **into `goblin` only**. |
+
+Remotes:
+
+| Remote | Points at |
+|--------|-----------|
+| `origin` | `xai-org/grok-build` (upstream) |
+| `fork` | `nonexphere/grok-build` (this fork; push here) |
+
+```sh
+# Refresh the upstream mirror (does not require a clean feature worktree):
+git fetch origin
+git branch -f main origin/main
+git push fork main --force-with-lease
+
+# Open a PR (base MUST be goblin):
+gh pr create --repo nonexphere/grok-build --base goblin --head <feature-branch>
+```
+
+Agent skill for this workflow: **`@create-pr`**
+(`.agents/skills/create-pr/SKILL.md`). Local agent policy: [`AGENTS.md`](AGENTS.md).
+
+### Docs
+
+- **Fork contract:** [`GOBLIN.md`](GOBLIN.md) — branch policy, sync
+  workflow, module layout, feature flags, and release tags.
+- **Product spec:** [`task.md`](task.md) — full architecture specification
+  (D1–D10), protocol baseline, CLI/TUI flows, and implementation plan.
+- **Protocol baseline:**
+  [`docs/architecture/multi-provider-auth/protocol-baseline.md`](docs/architecture/multi-provider-auth/protocol-baseline.md)
+- **Phase ledger:**
+  [`docs/architecture/multi-provider-auth/PROGRESS.md`](docs/architecture/multi-provider-auth/PROGRESS.md)

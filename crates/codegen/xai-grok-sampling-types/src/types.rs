@@ -1083,6 +1083,10 @@ pub struct CreateResponseWrapper {
     /// `async_openai`'s `rs::Tool` enum (e.g., `x_search`). Injected
     /// as raw JSON into the serialized request body's `tools` array.
     pub extra_raw_tools: Vec<serde_json::Value>,
+
+    /// Conversation items used only to re-inject assistant `phase` after
+    /// serializing typed EasyInputMessage (which cannot carry `phase`).
+    pub assistant_phase_items: Option<Vec<crate::ConversationItem>>,
 }
 
 impl CreateResponseWrapper {
@@ -1099,6 +1103,7 @@ impl CreateResponseWrapper {
             x_grok_user_id: None,
             trace: None,
             extra_raw_tools: vec![],
+            assistant_phase_items: None,
         }
     }
 

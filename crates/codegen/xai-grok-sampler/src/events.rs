@@ -139,6 +139,9 @@ pub struct SamplingErrorInfo {
     /// Telemetry only; `None` for terminal-response detections.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub doom_loop_aborted_at_chunk: Option<u64>,
+    /// Multi-provider resolve attempt id for exact 401 stamp recovery.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auth_attempt_id: Option<u64>,
 }
 
 /// Coarse-grained classification of a sampling failure.
@@ -188,7 +191,7 @@ impl From<&SamplingError> for SamplingErrorInfo {
         let message = err.to_string();
 
         let (kind, status_code, retry_after_secs, model_metadata) = match err {
-            SamplingError::Auth(_) => (SamplingErrorKind::Auth, None, None, None),
+            SamplingError::Auth { .. } => (SamplingErrorKind::Auth, None, None, None),
             SamplingError::InvalidConfiguration(_) => (SamplingErrorKind::Api, None, None, None),
             SamplingError::Http(_) => (SamplingErrorKind::Http, None, None, None),
             SamplingError::Serialization(_) => (SamplingErrorKind::Serialization, None, None, None),
@@ -235,6 +238,7 @@ impl From<&SamplingError> for SamplingErrorInfo {
             } => (Some(triggers.clone()), *aborted_at_chunk),
             _ => (None, None),
         };
+        let auth_attempt_id = err.auth_attempt_id();
 
         Self {
             kind,
@@ -246,6 +250,7 @@ impl From<&SamplingError> for SamplingErrorInfo {
             empty_response_context,
             doom_loop_triggers,
             doom_loop_aborted_at_chunk,
+            auth_attempt_id,
         }
     }
 }
@@ -257,7 +262,7 @@ mod tests {
 
     #[test]
     fn auth_variant_classified_as_auth() {
-        let err = SamplingError::Auth("bad token".into());
+        let err = SamplingError::auth("bad token");
         let info = SamplingErrorInfo::from(&err);
         assert_eq!(info.kind, SamplingErrorKind::Auth);
         assert_eq!(info.status_code, None);

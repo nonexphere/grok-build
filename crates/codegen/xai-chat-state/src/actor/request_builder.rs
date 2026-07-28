@@ -144,6 +144,7 @@ impl ChatStateActor {
             trace,
             reasoning_effort: self.state.sampling_config.reasoning_effort,
             json_schema: None,
+            prompt_cache_key: None,
         }
     }
 }

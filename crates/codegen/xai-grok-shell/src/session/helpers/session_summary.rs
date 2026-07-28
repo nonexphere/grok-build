@@ -77,6 +77,21 @@ pub async fn generate_session_summary(
     model: &str,
 ) -> String {
     let clean_message = title_source_text(&user_message);
+
+    // P4: Codex-pinned session must not hit the default xAI API for titles.
+    // The client must already be the session's backend; if misrouted to xAI, skip LLM.
+    let codex_pin = client
+        .provider_id()
+        .is_some_and(|p| p.eq_ignore_ascii_case("codex"))
+        || xai_grok_sampling_types::is_codex_responses_backend(client.base_url());
+    if !xai_grok_sampling_types::title_inference_route_is_safe(codex_pin, client.base_url()) {
+        tracing::warn!(
+            base_url = %client.base_url(),
+            "session title: Codex pin with xAI base_url — skipping LLM title (P4)"
+        );
+        return title_fallback_from_user_text(&clean_message);
+    }
+
     let request = ConversationRequest::from_items(vec![
         ConversationItem::system(
             r#"You are tasked with generating the session title. The user is asking almost always software engineering related questions on their codebase.

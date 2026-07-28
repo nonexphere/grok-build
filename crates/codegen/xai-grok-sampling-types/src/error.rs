@@ -83,8 +83,13 @@ const SERIALIZATION_DISPLAY_PREFIX: &str = "serialization error: ";
 
 #[derive(Debug, Error)]
 pub enum SamplingError {
-    #[error("{0}")]
-    Auth(String),
+    /// Authentication failure. `attempt_id` binds multi-provider 401 recovery
+    /// to the exact resolve that produced the request (not FIFO/last-wins).
+    #[error("{message}")]
+    Auth {
+        message: String,
+        attempt_id: Option<u64>,
+    },
     #[error("invalid client configuration: {0}")]
     InvalidConfiguration(&'static str),
     #[error("request error: {0}")]
@@ -132,6 +137,30 @@ pub enum SamplingError {
 }
 
 impl SamplingError {
+    /// Auth error without a multi-provider attempt binding.
+    pub fn auth(message: impl AsRef<str>) -> Self {
+        Self::Auth {
+            message: message.as_ref().to_string(),
+            attempt_id: None,
+        }
+    }
+
+    /// Auth error bound to the resolve attempt that produced the request.
+    pub fn auth_with_attempt(message: impl AsRef<str>, attempt_id: Option<u64>) -> Self {
+        Self::Auth {
+            message: message.as_ref().to_string(),
+            attempt_id,
+        }
+    }
+
+    /// Multi-provider attempt id for exact stamp recovery (if present).
+    pub fn auth_attempt_id(&self) -> Option<u64> {
+        match self {
+            Self::Auth { attempt_id, .. } => *attempt_id,
+            _ => None,
+        }
+    }
+
     /// Rebuild a `Serialization` error from a rendered message for non-`Clone`
     /// contexts; it must stay `Serialization` so it remains non-retryable.
     pub fn serialization_message(msg: impl fmt::Display) -> Self {
@@ -161,7 +190,7 @@ impl SamplingError {
         // can race with invalid_grant_threshold to wipe auth.json.
         matches!(
             self,
-            SamplingError::Auth(_)
+            SamplingError::Auth { .. }
                 | SamplingError::Api {
                     status: StatusCode::UNAUTHORIZED,
                     ..
@@ -239,7 +268,7 @@ impl SamplingError {
 
     pub fn is_retryable(&self) -> bool {
         match self {
-            SamplingError::Auth(_) => false,
+            SamplingError::Auth { .. } => false,
             SamplingError::InvalidConfiguration(_) => false,
             SamplingError::Http(err) => is_retryable_reqwest(err),
             SamplingError::Serialization(_) => false,
@@ -430,7 +459,7 @@ mod tests {
             }
             .is_context_length_error()
         );
-        assert!(!SamplingError::Auth("nope".into()).is_context_length_error());
+        assert!(!SamplingError::auth("nope").is_context_length_error());
     }
 
     #[test]
@@ -568,7 +597,7 @@ mod tests {
 
     #[test]
     fn auth_variant_is_auth_error() {
-        let err = SamplingError::Auth("bad key".into());
+        let err = SamplingError::auth("bad key");
         assert!(err.is_auth_error());
     }
 
@@ -598,7 +627,7 @@ mod tests {
         };
         assert!(!server_error.is_rate_limited());
 
-        let auth_error = SamplingError::Auth("bad key".into());
+        let auth_error = SamplingError::auth("bad key");
         assert!(!auth_error.is_rate_limited());
 
         let timeout = SamplingError::IdleTimeout { elapsed_secs: 30 };
@@ -631,7 +660,7 @@ mod tests {
 
     #[test]
     fn retry_after_returns_none_for_non_api_errors() {
-        assert_eq!(SamplingError::Auth("x".into()).retry_after(), None);
+        assert_eq!(SamplingError::auth("x").retry_after(), None);
         assert_eq!(
             SamplingError::IdleTimeout { elapsed_secs: 10 }.retry_after(),
             None

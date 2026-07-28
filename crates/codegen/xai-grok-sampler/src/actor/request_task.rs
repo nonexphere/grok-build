@@ -436,7 +436,7 @@ async fn run_one_attempt(
             drive_l2(l2, request_id, event_tx, cancel_token, captured, None).await
         }
         ApiBackend::Responses => {
-            let (raw, metadata, doom_loop) =
+            let (raw, metadata, doom_loop, phase_map) =
                 match client.conversation_stream_responses(request).await {
                     Ok(parts) => parts,
                     Err(e) => return AttemptOutcome::InitFailed { error: e },
@@ -447,7 +447,14 @@ async fn run_one_attempt(
                 collector.disarm_abort();
             }
             let (teed, captured) = tee_errors(raw);
-            let l2 = stream_responses(teed, metadata, request_id.clone(), idle_timeout, doom_loop);
+            let l2 = stream_responses(
+                teed,
+                metadata,
+                request_id.clone(),
+                idle_timeout,
+                doom_loop,
+                phase_map,
+            );
             drive_l2(l2, request_id, event_tx, cancel_token, captured, doom_check).await
         }
         ApiBackend::Messages => {
@@ -590,7 +597,7 @@ fn synthesize_from_info(info: &SamplingErrorInfo) -> SamplingError {
                 .find_map(|tok| tok.strip_suffix('s').and_then(|n| n.parse::<u64>().ok()))
                 .unwrap_or(0),
         },
-        SamplingErrorKind::Auth => SamplingError::Auth(info.message.clone()),
+        SamplingErrorKind::Auth => SamplingError::auth(info.message.clone()),
         // Must stay Serialization: EventStreamError is retryable, and a
         // response-parse failure is deterministic on retry. `info.message`
         // is the variant's rendered Display, so rebuild via the constructor
@@ -724,14 +731,15 @@ fn handle_cancellation(
         empty_response_context: None,
         doom_loop_triggers: None,
         doom_loop_aborted_at_chunk: None,
-    };
+        auth_attempt_id: None,
+};
     let _ = event_tx.send(SamplingEvent::Failed {
         request_id: request_id.clone(),
         error: info,
     });
     send_completion(
         completion_tx,
-        Err(SamplingError::Auth("request cancelled".to_string())),
+        Err(SamplingError::auth("request cancelled".to_string())),
     );
 }
 
@@ -761,7 +769,8 @@ mod tests {
             empty_response_context: None,
             doom_loop_triggers: None,
             doom_loop_aborted_at_chunk: None,
-        };
+            auth_attempt_id: None,
+};
         let err = synthesize_from_info(&info);
         match err {
             SamplingError::IdleTimeout { elapsed_secs } => assert_eq!(elapsed_secs, 240),
@@ -781,7 +790,8 @@ mod tests {
             empty_response_context: None,
             doom_loop_triggers: None,
             doom_loop_aborted_at_chunk: None,
-        };
+            auth_attempt_id: None,
+};
         let err = synthesize_from_info(&info);
         match err {
             SamplingError::Api {
@@ -806,7 +816,8 @@ mod tests {
             empty_response_context: None,
             doom_loop_triggers: None,
             doom_loop_aborted_at_chunk: None,
-        };
+            auth_attempt_id: None,
+};
         let err = synthesize_from_info(&info);
         match err {
             SamplingError::Api {

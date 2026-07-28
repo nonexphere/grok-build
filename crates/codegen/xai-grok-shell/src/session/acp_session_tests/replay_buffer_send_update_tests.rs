@@ -80,6 +80,7 @@ pub(super) async fn make_replay_send_update_fixture() -> ReplaySendUpdateFixture
         model_auth_facts: std::cell::RefCell::new(None),
         attribution_callback: None,
         auth_manager: None,
+        multi_provider_auth: parking_lot::Mutex::new(None),
         state,
         notifications: NotificationSender {
             gateway,
@@ -791,7 +792,8 @@ async fn failed_event_preserves_streaming_capture_for_takeout() {
                         empty_response_context: None,
                         doom_loop_triggers: None,
                         doom_loop_aborted_at_chunk: None,
-                    },
+                        auth_attempt_id: None,
+},
                 })
                 .await;
             let cap = actor.streaming_turn_capture.lock().clone();
@@ -1206,7 +1208,8 @@ async fn reasoning_only_doomloop_turn_captures_every_generation_as_segments() {
                 }),
                 doom_loop_triggers: None,
                 doom_loop_aborted_at_chunk: None,
-            };
+                auth_attempt_id: None,
+};
             actor
                 .handle_sampling_event(SamplingEvent::Failed {
                     request_id: req,

@@ -1,0 +1,9 @@
+# Tasks — v1-03 processor, in-process and stdio vertical slice
+
+- [ ] `AS103-01` [D-CR.4,D-SP.1] In `xai-grok-app-server/src/processor/`, implement initialize/dispatch state without runtime semantics duplication; run `./scripts/run-rust-test-gate.sh processor cargo test -p xai-grok-app-server processor`; accept strict request/response/error fixtures.
+- [ ] `AS103-02` [D-TR.3] In `xai-grok-app-server/src/transport/in_process.rs`, implement typed client handle; run `./scripts/run-rust-test-gate.sh in_process cargo test -p xai-grok-app-server in_process`; accept initialize→session start→turn→Item stream through the shared processor.
+- [ ] `AS103-03` [D-TR.1,D-SP.19] In `transport/stdio.rs`, implement NDJSON, EOF drain and stderr diagnostics; run `./scripts/run-rust-test-gate.sh stdio cargo test -p xai-grok-app-server stdio`; accept stdout contains only one valid JSON object per line.
+- [ ] `AS103-04` [D-SP.8..18] Under `xai-grok-app-server/tests/conformance/`, run the same method/event/error fixtures against in-process and stdio; run `./scripts/run-rust-test-gate.sh conformance cargo test -p xai-grok-app-server conformance`; accept normalized outputs identical.
+- [ ] `AS103-05` [D-SP.18,D-SEC.10] Add bounded writer/replay tests; run `./scripts/run-rust-test-gate.sh backpressure cargo test -p xai-grok-app-server backpressure`; accept slow client resync without blocking processor/runtime.
+- [ ] `AS103-06` [D-RF.7] Add composition assertion; run `./scripts/run-rust-test-gate.sh composition cargo test -p xai-grok-app-server composition`; accept processor depends on facade trait and never constructs SessionActor.
+- [ ] `AS103-07` [D-TD.3,D-TD.6] Capture RED/GREEN and run `cargo test -p xai-grok-app-server-protocol -p xai-grok-tower -p xai-grok-app-server`; accept all non-network vertical-slice checks green.

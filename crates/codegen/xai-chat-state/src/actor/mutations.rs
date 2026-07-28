@@ -18,8 +18,10 @@ fn item_kind_str(item: &ConversationItem) -> &'static str {
         ConversationItem::User(_) => "user",
         ConversationItem::Assistant(_) => "assistant",
         ConversationItem::ToolResult(_) => "tool_result",
+        ConversationItem::FunctionCall(_) => "function_call",
         ConversationItem::BackendToolCall(_) => "backend_tool_call",
         ConversationItem::Reasoning(_) => "reasoning",
+        ConversationItem::OpaqueWire(_) => "opaque_wire",
     }
 }
 
@@ -297,11 +299,13 @@ impl ChatStateActor {
                     .sum::<usize>(),
                 ConversationItem::Assistant(a) => a.content.len(),
                 ConversationItem::ToolResult(tr) => tr.content.len(),
+                ConversationItem::FunctionCall(tc) => tc.name.len() + tc.arguments.len(),
                 ConversationItem::BackendToolCall(b) => b.text_summary().len(),
                 ConversationItem::Reasoning(r) => {
                     xai_grok_sampling_types::reasoning_item_text(r).len()
                         + r.encrypted_content.as_deref().map(str::len).unwrap_or(0)
                 }
+                ConversationItem::OpaqueWire(o) => o.type_name.len(),
             })
             .sum()
     }

@@ -1878,6 +1878,7 @@ async fn async_main() -> Result<()> {
                 .await;
             }
             Command::Login {
+                provider,
                 legacy: _,
                 oauth,
                 device_auth,
@@ -1889,9 +1890,115 @@ async fn async_main() -> Result<()> {
                     .map_err(|e| anyhow::anyhow!("Failed to load config: {e}"))?;
                 let config = AgentConfig::new_from_toml_cfg(&config)
                     .map_err(|e| anyhow::anyhow!("Failed to create agent config: {e}"))?;
-                xai_grok_shell::auth::run_cli_login(&config, oauth, device_auth, devbox).await?;
-                println!();
-                xai_grok_shell::instrumentation::finalize_and_exit(0);
+
+                // Multi-provider routing (goblin fork): parse --provider and
+                // dispatch Codex to the native multi-auth path; xAI / default
+                // still uses the existing AuthManager login flow.
+                let mut provider_arg = xai_grok_multi_auth::cli::parse_login_provider(
+                    provider.as_deref(),
+                )
+                .map_err(|e| anyhow::anyhow!("{e}"))?;
+
+                // No --provider → interactive multi-provider picker.
+                if matches!(
+                    provider_arg,
+                    xai_grok_multi_auth::cli::LoginProviderArg::Interactive
+                ) {
+                    let registry =
+                        xai_grok_multi_auth::registry::build_default_registry();
+                    provider_arg = xai_grok_multi_auth::cli::prompt_provider_selection(
+                        &registry,
+                    )
+                    .map_err(|e| anyhow::anyhow!("{e}"))?;
+                }
+
+                match provider_arg {
+                    xai_grok_multi_auth::cli::LoginProviderArg::Codex => {
+                        if xai_grok_multi_auth::cli::codex_auth_disabled() {
+                            anyhow::bail!(
+                                "Codex authentication is disabled \
+                                 (GROK_DISABLE_CODEX_AUTH is set). Unset the \
+                                 kill switch to enable native Codex login."
+                            );
+                        }
+                        // B5/D10: fail closed unless explicitly approved/configured.
+                        if let Some(reason) =
+                            xai_grok_multi_auth::kill_switch::codex_oauth_login_block_reason()
+                        {
+                            anyhow::bail!("{reason}");
+                        }
+                        // Native Codex login — never shells out to the Codex CLI
+                        // and never reads ~/.codex (GOBLIN D1/D2).
+                        let transport = if device_auth {
+                            xai_grok_auth::LoginTransport::DeviceCode
+                        } else {
+                            let _ = oauth;
+                            xai_grok_auth::LoginTransport::BrowserPkce
+                        };
+                        println!(
+                            "Native Codex login ({transport:?}) — no Codex CLI required"
+                        );
+
+                        let home = xai_grok_multi_auth::token_resolve::grok_home();
+                        let store = std::sync::Arc::new(
+                            xai_grok_multi_auth::store::FileCredentialStore::new(home),
+                        )
+                            as std::sync::Arc<dyn xai_grok_auth::CredentialStore>;
+                        let registry = std::sync::Arc::new(
+                            xai_grok_multi_auth::registry::build_default_registry(),
+                        );
+                        let coordinator =
+                            xai_grok_multi_auth::login_coordinator::LoginCoordinator::new(
+                                store, registry,
+                            );
+                        let provider_id =
+                            xai_grok_auth::ProviderId::new_unchecked("codex");
+
+                        // Full loop: loopback bind + complete, or device poll + complete.
+                        let meta = coordinator
+                            .run_login(&provider_id, transport, /* open_browser */ true)
+                            .await
+                            .map_err(|e| anyhow::anyhow!("Codex login failed: {e}"))?;
+                        println!(
+                            "Logged in to Codex as alias `{}` (credential {}).",
+                            meta.alias, meta.key.credential_id
+                        );
+                        xai_grok_shell::instrumentation::finalize_and_exit(0);
+                    }
+                    xai_grok_multi_auth::cli::LoginProviderArg::Xai => {
+                        xai_grok_shell::auth::run_cli_login(
+                            &config, oauth, device_auth, devbox,
+                        )
+                        .await?;
+                        println!();
+                        xai_grok_shell::instrumentation::finalize_and_exit(0);
+                    }
+                    xai_grok_multi_auth::cli::LoginProviderArg::Interactive => {
+                        // prompt_provider_selection always resolves to Xai/Codex.
+                        unreachable!("interactive selection resolves before match");
+                    }
+                }
+            }
+            Command::Auth { command } => {
+                init_tracing_simple("cli");
+                let _otel_guard = xai_grok_telemetry::otel_layer::otel_guard();
+                match command {
+                    xai_grok_pager::app::cli::AuthCommand::Status { json: _ } => {
+                        // Prefer durable file store under product home (~/.grok-oss).
+                        let home = xai_grok_multi_auth::token_resolve::grok_home();
+                        let file_store =
+                            xai_grok_multi_auth::store::FileCredentialStore::new(home);
+                        let registry =
+                            xai_grok_multi_auth::registry::build_default_registry();
+                        let status = xai_grok_multi_auth::cli::auth_status_json(
+                            &file_store, &registry,
+                        )
+                        .await;
+                        println!("{}", serde_json::to_string_pretty(&status)?);
+                        // Never print tokens — status JSON is secret-free by construction.
+                        xai_grok_shell::instrumentation::finalize_and_exit(0);
+                    }
+                }
             }
             Command::Logout => {
                 init_tracing_simple("cli");
@@ -1899,7 +2006,31 @@ async fn async_main() -> Result<()> {
                     .map_err(|e| anyhow::anyhow!("Failed to load config: {e}"))?;
                 let config = AgentConfig::new_from_toml_cfg(&config)
                     .map_err(|e| anyhow::anyhow!("Failed to create agent config: {e}"))?;
-                xai_grok_shell::auth::run_cli_logout(&config)?;
+
+                // Multi-provider logout (Codex + any native store accounts) and
+                // legacy xAI auth.json clear.
+                let home = xai_grok_multi_auth::token_resolve::grok_home();
+                let store =
+                    xai_grok_multi_auth::store::FileCredentialStore::new(home);
+                let report = xai_grok_multi_auth::cli::logout_providers(
+                    &store,
+                    None,
+                    || {
+                        xai_grok_shell::auth::run_cli_logout(&config)
+                            .map_err(|e| format!("{e:#}"))
+                    },
+                )
+                .await
+                .map_err(|e| anyhow::anyhow!("{e}"))?;
+                println!(
+                    "Logged out: removed {} multi-provider credential(s){}",
+                    report.multi_provider_removed,
+                    if report.legacy_xai_cleared {
+                        "; cleared legacy xAI session"
+                    } else {
+                        ""
+                    }
+                );
                 xai_grok_shell::instrumentation::finalize_and_exit(0);
             }
             Command::Wrap(ref wrap_args) => {

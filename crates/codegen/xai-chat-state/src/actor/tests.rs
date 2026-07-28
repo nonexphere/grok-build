@@ -1488,7 +1488,10 @@ async fn parallel_tool_calls_accept_first_reject_second_skip_third() {
             model_id: Some("grok-3".to_string()),
             model_fingerprint: None,
             reasoning_effort: None,
-        });
+
+            phase: None,
+            message_id: None,
+});
     h.handle.push_assistant_response(assistant_with_tools);
 
     // ── Tool execution results (simulating execute_tool_calls) ──────────
@@ -1774,7 +1777,10 @@ async fn dangling_tool_calls_after_crash_are_repaired_on_load() {
             model_id: Some("grok-3".to_string()),
             model_fingerprint: None,
             reasoning_effort: None,
-        }),
+
+            phase: None,
+            message_id: None,
+}),
         // Only call_1 got persisted before the crash
         ConversationItem::tool_result("call_1", "fn main() { ... }"),
         // call_2 and call_3 are MISSING — this is the dangling state
@@ -3369,7 +3375,10 @@ async fn get_last_model_metadata_returns_both_fields() {
             model_id: Some("grok-4.5".into()),
             model_fingerprint: Some("fp_abc123".into()),
             reasoning_effort: None,
-        }),
+
+            phase: None,
+            message_id: None,
+}),
     ]);
     let meta = h.handle.get_last_model_metadata().await;
     assert_eq!(meta.resolved_model_id.as_deref(), Some("grok-4.5"));
@@ -3418,7 +3427,10 @@ async fn sampling_config_survives_compaction_replacement() {
                 model_id: Some("grok-4.5".into()),
                 model_fingerprint: Some("fp_abc123".into()),
                 reasoning_effort: None,
-            }),
+
+                phase: None,
+                message_id: None,
+}),
         ],
         config,
     );
@@ -3501,7 +3513,10 @@ async fn model_metadata_lost_after_compaction_then_recovered_on_next_turn() {
                 model_id: Some("grok-4.5".into()),
                 model_fingerprint: Some("fp_acd3142484d3ad6f".into()),
                 reasoning_effort: None,
-            }),
+
+                phase: None,
+                message_id: None,
+}),
         ],
         config,
     );
@@ -3536,7 +3551,10 @@ async fn model_metadata_lost_after_compaction_then_recovered_on_next_turn() {
                 model_id: Some("grok-4.5".into()),
                 model_fingerprint: Some("fp_acd3142484d3ad6f".into()),
                 reasoning_effort: None,
-            },
+
+                phase: None,
+                message_id: None,
+},
         ));
 
     // Metadata recovered.

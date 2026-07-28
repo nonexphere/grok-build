@@ -385,7 +385,13 @@ impl HeadlessEmitter {
 
     fn on_thought_chunk(&mut self, text: &str) {
         match self.format {
-            OutputFormat::Plain => { /* no-op */ }
+            // Surface commentary/reasoning on stderr so final-answer stdout
+            // stays clean for piping while Codex mid-turn thoughts are visible.
+            OutputFormat::Plain => {
+                use std::io::Write as _;
+                eprint!("{text}");
+                let _ = std::io::stderr().flush();
+            }
             OutputFormat::StreamingJson => {
                 println!("{}", serde_json::json!({"type":"thought","data": text}));
             }

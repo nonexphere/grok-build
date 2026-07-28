@@ -73,6 +73,7 @@ async fn create_test_actor(
         model_auth_facts: std::cell::RefCell::new(None),
         attribution_callback: None,
         auth_manager: None,
+        multi_provider_auth: parking_lot::Mutex::new(None),
         state,
         notifications: NotificationSender {
             gateway: GatewaySender::new(gateway_tx),
@@ -506,6 +507,7 @@ async fn create_test_actor_with_memory(
         model_auth_facts: std::cell::RefCell::new(None),
         attribution_callback: None,
         auth_manager: None,
+        multi_provider_auth: parking_lot::Mutex::new(None),
         state,
         notifications: NotificationSender {
             gateway: GatewaySender::new(gateway_tx),
@@ -1136,8 +1138,9 @@ fn api_error_with_context_window(context_window: u64) -> xai_grok_sampler::Sampl
         empty_response_context: None,
         doom_loop_triggers: None,
         doom_loop_aborted_at_chunk: None,
+            auth_attempt_id: None,
+        }
     }
-}
 /// Primary scenario: remote settings shrinks the context window mid-session.
 /// The shell's last-known token count (214K) exceeds the new limit (200K) —
 /// should_compact_on_error must return true so the session can recover.
@@ -1256,6 +1259,7 @@ async fn test_e2e_idle_resume_refreshes_model_metadata() {
                 rebuild_spec: crate::session::agent_rebuild::test_rebuild_spec_default(),
                 auth_method_id: test_auth_method_id("cached_token"),
                 model_auth_facts: std::cell::RefCell::new(None),
+                multi_provider_auth: parking_lot::Mutex::new(None),
                 auth_manager: {
                     let dir = tempfile::tempdir().unwrap();
                     let mgr = std::sync::Arc::new(crate::auth::AuthManager::new(
@@ -1508,7 +1512,8 @@ async fn test_compact_on_error_noop_without_model_metadata() {
                 empty_response_context: None,
                 doom_loop_triggers: None,
                 doom_loop_aborted_at_chunk: None,
-            };
+                auth_attempt_id: None,
+};
             assert!(!actor.should_compact_on_error(&err).await);
         })
         .await;

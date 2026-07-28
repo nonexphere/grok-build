@@ -1,0 +1,59 @@
+# Epic v2-06 — Clients e projections v2
+
+Status: rascunho/backlog
+Prioridade: pós-lançamento core
+Estimativa: 2–4 semanas
+Depende de: `../v2-04-tools-verification/`, `../v2-05-task-graph-subagents/`
+Habilita: `../v2-07-recovery-rollout/`; integração App Server pós-core
+Skills relacionadas: `@implementation-loop`, `@code-review`
+Proveniência: [provenance: user-input, workspace, doc-tree, code, inferred]
+
+## Arquitetura
+
+Publica `GoalUpdatedV2`/events e comandos completos para slash, pager, ACP e
+headless. A UI é uma projeção do runtime e não muta state localmente.
+
+## Escopo
+
+### ADICIONAR
+- edit/budget/audit/events/report commands;
+- dashboard requirement/task/subagent/evidence/budget/verifier;
+- headless lifecycle events e deterministic exit codes;
+- `GoalService` projection consumível pelo App Server.
+
+### REFACTORIZAR
+- goal modal e tasks pane passam a consumir state/event versionados.
+
+### REMOVER
+- inferência de lifecycle a partir de texto/transcript.
+
+### MANTÉM
+- old pager/ACP fields additive durante compat window.
+
+## Business rules
+
+- user lifecycle commands têm optimistic concurrency e feedback explícito;
+- pause impede novo start imediatamente;
+- dashboard distingue proven/incomplete/missing/blocked/infra;
+- headless exit só é success após runtime completion report.
+
+## Contratos
+
+- [runtime ownership](../../_shared/runtime-ownership.md)
+- [identity/event ordering](../../_shared/identity-event-ordering.md)
+
+## Tasks
+
+- [tasks.md](./tasks.md)
+
+## Gate de saída
+
+- Create→pause→edit→resume→verify→complete funciona em TUI e headless.
+- Old pager/ACP snapshots passam; eventos não vazam secrets.
+- Goal facade fixtures permitem projeção App Server sem lifecycle coupling.
+
+## Riscos e incertezas
+
+- **[HIGH][Confirmed] compat UI/wire:** old clients — additive fields, snapshots e rollback.
+- **[MEDIUM][Likely] dashboard overload:** progressive disclosure e render benchmarks.
+- **UNVERIFIED:** forma final de Goal Item no protocolo App Server.

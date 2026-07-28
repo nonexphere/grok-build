@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://grok-oss.local/schemas/tower-tools.2026-07-18.experimental-v2.json",
+  "title": "Tower tools input and output contracts",
+  "$defs": {
+    "wireCounter": { "type": "string", "pattern": "^(0|[1-9][0-9]{0,19})$" },
+    "providerBinding": { "type": "object", "additionalProperties": false, "required": ["providerId", "credentialId", "modelId", "backend", "bindingRevision"], "properties": { "providerId": { "type": "string", "minLength": 1 }, "credentialId": { "type": "string", "minLength": 1 }, "modelId": { "type": "string", "minLength": 1 }, "backend": { "type": "string", "minLength": 1 }, "bindingRevision": { "$ref": "#/$defs/wireCounter" } } },
+    "sessionRow": { "type": "object", "additionalProperties": false, "required": ["sessionId", "agentType", "workspaceRoot", "status", "residency", "activeTurnId", "updatedAtMs", "safeSummary"], "properties": { "sessionId": { "type": "string" }, "agentType": { "type": "string" }, "workspaceRoot": { "type": "string" }, "status": { "type": "string" }, "residency": { "enum": ["resident", "dormant", "archived", "dead"] }, "activeTurnId": { "type": ["string", "null"] }, "updatedAtMs": { "type": "integer" }, "safeSummary": { "type": ["string", "null"], "maxLength": 4096 } } },
+    "operationResult": { "type": "object", "additionalProperties": false, "required": ["operationId", "state", "sessionId"], "properties": { "operationId": { "type": "string" }, "state": { "enum": ["accepted", "completed", "rejected"] }, "sessionId": { "type": "string" }, "turnId": { "type": ["string", "null"] } } },
+    "inputBlock": { "oneOf": [ { "type": "object", "additionalProperties": false, "required": ["type", "text"], "properties": { "type": { "const": "text" }, "text": { "type": "string", "minLength": 1, "maxLength": 1048576 } } }, { "type": "object", "additionalProperties": false, "required": ["type", "name", "path"], "properties": { "type": { "enum": ["mention", "skill"] }, "name": { "type": "string" }, "path": { "type": ["string", "null"] } } } ] },
+    "toolError": { "type": "object", "additionalProperties": false, "required": ["code", "message", "retryable"], "properties": { "code": { "enum": ["tower_acl_denied", "invalid_arguments", "session_not_found", "turn_not_found", "session_archived", "turn_not_active", "interaction_pending", "idempotency_conflict", "cursor_too_old", "epoch_mismatch", "resync_required", "operation_timeout", "tower_draining", "runtime_unavailable", "internal_error"] }, "message": { "type": "string", "maxLength": 1024 }, "retryable": { "type": "boolean" }, "operationId": { "type": ["string", "null"] } } },
+
+    "tower_agent_list_input": { "type": "object", "additionalProperties": false, "properties": { "workspaceRoot": { "type": ["string", "null"] }, "agentType": { "type": ["string", "null"] }, "status": { "type": ["string", "null"] }, "includeArchived": { "type": "boolean", "default": false }, "pageSize": { "type": "integer", "minimum": 1, "maximum": 100, "default": 50 }, "cursor": { "type": ["string", "null"] } } },
+    "tower_agent_list_output": { "type": "object", "additionalProperties": false, "required": ["sessions", "nextCursor"], "properties": { "sessions": { "type": "array", "items": { "$ref": "#/$defs/sessionRow" } }, "nextCursor": { "type": ["string", "null"] } } },
+
+    "tower_agent_start_input": { "type": "object", "additionalProperties": false, "required": ["workspaceRoot", "agentType", "idempotencyKey"], "properties": { "workspaceRoot": { "type": "string", "minLength": 1, "maxLength": 4096 }, "agentType": { "type": "string", "minLength": 1, "maxLength": 128 }, "model": { "type": ["string", "null"], "maxLength": 256 }, "providerBinding": { "oneOf": [{ "$ref": "#/$defs/providerBinding" }, { "type": "null" }] }, "sandboxMode": { "type": ["string", "null"] }, "idempotencyKey": { "type": "string", "minLength": 8, "maxLength": 128 } } },
+    "tower_agent_start_output": { "$ref": "#/$defs/operationResult" },
+
+    "tower_agent_send_input": { "type": "object", "additionalProperties": false, "required": ["sessionId", "input", "mode", "idempotencyKey"], "properties": { "sessionId": { "type": "string" }, "input": { "type": "array", "minItems": 1, "maxItems": 128, "items": { "$ref": "#/$defs/inputBlock" } }, "mode": { "enum": ["new_turn", "steer_active"] }, "turnId": { "type": ["string", "null"], "description": "Required for steer_active; forbidden for new_turn" }, "idempotencyKey": { "type": "string", "minLength": 8, "maxLength": 128 } }, "allOf": [{ "if": { "properties": { "mode": { "const": "steer_active" } } }, "then": { "required": ["turnId"] } }, { "if": { "properties": { "mode": { "const": "new_turn" } } }, "then": { "properties": { "turnId": { "type": "null" } } } }] },
+    "tower_agent_send_output": { "$ref": "#/$defs/operationResult" },
+
+    "tower_agent_history_input": { "type": "object", "additionalProperties": false, "required": ["sessionId", "mode", "maxBytes"], "properties": { "sessionId": { "type": "string" }, "mode": { "enum": ["full", "last"] }, "historyEpoch": { "type": ["string", "null"] }, "afterEventSeq": { "$ref": "#/$defs/wireCounter" }, "maxBytes": { "type": "integer", "minimum": 1, "maximum": 1048576 }, "lastItems": { "type": "integer", "minimum": 1, "maximum": 100, "default": 20 } } },
+    "tower_agent_history_output": { "type": "object", "additionalProperties": false, "required": ["sessionId", "historyEpoch", "items", "nextEventSeq", "truncated", "redacted"], "properties": { "sessionId": { "type": "string" }, "historyEpoch": { "type": "string" }, "items": { "type": "array", "items": { "type": "object" } }, "nextEventSeq": { "$ref": "#/$defs/wireCounter" }, "truncated": { "type": "boolean" }, "redacted": { "type": "boolean" } } },
+
+    "tower_agent_interrupt_input": { "type": "object", "additionalProperties": false, "required": ["sessionId", "turnId", "idempotencyKey"], "properties": { "sessionId": { "type": "string" }, "turnId": { "type": "string" }, "idempotencyKey": { "type": "string", "minLength": 8, "maxLength": 128 } } },
+    "tower_agent_interrupt_output": { "$ref": "#/$defs/operationResult" },
+
+    "tower_agent_resume_input": { "type": "object", "additionalProperties": false, "required": ["sessionId", "idempotencyKey"], "properties": { "sessionId": { "type": "string" }, "idempotencyKey": { "type": "string", "minLength": 8, "maxLength": 128 } } },
+    "tower_agent_resume_output": { "$ref": "#/$defs/operationResult" },
+
+    "tower_agent_archive_input": { "type": "object", "additionalProperties": false, "required": ["sessionId", "idempotencyKey"], "properties": { "sessionId": { "type": "string" }, "idempotencyKey": { "type": "string", "minLength": 8, "maxLength": 128 } } },
+    "tower_agent_archive_output": { "$ref": "#/$defs/operationResult" },
+
+    "tower_agent_status_input": { "type": "object", "additionalProperties": false, "required": ["sessionId"], "properties": { "sessionId": { "type": "string" } } },
+    "tower_agent_status_output": { "$ref": "#/$defs/sessionRow" },
+
+    "tower_agent_wait_input": { "type": "object", "additionalProperties": false, "required": ["sessionId", "afterEventSeq", "timeoutMs"], "properties": { "sessionId": { "type": "string" }, "historyEpoch": { "type": ["string", "null"] }, "afterEventSeq": { "$ref": "#/$defs/wireCounter" }, "timeoutMs": { "type": "integer", "minimum": 1, "maximum": 300000 } } },
+    "tower_agent_wait_output": { "type": "object", "additionalProperties": false, "required": ["sessionId", "historyEpoch", "events", "nextEventSeq", "wakeReason"], "properties": { "sessionId": { "type": "string" }, "historyEpoch": { "type": "string" }, "events": { "type": "array", "items": { "type": "object" } }, "nextEventSeq": { "$ref": "#/$defs/wireCounter" }, "wakeReason": { "enum": ["event", "terminal", "interaction", "timeout", "resync_required"] } } }
+  }
+}

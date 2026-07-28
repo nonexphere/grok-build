@@ -162,9 +162,43 @@ impl Default for SamplerConfig {
     }
 }
 
+/// Token resolved for an outgoing request, optionally bound to a stamp attempt.
+#[derive(Debug, Clone)]
+pub struct ResolvedBearer {
+    pub token: String,
+    /// Multi-provider attempt id recorded with the recovery stamp. `None` for
+    /// simple API-key resolvers. 401 recovery must use this id, not FIFO.
+    pub attempt_id: Option<u64>,
+}
+
 /// Cheap sync read of the current bearer for [`SamplerConfig::bearer_resolver`].
+///
+/// **A1 / AUD-006:** multi-provider resolvers must only register a recovery
+/// stamp when the token is placed on the outgoing HTTP request
+/// ([`Self::resolve_for_request`] / [`Self::current_bearer`]). Logging/attribution
+/// must use [`Self::peek_bearer`], which does **not** enqueue a recovery stamp.
 pub trait BearerResolver: Send + Sync + std::fmt::Debug {
+    /// Bearer for the outgoing request. Multi-provider paths record an
+    /// attempt stamp here for generation-aware 401 recovery.
     fn current_bearer(&self) -> Option<String>;
+
+    /// Preferred entry for HTTP send: token + optional attempt id for exact
+    /// 401 stamp recovery (audit CRITICAL: not FIFO under concurrent 401s).
+    ///
+    /// Default wraps [`Self::current_bearer`] with `attempt_id: None`. Multi-provider
+    /// resolvers override to return the stamp attempt id from the same resolve.
+    fn resolve_for_request(&self) -> Option<ResolvedBearer> {
+        self.current_bearer().map(|token| ResolvedBearer {
+            token,
+            attempt_id: None,
+        })
+    }
+
+    /// Token for logging / attribution only. Default: same as
+    /// [`Self::current_bearer`]. Multi-provider overrides to avoid stamp pollution.
+    fn peek_bearer(&self) -> Option<String> {
+        self.current_bearer()
+    }
 }
 
 pub type SharedBearerResolver = std::sync::Arc<dyn BearerResolver>;

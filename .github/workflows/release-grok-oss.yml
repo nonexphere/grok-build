@@ -1,0 +1,228 @@
+# Build multi-platform Grok OSS binaries, assemble npm packages, publish when NPM_TOKEN is set.
+#
+# Without repository secret NPM_TOKEN:
+#   - build + pack jobs still run and attach artifacts
+#   - publish-npm is skipped (if: secrets.NPM_TOKEN)
+#
+# Human remaining step: add NPM_TOKEN with publish rights on npm org `brasalabs`.
+name: release-grok-oss
+
+on:
+  push:
+    tags:
+      - "grok-oss-v*"
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      publish_npm:
+        description: "Attempt npm publish (requires NPM_TOKEN secret)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+  PRODUCT_BIN: grok-oss
+
+jobs:
+  build-matrix:
+    name: build ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-x64
+            os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            artifact: grok-oss
+            npm_env: GROK_OSS_BIN_LINUX_X64
+          - name: linux-arm64
+            os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            artifact: grok-oss
+            npm_env: GROK_OSS_BIN_LINUX_ARM64
+          - name: darwin-arm64
+            os: macos-latest
+            target: aarch64-apple-darwin
+            artifact: grok-oss
+            npm_env: GROK_OSS_BIN_DARWIN_ARM64
+          - name: darwin-x64
+            os: macos-13
+            target: x86_64-apple-darwin
+            artifact: grok-oss
+            npm_env: GROK_OSS_BIN_DARWIN_X64
+          - name: win32-x64
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+            artifact: grok-oss.exe
+            npm_env: GROK_OSS_BIN_WIN32_X64
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Build release binary
+        shell: bash
+        run: |
+          cargo build -p xai-grok-pager-bin --bin grok-oss --release --target ${{ matrix.target }}
+          mkdir -p dist
+          src="target/${{ matrix.target }}/release/${{ matrix.artifact }}"
+          cp "$src" "dist/${{ matrix.artifact }}"
+          ls -la dist
+
+      - name: Upload release binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: binary-${{ matrix.name }}
+          path: dist/${{ matrix.artifact }}
+          if-no-files-found: error
+
+  assemble-npm:
+    name: assemble-npm-packages
+    needs: build-matrix
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          registry-url: https://registry.npmjs.org
+
+      - name: Download all binaries
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Map binaries into env for assemble
+        shell: bash
+        run: |
+          set -euo pipefail
+          find artifacts -type f -ls
+          # Locate each platform binary from download-artifact layout
+          export_var() {
+            local name="$1" envn="$2"
+            local f
+            f="$(find artifacts -type f -name "$name" | head -1 || true)"
+            if [[ -n "$f" ]]; then
+              echo "${envn}=$f" >> "$GITHUB_ENV"
+              echo "mapped $envn -> $f"
+            else
+              echo "WARN: missing $name for $envn"
+            fi
+          }
+          export_var grok-oss GROK_OSS_BIN_LINUX_X64
+          # arm64 linux may share name
+          if [[ -f artifacts/binary-linux-arm64/grok-oss ]]; then
+            echo "GROK_OSS_BIN_LINUX_ARM64=$PWD/artifacts/binary-linux-arm64/grok-oss" >> "$GITHUB_ENV"
+          fi
+          if [[ -f artifacts/binary-darwin-arm64/grok-oss ]]; then
+            echo "GROK_OSS_BIN_DARWIN_ARM64=$PWD/artifacts/binary-darwin-arm64/grok-oss" >> "$GITHUB_ENV"
+          fi
+          if [[ -f artifacts/binary-darwin-x64/grok-oss ]]; then
+            echo "GROK_OSS_BIN_DARWIN_X64=$PWD/artifacts/binary-darwin-x64/grok-oss" >> "$GITHUB_ENV"
+          fi
+          if [[ -f artifacts/binary-win32-x64/grok-oss.exe ]]; then
+            echo "GROK_OSS_BIN_WIN32_X64=$PWD/artifacts/binary-win32-x64/grok-oss.exe" >> "$GITHUB_ENV"
+          fi
+          # Prefer linux-x64 path if env empty
+          if [[ -f artifacts/binary-linux-x64/grok-oss ]]; then
+            echo "GROK_OSS_BIN_LINUX_X64=$PWD/artifacts/binary-linux-x64/grok-oss" >> "$GITHUB_ENV"
+          fi
+
+      - name: Assemble platform packages
+        run: node npm/scripts/assemble-platform-packages.mjs
+
+      - name: npm pack (publish matrix only, no publish)
+        run: |
+          set -euo pipefail
+          mkdir -p npm/dist
+          # Match optionalDependencies / build-matrix (exclude empty win32-arm64 stub).
+          for d in npm/grok-oss \
+                   npm/grok-oss-linux-x64 npm/grok-oss-linux-arm64 \
+                   npm/grok-oss-darwin-x64 npm/grok-oss-darwin-arm64 \
+                   npm/grok-oss-win32-x64; do
+            [[ -f "$d/package.json" ]] || { echo "missing $d"; exit 1; }
+            (cd "$d" && npm pack --pack-destination ../dist)
+          done
+          ls -la npm/dist
+          node npm/scripts/assert-package-identity.mjs
+
+      - name: Upload npm tarballs
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-packages
+          path: npm/dist/*
+
+      - name: Upload assembled npm tree
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-tree
+          path: npm/
+
+  github-release:
+    name: github-release-assets
+    needs: build-matrix
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Create GitHub Release with binaries
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/**/*
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  publish-npm:
+    name: publish-npm (requires NPM_TOKEN)
+    needs: assemble-npm
+    runs-on: ubuntu-latest
+    # Runs on tags / manual dispatch; without NPM_TOKEN exits 0 with a notice
+    # so the only remaining gate is the human-provided secret (TO_RELEASE_NPM.md).
+    if: ${{ startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && inputs.publish_npm) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          registry-url: https://registry.npmjs.org
+      - uses: actions/download-artifact@v4
+        with:
+          name: npm-tree
+          path: npm
+      - name: Publish platform packages then meta (or skip if no token)
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${NODE_AUTH_TOKEN:-}" ]]; then
+            echo "::notice title=npm publish skipped::NPM_TOKEN secret is not set. Build/pack artifacts are complete. Add NPM_TOKEN for org brasalabs and re-run. See TO_RELEASE_NPM.md"
+            exit 0
+          fi
+          # Only platforms produced by build-matrix (no win32-arm64 until CI builds it).
+          for d in npm/grok-oss-linux-x64 npm/grok-oss-linux-arm64 \
+                   npm/grok-oss-darwin-x64 npm/grok-oss-darwin-arm64 \
+                   npm/grok-oss-win32-x64; do
+            if [[ -f "$d/package.json" ]]; then
+              echo "Publishing $d …"
+              (cd "$d" && npm publish --access public)
+            fi
+          done
+          echo "Publishing meta @brasalabs/grok-oss …"
+          (cd npm/grok-oss && npm publish --access public)

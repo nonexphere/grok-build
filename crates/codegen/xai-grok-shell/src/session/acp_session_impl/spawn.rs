@@ -1109,6 +1109,7 @@ pub(crate) async fn spawn_session_actor(
         model_auth_facts: std::cell::RefCell::new(None),
         attribution_callback,
         auth_manager,
+        multi_provider_auth: parking_lot::Mutex::new(None),
         state,
         notifications: NotificationSender {
             gateway: gateway.clone(),

@@ -1546,7 +1546,10 @@ fn fork_filter_consecutive_users_with_tool_calls() {
         ConversationItem::user("query"), ConversationItem::Assistant(AssistantItem {
         content : String::new().into(), tool_calls : vec![ToolCall { id : "tc1".into(),
         name : "bash".into(), arguments : "{}".into(), }], model_id : None,
-        model_fingerprint : None, reasoning_effort : None, }),
+        model_fingerprint : None, reasoning_effort : None,
+        phase: None,
+        message_id: None,
+}),
         ConversationItem::tool_result("tc1", "output"),
         ConversationItem::user("follow-up"),
     ];
@@ -1563,7 +1566,10 @@ fn fork_filter_preserves_complete_tool_turn() {
         ConversationItem::user("q"), ConversationItem::Assistant(AssistantItem { content
         : String::new().into(), tool_calls : vec![ToolCall { id : "tc1".into(), name :
         "bash".into(), arguments : "{}".into(), }], model_id : None, model_fingerprint :
-        None, reasoning_effort : None, }), ConversationItem::tool_result("tc1",
+        None, reasoning_effort : None,
+        phase: None,
+        message_id: None,
+}), ConversationItem::tool_result("tc1",
         "output"),
     ];
     super::fork_filter_chat(&mut items);
@@ -1577,7 +1583,10 @@ fn fork_filter_strips_incomplete_tool_turn() {
         ConversationItem::user("q2"), ConversationItem::Assistant(AssistantItem { content
         : String::new().into(), tool_calls : vec![ToolCall { id : "tc1".into(), name :
         "bash".into(), arguments : "{}".into(), }], model_id : None, model_fingerprint :
-        None, reasoning_effort : None, }),
+        None, reasoning_effort : None,
+        phase: None,
+        message_id: None,
+}),
     ];
     super::fork_filter_chat(&mut items);
     assert_eq!(
@@ -1686,7 +1695,10 @@ fn fork_filter_keeps_multi_tool_cycle_turn_with_reasoning() {
         ConversationItem::Assistant(AssistantItem { content : String::new().into(),
         tool_calls : vec![ToolCall { id : "tc1".into(), name : "bash".into(), arguments :
         "{}".into(), }], model_id : None, model_fingerprint : None, reasoning_effort :
-        None, }), ConversationItem::tool_result("tc1", "output"),
+        None,
+        phase: None,
+        message_id: None,
+}), ConversationItem::tool_result("tc1", "output"),
         ConversationItem::Reasoning(xai_grok_sampling_types::synthesized_reasoning_item("reflect",)),
         ConversationItem::assistant("final text"),
     ];
@@ -1712,7 +1724,10 @@ fn fork_filter_keeps_multi_tool_turn_with_reasoning_between_results() {
         tool_calls : vec![ToolCall { id : "tc1".into(), name : "bash".into(), arguments :
         "{}".into(), }, ToolCall { id : "tc2".into(), name : "grep".into(), arguments :
         "{}".into(), },], model_id : None, model_fingerprint : None, reasoning_effort :
-        None, }), ConversationItem::tool_result("tc1", "out1"),
+        None,
+        phase: None,
+        message_id: None,
+}), ConversationItem::tool_result("tc1", "out1"),
         ConversationItem::Reasoning(xai_grok_sampling_types::synthesized_reasoning_item("mid")),
         ConversationItem::tool_result("tc2", "out2"),
         ConversationItem::Reasoning(xai_grok_sampling_types::synthesized_reasoning_item("reflect",)),
@@ -2309,8 +2324,10 @@ fn read_chat_history_upgrades_raw_output_parallel_tco_reasoning() {
             ConversationItem::User(_) => "user",
             ConversationItem::Assistant(_) => "assistant",
             ConversationItem::ToolResult(_) => "tool_result",
+            ConversationItem::FunctionCall(_) => "function_call",
             ConversationItem::BackendToolCall(_) => "backend_tool_call",
             ConversationItem::Reasoning(_) => "reasoning",
+            ConversationItem::OpaqueWire(_) => "opaque_wire",
         })
         .collect();
     assert_eq!(
@@ -2361,8 +2378,10 @@ fn read_chat_history_handles_hybrid_legacy_and_post_pr_lines() {
             ConversationItem::User(_) => "user",
             ConversationItem::Assistant(_) => "assistant",
             ConversationItem::ToolResult(_) => "tool_result",
+            ConversationItem::FunctionCall(_) => "function_call",
             ConversationItem::BackendToolCall(_) => "backend_tool_call",
             ConversationItem::Reasoning(_) => "reasoning",
+            ConversationItem::OpaqueWire(_) => "opaque_wire",
         })
         .collect();
     assert_eq!(
@@ -2423,8 +2442,10 @@ fn read_chat_history_is_idempotent_on_post_pr_sessions() {
             ConversationItem::User(_) => "user",
             ConversationItem::Assistant(_) => "assistant",
             ConversationItem::ToolResult(_) => "tool_result",
+            ConversationItem::FunctionCall(_) => "function_call",
             ConversationItem::BackendToolCall(_) => "backend_tool_call",
             ConversationItem::Reasoning(_) => "reasoning",
+            ConversationItem::OpaqueWire(_) => "opaque_wire",
         })
         .collect();
     assert_eq!(kinds, vec!["system", "user", "reasoning", "assistant"]);

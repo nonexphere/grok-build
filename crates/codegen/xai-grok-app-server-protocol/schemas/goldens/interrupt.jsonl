@@ -1,0 +1,10 @@
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2026-07-18.experimental-v2","clientInfo":{"name":"golden","version":"1"},"capabilities":{"interactions":false,"reconnect":true,"experimental":[]}}}
+{"jsonrpc":"2.0","method":"initialized","params":{}}
+{"jsonrpc":"2.0","id":2,"method":"turn/start","params":{"sessionId":"session_1","input":[{"type":"text","text":"Run a long task"}],"idempotencyKey":"turn-start-long-1"}}
+{"jsonrpc":"2.0","method":"item/started","params":{"sessionId":"session_1","historyEpoch":"epoch_1","eventSeq":"10","timestampMs":1784376001000,"item":{"itemId":"item_cmd_1","sessionId":"session_1","turnId":"turn_2","type":"command_execution","status":"in_progress","revision":"1","eventSeq":"10","createdAtMs":1784376001000,"command":"long-task","argv":[],"cwd":"/workspace"}}}
+{"jsonrpc":"2.0","id":3,"method":"turn/interrupt","params":{"sessionId":"session_1","turnId":"turn_2","idempotencyKey":"interrupt-turn-2"}}
+{"jsonrpc":"2.0","id":3,"result":{"operationId":"op_interrupt_1","accepted":true}}
+{"jsonrpc":"2.0","method":"item/completed","params":{"sessionId":"session_1","historyEpoch":"epoch_1","eventSeq":"11","timestampMs":1784376001100,"item":{"itemId":"item_cmd_1","sessionId":"session_1","turnId":"turn_2","type":"command_execution","status":"cancelled","revision":"2","eventSeq":"11","createdAtMs":1784376001000,"command":"long-task","argv":[],"cwd":"/workspace"}}}
+{"jsonrpc":"2.0","method":"turn/updated","params":{"sessionId":"session_1","historyEpoch":"epoch_1","eventSeq":"12","timestampMs":1784376001110,"turn":{"turnId":"turn_2","sessionId":"session_1","providerBinding":null,"ordinal":2,"kind":"user","status":"interrupted","revision":"2","createdAtMs":1784376000900,"completedAtMs":1784376001110}}}
+{"jsonrpc":"2.0","id":4,"method":"turn/interrupt","params":{"sessionId":"session_1","turnId":"turn_2","idempotencyKey":"interrupt-turn-2"}}
+{"jsonrpc":"2.0","id":4,"result":{"operationId":"op_interrupt_1","accepted":true}}

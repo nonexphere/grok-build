@@ -67,8 +67,10 @@ fn role_label(item: &ConversationItem) -> &'static str {
         ConversationItem::User(_) => "Human",
         ConversationItem::Assistant(_) => "Assistant",
         ConversationItem::ToolResult(_) => "Function",
+        ConversationItem::FunctionCall(_) => "Assistant",
         ConversationItem::BackendToolCall(_) => "Assistant",
         ConversationItem::Reasoning(_) => "Assistant",
+        ConversationItem::OpaqueWire(_) => "Assistant",
     }
 }
 
@@ -779,7 +781,10 @@ mod tests {
                 model_id: None,
                 model_fingerprint: None,
                 reasoning_effort: None,
-            }),
+
+                phase: None,
+                message_id: None,
+}),
             ConversationItem::tool_result("c", "file contents"),
         ];
         let s = compute_turn_stats(&items);
