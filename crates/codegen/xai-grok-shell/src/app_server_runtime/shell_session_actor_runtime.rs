@@ -70,7 +70,9 @@ use xai_grok_tower::{
 };
 
 use crate::app_server_runtime::acp_host::AcpCommandHandle;
-use crate::session::commands::{PromptCompletionKind, PromptTurnOk, SessionCommand};
+use crate::session::commands::{
+    PromptCompletionKind, PromptTurnOk, PromptTurnResult, SessionCommand,
+};
 use crate::session::handle::SessionHandle;
 use crate::session::info::Info;
 use crate::session::pending_interaction::PendingInteractions;
@@ -81,12 +83,9 @@ use crate::session::storage::{
 };
 
 async fn receive_prompt_response(
-    response: oneshot::Receiver<Result<PromptTurnOk, RuntimeError>>,
+    response: oneshot::Receiver<PromptTurnResult>,
     deadline: Duration,
-) -> Result<
-    Result<Result<PromptTurnOk, RuntimeError>, oneshot::error::RecvError>,
-    tokio::time::error::Elapsed,
-> {
+) -> Result<Result<PromptTurnResult, oneshot::error::RecvError>, tokio::time::error::Elapsed> {
     timeout(deadline, response).await
 }
 
@@ -2501,7 +2500,7 @@ mod port_invariant_tests {
 
     #[tokio::test]
     async fn prompt_response_deadline_returns_timeout_without_fake_success() {
-        let (_tx, rx) = oneshot::channel::<Result<PromptTurnOk, RuntimeError>>();
+        let (_tx, rx) = oneshot::channel::<PromptTurnResult>();
         let result = receive_prompt_response(rx, Duration::from_millis(1)).await;
         assert!(result.is_err(), "a stalled actor must hit the deadline");
     }
